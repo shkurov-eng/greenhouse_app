@@ -230,9 +230,13 @@ export default function Home() {
         return;
       }
       const errorText = error instanceof Error ? error.message : "Unexpected auth error";
+      if (errorText.includes("DEV_BROWSER_MODE is only allowed in development")) {
+        setMessage("Browser debug works only on local dev (`npm run dev`), not on deployed app.");
+        return;
+      }
       if (errorText.includes("Missing TELEGRAM_BOT_TOKEN")) {
         setMessage(
-          "Browser debug requires DEV_BROWSER_MODE=true and DEV_TELEGRAM_ID in .env.local",
+          "No Telegram auth on server. Use local browser debug (`npm run dev`) or set TELEGRAM_BOT_TOKEN for Telegram Mini App auth.",
         );
         return;
       }

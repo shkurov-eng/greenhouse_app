@@ -54,6 +54,10 @@ export function getRequestTelegramId(request: NextRequest) {
   const isDevelopment = process.env.NODE_ENV === "development";
   const devBrowserMode = process.env.DEV_BROWSER_MODE === "true";
 
+  if (!isDevelopment && devBrowserMode) {
+    throw new Error("DEV_BROWSER_MODE is only allowed in development");
+  }
+
   if (isDevelopment && devBrowserMode) {
     const devTelegramId = process.env.DEV_TELEGRAM_ID;
     if (!devTelegramId) {
