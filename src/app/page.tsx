@@ -348,6 +348,39 @@ export default function Home() {
     setMessage("Room deleted");
   }
 
+  function householdInitials(name: string) {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0]!.slice(0, 1) + parts[1]!.slice(0, 1)).toUpperCase();
+    }
+    const compact = name.trim().slice(0, 2);
+    return compact.length > 0 ? compact.toUpperCase() : "H";
+  }
+
+  function householdCardTint(index: number) {
+    const tints = [
+      "from-[#006c49] to-[#0d8f6e]",
+      "from-[#944a23] to-[#c45c2a]",
+      "from-[#355c7d] to-[#5b8fb9]",
+      "from-[#5c4d7d] to-[#8b7ab8]",
+    ];
+    return tints[index % tints.length]!;
+  }
+
+  async function copyInviteCode() {
+    const code = currentHousehold?.invite_code;
+    if (!code) {
+      setMessage("No invite code yet");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(code);
+      setMessage("Invite code copied");
+    } catch {
+      setMessage("Could not copy — select and copy manually");
+    }
+  }
+
   async function handleCreatePlant() {
     if (!selectedRoom || !householdId) {
       setMessage("Room is not ready");
@@ -525,6 +558,20 @@ export default function Home() {
       setMessage(text);
     }
   }
+
+  const homesForPicker =
+    householdSummaries.length > 0
+      ? householdSummaries
+      : currentHousehold
+        ? [
+            {
+              household_id: currentHousehold.id,
+              household_name: currentHousehold.name,
+              invite_code: currentHousehold.invite_code,
+              is_active: true,
+            },
+          ]
+        : [];
 
   return (
     <MobileShell>
@@ -721,53 +768,146 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="mb-6 rounded-[24px] bg-white p-4 shadow-[0_4px_20px_rgba(148,74,35,0.06)]">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6c7a71]">
-              Current Home
-            </p>
-            <p className="mt-1 text-lg font-semibold text-[#1f1b17]">
-              {currentHousehold?.name ?? "My Home"}
-            </p>
-            <p className="mt-1 text-xs text-[#6c7a71]">
-              Invite code: {currentHousehold?.invite_code ?? "Generating..."}
-            </p>
-            {householdSummaries.length > 1 ? (
-              <label className="mt-3 block text-xs font-semibold text-[#3c4a42]">
-                Active home
-                <select
-                  value={householdId ?? ""}
-                  onChange={(event) => {
-                    const nextId = event.target.value;
-                    if (nextId && nextId !== householdId) {
-                      void runSafely(() => handleSwitchHousehold(nextId));
-                    }
-                  }}
-                  className="mt-1 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+          <section className="relative mb-6 overflow-hidden rounded-[28px] shadow-[0_8px_40px_rgba(0,108,73,0.12)] ring-1 ring-[#006c49]/10">
+            <div
+              className="pointer-events-none absolute -right-16 -top-24 h-48 w-48 rounded-full bg-[#006c49] opacity-[0.14] blur-3xl"
+              aria-hidden
+            />
+            <div
+              className="pointer-events-none absolute -bottom-20 -left-12 h-40 w-40 rounded-full bg-[#944a23] opacity-[0.1] blur-3xl"
+              aria-hidden
+            />
+            <div className="relative bg-gradient-to-br from-white via-[#faf9f7] to-[#eef7f2] p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#006c49]">
+                    Your homes
+                  </p>
+                  <h2 className="mt-1 text-xl font-bold tracking-tight text-[#1f1b17]">
+                    Pick a space
+                  </h2>
+                  <p className="mt-0.5 text-xs text-[#6c7a71]">
+                    Switch anytime — rooms and plants follow the active home.
+                  </p>
+                </div>
+                {homesForPicker.length > 0 ? (
+                  <div className="flex h-10 min-w-10 items-center justify-center rounded-2xl bg-[#006c49]/10 px-2.5 text-sm font-bold tabular-nums text-[#006c49]">
+                    {homesForPicker.length}
+                  </div>
+                ) : (
+                  <div className="h-10 w-10 animate-pulse rounded-2xl bg-[#e8ece9]" aria-hidden />
+                )}
+              </div>
+
+              {homesForPicker.length === 0 ? (
+                <div className="mt-4 rounded-2xl border border-dashed border-[#c5d4cc] bg-white/60 p-8 text-center">
+                  <p className="text-sm font-medium text-[#6c7a71]">Loading your homes…</p>
+                </div>
+              ) : (
+              <div
+                className={`mt-4 flex gap-3 ${
+                  homesForPicker.length <= 1
+                    ? "flex-col"
+                    : "snap-x snap-mandatory overflow-x-auto pb-2 pt-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                }`}
+              >
+                {homesForPicker.map((h, index) => {
+                  const isCurrent = h.household_id === householdId;
+                  const tint = householdCardTint(index);
+                  return (
+                    <button
+                      key={h.household_id}
+                      type="button"
+                      onClick={() => {
+                        if (!isCurrent) {
+                          void runSafely(() => handleSwitchHousehold(h.household_id));
+                        }
+                      }}
+                      className={`group text-left transition ${
+                        homesForPicker.length <= 1 ? "w-full" : "w-[min(100%,11.5rem)] shrink-0 snap-start sm:w-44"
+                      } rounded-2xl border-2 p-3.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#006c49] focus-visible:ring-offset-2 ${
+                        isCurrent
+                          ? "cursor-default border-[#006c49] bg-white shadow-[0_6px_24px_rgba(0,108,73,0.15)]"
+                          : "cursor-pointer border-transparent bg-white/70 shadow-sm hover:border-[#bbcabf]/80 hover:bg-white hover:shadow-md active:scale-[0.98]"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-bold text-white shadow-inner ${tint}`}
+                        >
+                          {householdInitials(h.household_name)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-semibold leading-snug text-[#1f1b17]">
+                            {h.household_name}
+                          </p>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            {isCurrent ? (
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-[#e6f5ef] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#006c49]">
+                                <span
+                                  className="material-symbols-outlined text-[12px]"
+                                  style={{
+                                    fontVariationSettings: '"FILL" 1, "wght" 600, "GRAD" 0, "opsz" 20',
+                                  }}
+                                >
+                                  check_circle
+                                </span>
+                                Active
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold uppercase tracking-wide text-[#6c7a71]">
+                                Tap to open
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              )}
+
+              <div className="mt-4 rounded-2xl border border-[#e8e4e0] bg-white/80 p-3 backdrop-blur-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-[#6c7a71]">
+                    <span className="material-symbols-outlined text-base text-[#006c49]/80">key</span>
+                    <span>Invite friends</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void runSafely(copyInviteCode);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-full border border-[#d4e8df] bg-[#f4faf7] px-2.5 py-1 text-[11px] font-semibold text-[#006c49] transition hover:bg-[#e6f5ef]"
+                  >
+                    <span className="material-symbols-outlined text-sm">content_copy</span>
+                    Copy
+                  </button>
+                </div>
+                <p className="mt-2 break-all font-mono text-sm font-semibold tracking-[0.08em] text-[#1f1b17]">
+                  {currentHousehold?.invite_code ?? "—"}
+                </p>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateHomeOpen(true)}
+                  className="inline-flex flex-1 min-w-[9rem] items-center justify-center gap-2 rounded-2xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-3 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(0,108,73,0.35)] transition active:translate-y-px"
                 >
-                  {householdSummaries.map((h) => (
-                    <option key={h.household_id} value={h.household_id}>
-                      {h.household_name}
-                      {h.is_active ? " (active)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setIsCreateHomeOpen(true)}
-                className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-3 py-2 text-xs font-semibold text-white"
-              >
-                Create new home
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsJoinHomeOpen(true)}
-                className="rounded-xl border border-[#bbcabf] px-3 py-2 text-xs font-semibold text-[#3c4a42]"
-              >
-                Join other home
-              </button>
+                  <span className="material-symbols-outlined text-lg">add_home_work</span>
+                  New home
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsJoinHomeOpen(true)}
+                  className="inline-flex flex-1 min-w-[9rem] items-center justify-center gap-2 rounded-2xl border border-[#d5ddd9] bg-white px-4 py-3 text-sm font-semibold text-[#3c4a42] shadow-sm transition hover:border-[#bbcabf] hover:bg-[#fafafa]"
+                >
+                  <span className="material-symbols-outlined text-lg text-[#6c7a71]">door_front</span>
+                  Join with code
+                </button>
+              </div>
             </div>
           </section>
 
