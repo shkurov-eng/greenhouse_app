@@ -20,7 +20,7 @@ type RequestBody = {
   payload?: Record<string, unknown>;
 };
 
-function unwrapSingleRow<T>(data: T | T[] | null | undefined): T {
+function unwrapSingleRow<T>(data: unknown): T {
   if (Array.isArray(data)) {
     if (data.length === 0) {
       throw new Error("Expected a row but received an empty result");
