@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { MobileShell } from "@/components/MobileShell";
 import {
@@ -118,6 +118,16 @@ export default function Home() {
   const [roomUploadStatus, setRoomUploadStatus] = useState<Record<string, string>>({});
   /** Bumps on an interval so marker colors refresh from `last_watered_at` without refetch. */
   const [, setWateringUiTick] = useState(0);
+
+  /** Opening a room reuses the same document scroll as the overview; reset so the photo + markers are in view. */
+  useLayoutEffect(() => {
+    if (!selectedRoom) {
+      return;
+    }
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [selectedRoom?.id]);
 
   useEffect(() => {
     if (!selectedRoom) {
