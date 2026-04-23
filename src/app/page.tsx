@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   bootstrapUser,
@@ -42,6 +42,9 @@ declare global {
 }
 
 export default function Home() {
+  /** Sync source for API headers; React state updates too late for same-tick awaits after bootstrap. */
+  const telegramInitDataRef = useRef<string | null>(null);
+
   const [message, setMessage] = useState("No Telegram user detected");
   const [isDebugMock, setIsDebugMock] = useState(false);
   const [telegramInitData, setTelegramInitData] = useState<string | null>(null);
@@ -112,7 +115,7 @@ export default function Home() {
   }
 
   function getCurrentInitData() {
-    return telegramInitData;
+    return telegramInitDataRef.current ?? telegramInitData;
   }
 
   function clearRoomDetailState() {
@@ -200,10 +203,14 @@ export default function Home() {
     async function saveTelegramUser() {
       const tg = await waitForTelegramWebApp();
       tg?.ready?.();
-      const telegramInitDataValue = tg?.initData ?? null;
+      const rawInitData = tg?.initData;
+      const telegramInitDataValue =
+        typeof rawInitData === "string" && rawInitData.length > 0 ? rawInitData : null;
       const telegramUser = tg?.initDataUnsafe?.user;
       const shouldUseMockUser = !telegramInitDataValue;
       const isTelegramUa = /telegram/i.test(window.navigator.userAgent);
+
+      telegramInitDataRef.current = telegramInitDataValue;
 
       if (isMounted) {
         setIsDebugMock(shouldUseMockUser);
