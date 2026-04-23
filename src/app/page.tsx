@@ -2,7 +2,23 @@
 
 import { useEffect, useState } from "react";
 
-import { supabase } from "@/lib/supabase";
+import {
+  bootstrapUser,
+  createPlant,
+  createRoom,
+  joinHousehold,
+  listRoomDetails,
+  listRooms,
+  updatePlant,
+  uploadRoomImage,
+  upsertMarker,
+  waterPlant,
+  type Household,
+  type Plant,
+  type PlantMarker,
+  type PlantStatus,
+  type Room,
+} from "@/lib/api";
 
 type TelegramWebAppUser = {
   id: number;
@@ -11,40 +27,10 @@ type TelegramWebAppUser = {
 
 type TelegramWebApp = {
   ready?: () => void;
+  initData?: string;
   initDataUnsafe?: {
     user?: TelegramWebAppUser;
   };
-};
-
-type Room = {
-  id: string;
-  name: string;
-  background_url: string | null;
-};
-
-type Plant = {
-  id: string;
-  room_id: string;
-  name: string;
-  species: string | null;
-  status: PlantStatus;
-  last_watered_at: string | null;
-};
-
-type PlantMarker = {
-  id: string;
-  plant_id: string;
-  room_id: string;
-  x: number;
-  y: number;
-};
-
-type PlantStatus = "healthy" | "thirsty" | "overdue";
-
-type Household = {
-  id: string;
-  name: string;
-  invite_code: string | null;
 };
 
 declare global {
@@ -58,7 +44,7 @@ declare global {
 export default function Home() {
   const [message, setMessage] = useState("No Telegram user detected");
   const [isDebugMock, setIsDebugMock] = useState(false);
-  const [profileId, setProfileId] = useState<string | null>(null);
+  const [telegramInitData, setTelegramInitData] = useState<string | null>(null);
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [currentHousehold, setCurrentHousehold] = useState<Household | null>(null);
   const [isJoinHomeOpen, setIsJoinHomeOpen] = useState(false);
@@ -84,15 +70,6 @@ export default function Home() {
   const [editPlantStatus, setEditPlantStatus] = useState<PlantStatus>("healthy");
   const [roomFiles, setRoomFiles] = useState<Record<string, File | null>>({});
   const [roomUploadStatus, setRoomUploadStatus] = useState<Record<string, string>>({});
-
-  function generateInviteCode() {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let code = "";
-    for (let i = 0; i < 6; i += 1) {
-      code += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return code;
-  }
 
   function getMarkerColorClasses(status: PlantStatus) {
     if (status === "healthy") {
@@ -129,114 +106,62 @@ export default function Home() {
       return "Unknown";
     }
 
-    const diffMs = Date.now() - date.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    if (diffDays <= 0) {
-      return "Today";
-    }
-    if (diffDays === 1) {
-      return "1 day ago";
-    }
-    return `${diffDays} days ago`;
+    return date.toLocaleDateString();
   }
 
-  function getStatusFromLastWatered(lastWateredAt: string | null): PlantStatus {
-    if (!lastWateredAt) {
-      return "overdue";
-    }
-
-    const date = new Date(lastWateredAt);
-    if (Number.isNaN(date.getTime())) {
-      return "overdue";
-    }
-
-    const diffMs = Date.now() - date.getTime();
-    const thirstyAfterMs = 5 * 60 * 1000;
-    const overdueAfterMs = 60 * 60 * 1000;
-
-    if (diffMs >= overdueAfterMs) {
-      return "overdue";
-    }
-    if (diffMs >= thirstyAfterMs) {
-      return "thirsty";
-    }
-    return "healthy";
+  function getCurrentInitData() {
+    return telegramInitData;
   }
 
-  async function fetchRoomsForHousehold(currentHouseholdId: string) {
-    const { data, error } = await supabase
-      .from("rooms")
-      .select("id, name, background_url")
-      .eq("household_id", currentHouseholdId)
-      .order("created_at", { ascending: true });
+  function clearRoomDetailState() {
+    setPlants([]);
+    setMarkers([]);
+    setActiveMarkerId(null);
+    setSelectedPlantIdForMarker("");
+    setIsMarkerEditMode(false);
+    setIsAddPlantOpen(false);
+    setIsEditPlantOpen(false);
+    setEditingPlantId(null);
+  }
 
-    if (error) {
-      console.error("Error fetching rooms:", error);
-      return;
-    }
+  function getRoomImageUrl(room: Room) {
+    return room.signed_background_url ?? room.background_url;
+  }
 
-    const nextRooms = (data ?? []) as Room[];
+  async function fetchRoomsForHousehold() {
+    const nextRooms = await listRooms(getCurrentInitData());
+    let shouldClearSelectionState = false;
     setRooms(nextRooms);
     setSelectedRoom((prev) => {
       if (!prev) {
         return prev;
       }
-      return nextRooms.find((room) => room.id === prev.id) ?? null;
+      const nextSelectedRoom = nextRooms.find((room) => room.id === prev.id) ?? null;
+      if (!nextSelectedRoom) {
+        shouldClearSelectionState = true;
+      }
+      return nextSelectedRoom;
     });
+    if (shouldClearSelectionState) {
+      clearRoomDetailState();
+    }
   }
 
-  async function fetchPlantsForRoom(roomId: string) {
-    const { data, error } = await supabase
-      .from("plants")
-      .select("id, room_id, name, species, status, last_watered_at")
-      .eq("room_id", roomId)
-      .order("created_at", { ascending: true });
+  async function fetchRoomDetails(roomId: string) {
+    const details = await listRoomDetails(getCurrentInitData(), roomId);
 
-    if (error) {
-      console.error("Error fetching plants:", error);
-      return;
-    }
-
-    const nextPlants = (data ?? []) as Plant[];
-    const updates = nextPlants
-      .map((plant) => {
-        const computedStatus = getStatusFromLastWatered(plant.last_watered_at);
-        if (plant.status === computedStatus) {
-          return null;
-        }
-        return { id: plant.id, status: computedStatus };
-      })
-      .filter((item): item is { id: string; status: PlantStatus } => Boolean(item));
-
-    if (updates.length > 0) {
-      await Promise.all(
-        updates.map((item) =>
-          supabase.from("plants").update({ status: item.status }).eq("id", item.id),
-        ),
-      );
-    }
-
-    const syncedPlants = nextPlants.map((plant) => ({
-      ...plant,
-      status: getStatusFromLastWatered(plant.last_watered_at),
-    }));
-
+    const syncedPlants = details.plants;
     setPlants(syncedPlants);
-  }
-
-  async function fetchMarkersForRoom(roomId: string) {
-    const { data, error } = await supabase
-      .from("plant_markers")
-      .select("id, plant_id, room_id, x, y")
-      .eq("room_id", roomId)
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      console.error("Error fetching plant markers:", error);
-      return;
-    }
-
-    const nextMarkers = (data ?? []) as PlantMarker[];
+    setSelectedPlantIdForMarker((prev) => {
+      if (!syncedPlants.length) {
+        return "";
+      }
+      if (prev && syncedPlants.some((plant) => plant.id === prev)) {
+        return prev;
+      }
+      return syncedPlants[0].id;
+    });
+    const nextMarkers = details.markers;
     setMarkers(nextMarkers);
     setActiveMarkerId((prev) => {
       if (!prev) {
@@ -244,42 +169,6 @@ export default function Home() {
       }
       return nextMarkers.some((marker) => marker.id === prev) ? prev : null;
     });
-  }
-
-  async function fetchHouseholdById(id: string) {
-    const { data, error } = await supabase
-      .from("households")
-      .select("id, name, invite_code")
-      .eq("id", id)
-      .maybeSingle();
-
-    if (error) {
-      console.error("Error fetching household:", error);
-      return null;
-    }
-
-    return (data ?? null) as Household | null;
-  }
-
-  async function ensureHouseholdInviteCode(household: Household) {
-    if (household.invite_code) {
-      return household;
-    }
-
-    const newCode = generateInviteCode();
-    const { data, error } = await supabase
-      .from("households")
-      .update({ invite_code: newCode })
-      .eq("id", household.id)
-      .select("id, name, invite_code")
-      .maybeSingle();
-
-    if (error) {
-      console.error("Error setting invite code:", error);
-      return household;
-    }
-
-    return (data ?? household) as Household;
   }
 
   useEffect(() => {
@@ -312,123 +201,37 @@ export default function Home() {
         new URLSearchParams(window.location.search).get("debugTelegram") === "1";
       const tg = await waitForTelegramWebApp();
       tg?.ready?.();
-      const mockUser: TelegramWebAppUser = {
-        id: 999999001,
-        username: "dev_user",
-      };
+      const telegramInitDataValue = tg?.initData ?? null;
       const telegramUser = tg?.initDataUnsafe?.user;
-      const shouldUseMockUser = !telegramUser && (isDevelopment || debugTelegramFlag);
-      const effectiveUser = telegramUser ?? (shouldUseMockUser ? mockUser : undefined);
+      const shouldUseMockUser = !telegramInitDataValue && (isDevelopment || debugTelegramFlag);
 
       if (isMounted) {
         setIsDebugMock(shouldUseMockUser);
+        setTelegramInitData(telegramInitDataValue);
       }
 
-      const user = effectiveUser;
-
-      if (!user) {
+      if (!telegramInitDataValue && !shouldUseMockUser) {
         if (isMounted) {
           setMessage("No Telegram user detected");
         }
         return;
       }
 
-      const { error } = await supabase
-        .from("profiles")
-        .upsert(
-          {
-            telegram_id: user.id,
-            username: user.username ?? null,
-          },
-          { onConflict: "telegram_id" },
-        )
-        .select();
+      const bootstrap = await bootstrapUser(telegramInitDataValue, telegramUser?.username ?? null);
+      const currentHouseholdId = bootstrap.household_id;
 
-      if (error) {
-        console.error("Error saving Telegram user:", error);
-        return;
-      }
-
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, telegram_id, username")
-        .eq("telegram_id", user.id)
-        .maybeSingle();
-
-      if (profileError) {
-        console.error("Error fetching profile:", profileError);
-        return;
-      }
-
-      if (!profile) {
-        console.error("Profile not found after save.");
-        return;
-      }
-      setProfileId(profile.id);
-
-      const { data: membership, error: membershipError } = await supabase
-        .from("household_members")
-        .select("id, household_id, user_id")
-        .eq("user_id", profile.id)
-        .maybeSingle();
-
-      if (membershipError) {
-        console.error("Error checking household_members:", membershipError);
-        return;
-      }
-
-      let currentHouseholdId = membership?.household_id ?? null;
-
-      if (membership) {
-        if (isMounted) {
-          setMessage("User already in household");
-        }
-      } else {
-        const inviteCode = generateInviteCode();
-        const { data: household, error: householdError } = await supabase
-          .from("households")
-          .insert({ name: "My Home", invite_code: inviteCode })
-          .select("id, name")
-          .single();
-
-        if (householdError) {
-          console.error("Error creating household:", householdError);
-          return;
-        }
-
-        const { data: memberRow, error: memberInsertError } = await supabase
-          .from("household_members")
-          .insert({
-            household_id: household.id,
-            user_id: profile.id,
-          })
-          .select("id, household_id, user_id")
-          .single();
-
-        if (memberInsertError) {
-          console.error("Error inserting household member:", memberInsertError);
-          return;
-        }
-        void memberRow;
-        currentHouseholdId = household.id;
-
-        if (isMounted) {
-          setMessage("Household created");
-        }
-      }
-
-      if (currentHouseholdId) {
+      if (currentHouseholdId && isMounted) {
         if (isMounted) {
           setHouseholdId(currentHouseholdId);
         }
-        const household = await fetchHouseholdById(currentHouseholdId);
-        if (household) {
-          const withCode = await ensureHouseholdInviteCode(household);
-          setCurrentHousehold(withCode);
-        }
-        await fetchRoomsForHousehold(currentHouseholdId);
+        setCurrentHousehold({
+          id: currentHouseholdId,
+          name: bootstrap.household_name,
+          invite_code: bootstrap.invite_code,
+        });
+        await fetchRoomsForHousehold();
+        setMessage("User initialized");
       }
-
     }
 
     saveTelegramUser().catch((error) => {
@@ -440,120 +243,45 @@ export default function Home() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!selectedRoom) {
-      setPlants([]);
-      setMarkers([]);
-      setActiveMarkerId(null);
-      setSelectedPlantIdForMarker("");
-      setIsMarkerEditMode(false);
-      setIsAddPlantOpen(false);
-      setIsEditPlantOpen(false);
-      setEditingPlantId(null);
-      return;
-    }
-
-    Promise.all([fetchPlantsForRoom(selectedRoom.id), fetchMarkersForRoom(selectedRoom.id)]).catch(
-      (error) => {
-        console.error("Unexpected room detail fetch error:", error);
-      },
-    );
-  }, [selectedRoom]);
-
-  useEffect(() => {
-    if (!plants.length) {
-      setSelectedPlantIdForMarker("");
-      return;
-    }
-
-    setSelectedPlantIdForMarker((prev) => {
-      if (prev && plants.some((plant) => plant.id === prev)) {
-        return prev;
-      }
-      return plants[0].id;
-    });
-  }, [plants]);
-
   async function handleCreateRoom() {
-    if (!householdId) {
-      setMessage("Household is not ready");
-      return;
-    }
-
     const newRoomName = roomName.trim();
     if (!newRoomName) {
       setMessage("Enter room name");
       return;
     }
 
-    const { error } = await supabase
-      .from("rooms")
-      .insert({
-        household_id: householdId,
-        name: newRoomName,
-      })
-      .select("id, name, background_url")
-      .single();
-
-    if (error) {
-      console.error("Error creating room:", error);
-      return;
-    }
-
+    await createRoom(getCurrentInitData(), newRoomName);
     setRoomName("");
     setIsCreateRoomOpen(false);
     setMessage("Room created");
-    await fetchRoomsForHousehold(householdId);
+    await fetchRoomsForHousehold();
   }
 
   async function handleJoinHome() {
-    if (!profileId) {
-      setMessage("Profile is not ready");
-      return;
-    }
-
     const code = joinCode.trim().toUpperCase();
     if (!code) {
       setMessage("Enter invite code");
       return;
     }
 
-    const { data: targetHome, error: targetHomeError } = await supabase
-      .from("households")
-      .select("id, name, invite_code")
-      .eq("invite_code", code)
-      .maybeSingle();
-
-    if (targetHomeError) {
-      console.error("Error finding household by invite code:", targetHomeError);
-      return;
-    }
-    if (!targetHome) {
-      setMessage("Invite code not found");
-      return;
-    }
-    if (targetHome.id === householdId) {
+    const targetHome = await joinHousehold(getCurrentInitData(), code);
+    if (targetHome.household_id === householdId) {
       setMessage("You are already in this home");
       return;
     }
 
-    const { error: joinError } = await supabase
-      .from("household_members")
-      .update({ household_id: targetHome.id })
-      .eq("user_id", profileId);
-
-    if (joinError) {
-      console.error("Error joining household:", joinError);
-      return;
-    }
-
-    setHouseholdId(targetHome.id);
-    setCurrentHousehold(targetHome as Household);
+    setHouseholdId(targetHome.household_id);
+    setCurrentHousehold({
+      id: targetHome.household_id,
+      name: targetHome.household_name,
+      invite_code: targetHome.invite_code,
+    });
     setSelectedRoom(null);
+    clearRoomDetailState();
     setIsJoinHomeOpen(false);
     setJoinCode("");
-    await fetchRoomsForHousehold(targetHome.id);
-    setMessage(`Joined ${targetHome.name}`);
+    await fetchRoomsForHousehold();
+    setMessage(`Joined ${targetHome.household_name}`);
   }
 
   async function handleCreatePlant() {
@@ -568,29 +296,18 @@ export default function Home() {
       return;
     }
 
-    const { data: createdPlant, error } = await supabase
-      .from("plants")
-      .insert({
-        household_id: householdId,
-        room_id: selectedRoom.id,
-        name: newPlantName,
-        species: plantSpecies.trim() || null,
-        status: plantStatus,
-        last_watered_at: plantStatus === "healthy" ? new Date().toISOString() : null,
-      })
-      .select("id")
-      .single();
-
-    if (error) {
-      console.error("Error creating plant:", error);
-      return;
-    }
+    const createdPlant = await createPlant(getCurrentInitData(), {
+      roomId: selectedRoom.id,
+      name: newPlantName,
+      species: plantSpecies.trim() || null,
+      status: plantStatus,
+    });
 
     setPlantName("");
     setPlantSpecies("");
     setPlantStatus("healthy");
     setIsAddPlantOpen(false);
-    await fetchPlantsForRoom(selectedRoom.id);
+    await fetchRoomDetails(selectedRoom.id);
     if (createdPlant?.id) {
       setSelectedPlantIdForMarker(createdPlant.id);
       setIsMarkerEditMode(true);
@@ -605,21 +322,8 @@ export default function Home() {
       return;
     }
 
-    const nowIso = new Date().toISOString();
-    const { error } = await supabase
-      .from("plants")
-      .update({
-        last_watered_at: nowIso,
-        status: "healthy",
-      })
-      .eq("id", plantId);
-
-    if (error) {
-      console.error("Error marking plant as watered:", error);
-      return;
-    }
-
-    await fetchPlantsForRoom(selectedRoom.id);
+    await waterPlant(getCurrentInitData(), plantId);
+    await fetchRoomDetails(selectedRoom.id);
     setMessage("Plant marked as watered");
   }
 
@@ -651,23 +355,16 @@ export default function Home() {
       return;
     }
 
-    const { error } = await supabase
-      .from("plants")
-      .update({
-        name: nextName,
-        species: editPlantSpecies.trim() || null,
-        status: editPlantStatus,
-      })
-      .eq("id", editingPlantId);
-
-    if (error) {
-      console.error("Error updating plant:", error);
-      return;
-    }
+    await updatePlant(getCurrentInitData(), {
+      plantId: editingPlantId,
+      name: nextName,
+      species: editPlantSpecies.trim() || null,
+      status: editPlantStatus,
+    });
 
     setIsEditPlantOpen(false);
     setEditingPlantId(null);
-    await fetchPlantsForRoom(selectedRoom.id);
+    await fetchRoomDetails(selectedRoom.id);
     setMessage("Plant updated");
   }
 
@@ -703,22 +400,14 @@ export default function Home() {
     const x = Math.min(Math.max(rawX, 0), 1);
     const y = Math.min(Math.max(rawY, 0), 1);
 
-    const { error } = await supabase.from("plant_markers").upsert(
-      {
-        room_id: selectedRoom.id,
-        plant_id: selectedPlantIdForMarker,
-        x,
-        y,
-      },
-      { onConflict: "plant_id" },
-    );
+    await upsertMarker(getCurrentInitData(), {
+      roomId: selectedRoom.id,
+      plantId: selectedPlantIdForMarker,
+      x,
+      y,
+    });
 
-    if (error) {
-      console.error("Error saving marker:", error);
-      return;
-    }
-
-    await fetchMarkersForRoom(selectedRoom.id);
+    await fetchRoomDetails(selectedRoom.id);
     setMessage("Marker saved");
     setIsMarkerEditMode(false);
   }
@@ -735,15 +424,6 @@ export default function Home() {
   }
 
   async function handleUploadImage(roomId: string) {
-    if (!householdId) {
-      const text = "Cannot upload: household_id is missing.";
-      setRoomUploadStatus((prev) => ({
-        ...prev,
-        [roomId]: text,
-      }));
-      return;
-    }
-
     const file = roomFiles[roomId];
     if (!file) {
       const text = "No file selected";
@@ -754,41 +434,12 @@ export default function Home() {
       return;
     }
 
-    const filePath = `${householdId}/${roomId}/${Date.now()}-${file.name}`;
     setRoomUploadStatus((prev) => ({
       ...prev,
       [roomId]: "Uploading...",
     }));
 
-    const { error: uploadError } = await supabase.storage
-      .from("rooms")
-      .upload(filePath, file, { upsert: true });
-
-    if (uploadError) {
-      console.error("Error uploading room image:", uploadError);
-      setRoomUploadStatus((prev) => ({
-        ...prev,
-        [roomId]: `Upload error: ${uploadError.message}`,
-      }));
-      return;
-    }
-
-    const { data: publicUrlData } = supabase.storage.from("rooms").getPublicUrl(filePath);
-    const publicUrl = publicUrlData.publicUrl;
-
-    const { error: updateError } = await supabase
-      .from("rooms")
-      .update({ background_url: publicUrl })
-      .eq("id", roomId);
-
-    if (updateError) {
-      console.error("Error saving room background_url:", updateError);
-      setRoomUploadStatus((prev) => ({
-        ...prev,
-        [roomId]: `DB update error: ${updateError.message}`,
-      }));
-      return;
-    }
+    await uploadRoomImage(getCurrentInitData(), { roomId, file });
 
     setRoomFiles((prev) => ({
       ...prev,
@@ -798,7 +449,17 @@ export default function Home() {
       ...prev,
       [roomId]: "Uploaded successfully",
     }));
-    await fetchRoomsForHousehold(householdId);
+    await fetchRoomsForHousehold();
+  }
+
+  async function runSafely(action: () => Promise<void>) {
+    try {
+      await action();
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "Unexpected error";
+      console.error(text);
+      setMessage(text);
+    }
   }
 
   return (
@@ -809,7 +470,10 @@ export default function Home() {
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => setSelectedRoom(null)}
+                onClick={() => {
+                  setSelectedRoom(null);
+                  clearRoomDetailState();
+                }}
                 className="active:scale-95"
               >
                 <span className="material-symbols-outlined text-[#3c4a42]">arrow_back</span>
@@ -836,11 +500,13 @@ export default function Home() {
           <section className="px-5 pt-20">
             <div
               className="relative overflow-hidden rounded-[24px] bg-[#f6ece6] shadow-[0_4px_20px_rgba(148,74,35,0.08)]"
-              onClick={handleImageClick}
+              onClick={(event) => {
+                void runSafely(() => handleImageClick(event));
+              }}
             >
-              {selectedRoom.background_url ? (
+              {getRoomImageUrl(selectedRoom) ? (
                 <img
-                  src={selectedRoom.background_url}
+                  src={getRoomImageUrl(selectedRoom) ?? undefined}
                   alt={selectedRoom.name}
                   className="h-[72vh] w-full object-contain"
                 />
@@ -871,7 +537,7 @@ export default function Home() {
                       } ${colors.pin}`}
                       onClick={(event) => {
                         event.stopPropagation();
-                        void handleMarkerTap(marker.plant_id, marker.id);
+                        void runSafely(() => handleMarkerTap(marker.plant_id, marker.id));
                       }}
                       title={markerPlant?.name ?? "Plant marker"}
                       aria-label={markerPlant?.name ?? "Plant marker"}
@@ -933,7 +599,9 @@ export default function Home() {
                         <div className="flex flex-col gap-2">
                           <button
                             type="button"
-                            onClick={() => handleWaterPlant(plant.id)}
+                            onClick={() => {
+                              void runSafely(() => handleWaterPlant(plant.id));
+                            }}
                             className="rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-2.5 py-1.5 text-[11px] font-semibold text-white"
                           >
                             Watered
@@ -1008,12 +676,15 @@ export default function Home() {
                 <article
                   key={room.id}
                   className="cursor-pointer overflow-hidden rounded-[24px] bg-white shadow-[0_4px_20px_rgba(148,74,35,0.06)] transition hover:shadow-[0_8px_30px_rgba(148,74,35,0.12)]"
-                  onClick={() => setSelectedRoom(room)}
+                  onClick={() => {
+                    setSelectedRoom(room);
+                    void runSafely(() => fetchRoomDetails(room.id));
+                  }}
                 >
                   <div className="h-48 bg-[#f6ece6]">
-                    {room.background_url ? (
+                    {getRoomImageUrl(room) ? (
                       <img
-                        src={room.background_url}
+                        src={getRoomImageUrl(room) ?? undefined}
                         alt={room.name}
                         className="h-full w-full object-cover"
                       />
@@ -1039,7 +710,9 @@ export default function Home() {
                       />
                       <button
                         type="button"
-                        onClick={() => handleUploadImage(room.id)}
+                        onClick={() => {
+                          void runSafely(() => handleUploadImage(room.id));
+                        }}
                         className="whitespace-nowrap rounded-lg border border-[#bbcabf] px-3 py-2 text-xs font-medium"
                       >
                         Upload Image
@@ -1087,7 +760,9 @@ export default function Home() {
               </button>
               <button
                 type="button"
-                onClick={handleCreateRoom}
+                onClick={() => {
+                  void runSafely(handleCreateRoom);
+                }}
                 className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
               >
                 Create Room
@@ -1119,7 +794,9 @@ export default function Home() {
               </button>
               <button
                 type="button"
-                onClick={handleJoinHome}
+                onClick={() => {
+                  void runSafely(handleJoinHome);
+                }}
                 className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
               >
                 Join
@@ -1166,7 +843,9 @@ export default function Home() {
               </button>
               <button
                 type="button"
-                onClick={handleCreatePlant}
+                onClick={() => {
+                  void runSafely(handleCreatePlant);
+                }}
                 className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
               >
                 Add Plant
@@ -1220,7 +899,9 @@ export default function Home() {
               </button>
               <button
                 type="button"
-                onClick={handleSavePlantEdits}
+                onClick={() => {
+                  void runSafely(handleSavePlantEdits);
+                }}
                 className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
               >
                 Save

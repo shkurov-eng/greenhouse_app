@@ -35,6 +35,11 @@ This document summarizes what has already been implemented in the project.
     - Link user to household
   - If existing:
     - Reuse existing household
+- Join-home functionality implemented:
+  - `households.invite_code` support added
+  - Current home card shows invite code
+  - User can join another home via invite code modal
+  - Membership is switched by updating current user's `household_members.household_id`
 
 ## Stage 3 - Rooms
 
@@ -72,6 +77,10 @@ This document summarizes what has already been implemented in the project.
   - Edit plant dialog:
     - edit `name`, `species`, `status`
     - action button to edit marker
+- Marker placement flow was simplified:
+  - Marker selection dropdown was removed from room detail
+  - Marker editing is now initiated from `Edit Plant`
+  - `Edit marker` inside the plant edit dialog enables marker placement mode
 - Marker features:
   - Markers rendered as pins on top of room image
   - Marker tooltip with plant name and status
@@ -123,13 +132,24 @@ This document summarizes what has already been implemented in the project.
 - `plants.sql`
   - plants table and updates (including status and last_watered_at)
   - plant_markers table and indexes
+- `households_join.sql`
+  - adds `invite_code` to `households`
+  - unique index for invite code
+- `security_hardening.sql`
+  - enables RLS for core tables
+  - revokes direct `anon/authenticated` table access
+  - adds `SECURITY DEFINER` RPC functions (`public.api_*`)
+  - switches `rooms` Storage bucket to private policies for `service_role`
+  - adds `rooms.background_path` for private image flow
 
 ## Current Behavior Summary
 
-- User opens app via Telegram (or debug fallback).
-- User profile is saved/updated in Supabase.
-- User is linked to a household.
-- User can create rooms and upload room background images.
-- User can open room detail, add plants, set/edit marker positions.
-- User can mark plants as watered from list or by tapping marker.
-- Plant status updates are reflected in marker color and plant list.
+- User opens app via Telegram Mini App (or local browser debug mode).
+- Identity is resolved server-side:
+  - Telegram `initData` verification (signature check)
+  - or dev fallback from server env when `DEV_BROWSER_MODE=true`.
+- Browser uses secure API endpoints instead of direct table queries:
+  - `POST /api/secure`
+  - `POST /api/rooms/upload`
+- Household/rooms/plants/markers operations run through RPC functions with membership and ownership checks.
+- Room images are uploaded to private Storage and returned via signed URLs.
