@@ -4,9 +4,15 @@
 alter table if exists public.profiles
   add column if not exists active_household_id uuid references public.households(id) on delete set null;
 
--- Drop legacy "one household per user" unique constraint if present (name may vary).
+-- Drop legacy "one household per user" unique constraint / index (Supabase scaffolds vary by name).
 alter table if exists public.household_members
   drop constraint if exists household_members_user_id_key;
+
+alter table if exists public.household_members
+  drop constraint if exists household_members_user_id_unique;
+
+-- If uniqueness was created only as a unique index (no table constraint), remove it too.
+drop index if exists public.household_members_user_id_unique;
 
 create unique index if not exists household_members_household_user_uidx
   on public.household_members (household_id, user_id);
@@ -116,9 +122,11 @@ begin
       end;
     end loop;
 
-    insert into public.household_members (household_id, user_id)
-    values (v_household_id, v_profile_id)
-    on conflict (household_id, user_id) do nothing;
+    -- EXECUTE avoids PL/pgSQL OUT column name "household_id" shadowing table columns in ON CONFLICT.
+    execute
+      'insert into public.household_members (household_id, user_id) values ($1, $2)
+       on conflict (household_id, user_id) do nothing'
+      using v_household_id, v_profile_id;
   end if;
 
   v_household_id := public.api_household_id_by_profile(v_profile_id);
@@ -159,9 +167,10 @@ begin
     raise exception 'invite code not found';
   end if;
 
-  insert into public.household_members (household_id, user_id)
-  values (v_target_household_id, v_profile_id)
-  on conflict (household_id, user_id) do nothing;
+  execute
+    'insert into public.household_members (household_id, user_id) values ($1, $2)
+     on conflict (household_id, user_id) do nothing'
+    using v_target_household_id, v_profile_id;
 
   update public.profiles
   set active_household_id = v_target_household_id
@@ -241,9 +250,10 @@ begin
     end;
   end loop;
 
-  insert into public.household_members (household_id, user_id)
-  values (v_household_id, v_profile_id)
-  on conflict (household_id, user_id) do nothing;
+  execute
+    'insert into public.household_members (household_id, user_id) values ($1, $2)
+     on conflict (household_id, user_id) do nothing'
+    using v_household_id, v_profile_id;
 
   update public.profiles
   set active_household_id = v_household_id
