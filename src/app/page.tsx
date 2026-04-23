@@ -22,6 +22,24 @@ type Room = {
   background_url: string | null;
 };
 
+type Plant = {
+  id: string;
+  room_id: string;
+  name: string;
+  species: string | null;
+  status: PlantStatus;
+};
+
+type PlantMarker = {
+  id: string;
+  plant_id: string;
+  room_id: string;
+  x: number;
+  y: number;
+};
+
+type PlantStatus = "healthy" | "thirsty" | "overdue";
+
 declare global {
   interface Window {
     Telegram?: {
@@ -38,8 +56,42 @@ export default function Home() {
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+  const [plants, setPlants] = useState<Plant[]>([]);
+  const [markers, setMarkers] = useState<PlantMarker[]>([]);
+  const [activeMarkerId, setActiveMarkerId] = useState<string | null>(null);
+  const [selectedPlantIdForMarker, setSelectedPlantIdForMarker] = useState<string>("");
+  const [isMarkerEditMode, setIsMarkerEditMode] = useState(false);
+  const [isAddPlantOpen, setIsAddPlantOpen] = useState(false);
+  const [plantName, setPlantName] = useState("");
+  const [plantSpecies, setPlantSpecies] = useState("");
+  const [plantStatus, setPlantStatus] = useState<PlantStatus>("healthy");
   const [roomFiles, setRoomFiles] = useState<Record<string, File | null>>({});
   const [roomUploadStatus, setRoomUploadStatus] = useState<Record<string, string>>({});
+
+  function getMarkerColorClasses(status: PlantStatus) {
+    if (status === "healthy") {
+      return {
+        pin: "bg-[#10b981]",
+        pulse: "bg-[#10b981]/40",
+        labelText: "text-[#006c49]",
+        labelChip: "bg-[#e6f5ef]",
+      };
+    }
+    if (status === "thirsty") {
+      return {
+        pin: "bg-[#e29100]",
+        pulse: "bg-[#e29100]/40",
+        labelText: "text-[#855300]",
+        labelChip: "bg-[#ffddb8]",
+      };
+    }
+    return {
+      pin: "bg-[#ba1a1a]",
+      pulse: "bg-[#ba1a1a]/40",
+      labelText: "text-[#93000a]",
+      labelChip: "bg-[#ffdad6]",
+    };
+  }
 
   async function fetchRoomsForHousehold(currentHouseholdId: string) {
     const { data, error } = await supabase
@@ -60,6 +112,43 @@ export default function Home() {
         return prev;
       }
       return nextRooms.find((room) => room.id === prev.id) ?? null;
+    });
+  }
+
+  async function fetchPlantsForRoom(roomId: string) {
+    const { data, error } = await supabase
+      .from("plants")
+      .select("id, room_id, name, species, status")
+      .eq("room_id", roomId)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching plants:", error);
+      return;
+    }
+
+    setPlants((data ?? []) as Plant[]);
+  }
+
+  async function fetchMarkersForRoom(roomId: string) {
+    const { data, error } = await supabase
+      .from("plant_markers")
+      .select("id, plant_id, room_id, x, y")
+      .eq("room_id", roomId)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching plant markers:", error);
+      return;
+    }
+
+    const nextMarkers = (data ?? []) as PlantMarker[];
+    setMarkers(nextMarkers);
+    setActiveMarkerId((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      return nextMarkers.some((marker) => marker.id === prev) ? prev : null;
     });
   }
 
@@ -214,6 +303,38 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!selectedRoom) {
+      setPlants([]);
+      setMarkers([]);
+      setActiveMarkerId(null);
+      setSelectedPlantIdForMarker("");
+      setIsMarkerEditMode(false);
+      setIsAddPlantOpen(false);
+      return;
+    }
+
+    Promise.all([fetchPlantsForRoom(selectedRoom.id), fetchMarkersForRoom(selectedRoom.id)]).catch(
+      (error) => {
+        console.error("Unexpected room detail fetch error:", error);
+      },
+    );
+  }, [selectedRoom]);
+
+  useEffect(() => {
+    if (!plants.length) {
+      setSelectedPlantIdForMarker("");
+      return;
+    }
+
+    setSelectedPlantIdForMarker((prev) => {
+      if (prev && plants.some((plant) => plant.id === prev)) {
+        return prev;
+      }
+      return plants[0].id;
+    });
+  }, [plants]);
+
   async function handleCreateRoom() {
     if (!householdId) {
       setMessage("Household is not ready");
@@ -244,6 +365,81 @@ export default function Home() {
     setIsCreateRoomOpen(false);
     setMessage("Room created");
     await fetchRoomsForHousehold(householdId);
+  }
+
+  async function handleCreatePlant() {
+    if (!selectedRoom || !householdId) {
+      setMessage("Room is not ready");
+      return;
+    }
+
+    const newPlantName = plantName.trim();
+    if (!newPlantName) {
+      setMessage("Enter plant name");
+      return;
+    }
+
+    const { error } = await supabase.from("plants").insert({
+      household_id: householdId,
+      room_id: selectedRoom.id,
+      name: newPlantName,
+      species: plantSpecies.trim() || null,
+      status: plantStatus,
+    });
+
+    if (error) {
+      console.error("Error creating plant:", error);
+      return;
+    }
+
+    setPlantName("");
+    setPlantSpecies("");
+    setPlantStatus("healthy");
+    setIsAddPlantOpen(false);
+    await fetchPlantsForRoom(selectedRoom.id);
+    setMessage("Plant added");
+  }
+
+  async function handleImageClick(event: React.MouseEvent<HTMLDivElement>) {
+    if (!selectedRoom) {
+      return;
+    }
+    if (!isMarkerEditMode) {
+      return;
+    }
+    if (!selectedPlantIdForMarker) {
+      setMessage("Choose a plant first");
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      return;
+    }
+
+    const rawX = (event.clientX - rect.left) / rect.width;
+    const rawY = (event.clientY - rect.top) / rect.height;
+    const x = Math.min(Math.max(rawX, 0), 1);
+    const y = Math.min(Math.max(rawY, 0), 1);
+
+    const { error } = await supabase.from("plant_markers").upsert(
+      {
+        room_id: selectedRoom.id,
+        plant_id: selectedPlantIdForMarker,
+        x,
+        y,
+      },
+      { onConflict: "plant_id" },
+    );
+
+    if (error) {
+      console.error("Error saving marker:", error);
+      return;
+    }
+
+    await fetchMarkersForRoom(selectedRoom.id);
+    setMessage("Marker saved");
+    setIsMarkerEditMode(false);
   }
 
   function handleRoomFileChange(roomId: string, file: File | null) {
@@ -342,13 +538,25 @@ export default function Home() {
                 <p className="text-sm font-semibold text-[#006c49]">GreenHouse</p>
               </div>
             </div>
-            <p className="max-w-[50%] truncate text-xs font-medium text-[#6c7a71]">
-              {selectedRoom.name}
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="max-w-[50%] truncate text-xs font-medium text-[#6c7a71]">
+                {selectedRoom.name}
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsAddPlantOpen(true)}
+                className="rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-3 py-1 text-xs font-semibold text-white"
+              >
+                Add Plant
+              </button>
+            </div>
           </header>
 
           <section className="px-5 pt-20">
-            <div className="relative overflow-hidden rounded-[24px] bg-[#f6ece6] shadow-[0_4px_20px_rgba(148,74,35,0.08)]">
+            <div
+              className="relative overflow-hidden rounded-[24px] bg-[#f6ece6] shadow-[0_4px_20px_rgba(148,74,35,0.08)]"
+              onClick={handleImageClick}
+            >
               {selectedRoom.background_url ? (
                 <img
                   src={selectedRoom.background_url}
@@ -359,6 +567,104 @@ export default function Home() {
                 <div className="flex h-[72vh] items-center justify-center text-sm text-[#6c7a71]">
                   No image yet
                 </div>
+              )}
+              {markers.map((marker) => {
+                const markerPlant = plants.find((plant) => plant.id === marker.plant_id);
+                const isActive = activeMarkerId === marker.id;
+                const status = markerPlant?.status ?? "healthy";
+                const colors = getMarkerColorClasses(status);
+                return (
+                  <div
+                    key={marker.id}
+                    style={{
+                      left: `${marker.x * 100}%`,
+                      top: `${marker.y * 100}%`,
+                    }}
+                    className="absolute -translate-x-1/2 -translate-y-1/2"
+                  >
+                    <button
+                      type="button"
+                      className={`relative h-6 w-6 rounded-full border-2 border-white shadow-md ${colors.pin}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setActiveMarkerId((prev) => (prev === marker.id ? null : marker.id));
+                      }}
+                      title={markerPlant?.name ?? "Plant marker"}
+                      aria-label={markerPlant?.name ?? "Plant marker"}
+                    >
+                      <span className={`absolute inset-0 animate-ping rounded-full ${colors.pulse}`} />
+                    </button>
+                    {isActive ? (
+                      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-white px-2 py-1 text-[10px] font-semibold text-[#3c4a42] shadow-md">
+                        <span className={`mr-1 rounded-full px-1.5 py-0.5 text-[9px] uppercase ${colors.labelChip} ${colors.labelText}`}>
+                          {status}
+                        </span>
+                        {markerPlant?.name ?? "Plant"}
+                        <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1 rotate-45 bg-white" />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-4 rounded-[24px] bg-white p-4 shadow-[0_4px_20px_rgba(148,74,35,0.06)]">
+              <div className="mb-3">
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
+                  Marker plant
+                </label>
+                <select
+                  value={selectedPlantIdForMarker}
+                  onChange={(event) => setSelectedPlantIdForMarker(event.target.value)}
+                  className="w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+                >
+                  {plants.length === 0 ? (
+                    <option value="">Add a plant first</option>
+                  ) : null}
+                  {plants.map((plant) => (
+                    <option key={plant.id} value={plant.id}>
+                      {plant.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsMarkerEditMode((prev) => !prev)}
+                    className={`rounded-lg px-3 py-1 text-xs font-semibold ${
+                      isMarkerEditMode
+                        ? "bg-[#ffdad6] text-[#93000a]"
+                        : "bg-[#e6f5ef] text-[#006c49]"
+                    }`}
+                  >
+                    {isMarkerEditMode ? "Cancel edit" : "Edit marker"}
+                  </button>
+                  <p className="text-xs text-[#6c7a71]">
+                    {isMarkerEditMode
+                      ? "Tap image to set marker position"
+                      : "Markers are locked"}
+                  </p>
+                </div>
+              </div>
+              <h3 className="text-sm font-semibold text-[#3c4a42]">Plants in this room</h3>
+              {plants.length === 0 ? (
+                <p className="mt-2 text-sm text-[#6c7a71]">No plants yet</p>
+              ) : (
+                <ul className="mt-2 space-y-2">
+                  {plants.map((plant) => (
+                    <li
+                      key={plant.id}
+                      className="rounded-xl bg-[#fcf2eb] px-3 py-2 text-sm text-[#1f1b17]"
+                    >
+                      <p className="font-semibold">{plant.name}</p>
+                      {plant.species ? (
+                        <p className="text-xs text-[#6c7a71]">{plant.species}</p>
+                      ) : null}
+                      <p className="mt-1 text-[10px] uppercase tracking-wide text-[#6c7a71]">
+                        {plant.status}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           </section>
@@ -481,6 +787,53 @@ export default function Home() {
                 className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
               >
                 Create Room
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedRoom && isAddPlantOpen ? (
+        <div className="fixed inset-0 z-40 flex items-end bg-black/30 p-4 sm:items-center sm:justify-center">
+          <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
+            <h3 className="text-base font-semibold text-[#1f1b17]">Add Plant</h3>
+            <p className="mt-1 text-sm text-[#6c7a71]">{selectedRoom.name}</p>
+            <input
+              value={plantName}
+              onChange={(event) => setPlantName(event.target.value)}
+              placeholder="Plant name"
+              className="mt-4 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+              autoFocus
+            />
+            <input
+              value={plantSpecies}
+              onChange={(event) => setPlantSpecies(event.target.value)}
+              placeholder="Species (optional)"
+              className="mt-2 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+            />
+            <select
+              value={plantStatus}
+              onChange={(event) => setPlantStatus(event.target.value as PlantStatus)}
+              className="mt-2 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+            >
+              <option value="healthy">healthy</option>
+              <option value="thirsty">thirsty</option>
+              <option value="overdue">overdue</option>
+            </select>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsAddPlantOpen(false)}
+                className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-medium text-[#3c4a42]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCreatePlant}
+                className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
+              >
+                Add Plant
               </button>
             </div>
           </div>
