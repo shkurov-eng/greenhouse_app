@@ -8,3 +8,7 @@ create table if not exists public.rooms (
 
 create index if not exists rooms_household_id_idx
   on public.rooms (household_id);
+
+insert into storage.buckets (id, name, public)
+values ('rooms', 'rooms', true)
+on conflict (id) do nothing;

@@ -45,6 +45,7 @@ export default function Home() {
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [roomName, setRoomName] = useState("");
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [roomFiles, setRoomFiles] = useState<Record<string, File | null>>({});
   const [debugInfo, setDebugInfo] = useState<DebugInfo>({
     telegram: null,
     tg: null,
@@ -277,6 +278,55 @@ export default function Home() {
     await fetchRoomsForHousehold(householdId);
   }
 
+  function handleRoomFileChange(roomId: string, file: File | null) {
+    setRoomFiles((prev) => ({
+      ...prev,
+      [roomId]: file,
+    }));
+  }
+
+  async function handleUploadImage(roomId: string) {
+    const file = roomFiles[roomId];
+    if (!file) {
+      console.log("No file selected for room:", roomId);
+      return;
+    }
+
+    const filePath = `${householdId ?? "no-household"}/${roomId}/${Date.now()}-${file.name}`;
+    console.log("Uploading room image...", { roomId, filePath });
+
+    const { error: uploadError } = await supabase.storage
+      .from("rooms")
+      .upload(filePath, file, { upsert: true });
+
+    if (uploadError) {
+      console.error("Error uploading room image:", uploadError);
+      return;
+    }
+
+    const { data: publicUrlData } = supabase.storage.from("rooms").getPublicUrl(filePath);
+    const publicUrl = publicUrlData.publicUrl;
+    console.log("Room image public URL:", publicUrl);
+
+    const { error: updateError } = await supabase
+      .from("rooms")
+      .update({ background_url: publicUrl })
+      .eq("id", roomId);
+
+    if (updateError) {
+      console.error("Error saving room background_url:", updateError);
+      return;
+    }
+
+    setRoomFiles((prev) => ({
+      ...prev,
+      [roomId]: null,
+    }));
+    if (householdId) {
+      await fetchRoomsForHousehold(householdId);
+    }
+  }
+
   return (
     <main>
       <p>{message}</p>
@@ -291,7 +341,22 @@ export default function Home() {
         {rooms.length === 0 ? (
           <li>No rooms yet</li>
         ) : (
-          rooms.map((room) => <li key={room.id}>{room.name}</li>)
+          rooms.map((room) => (
+            <li key={room.id}>
+              <p>{room.name}</p>
+              {room.background_url ? (
+                <img src={room.background_url} alt={room.name} width={180} />
+              ) : null}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(event) =>
+                  handleRoomFileChange(room.id, event.target.files?.[0] ?? null)
+                }
+              />
+              <button onClick={() => handleUploadImage(room.id)}>Upload Image</button>
+            </li>
+          ))
         )}
       </ul>
       <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
