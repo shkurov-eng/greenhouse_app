@@ -115,8 +115,84 @@ export default function Home() {
       }
 
       console.log("Telegram user upsert result:", data);
+      console.log("Step: fetching profile by telegram_id...");
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, telegram_id, username")
+        .eq("telegram_id", user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error("Error fetching profile:", profileError);
+        return;
+      }
+
+      console.log("Profile by telegram_id:", profile);
+
+      if (!profile) {
+        console.error("Profile not found after save.");
+        return;
+      }
+
+      console.log("Step: checking household membership...");
+
+      const { data: membership, error: membershipError } = await supabase
+        .from("household_members")
+        .select("id, household_id, user_id")
+        .eq("user_id", profile.id)
+        .maybeSingle();
+
+      if (membershipError) {
+        console.error("Error checking household_members:", membershipError);
+        return;
+      }
+
+      console.log("Existing household membership:", membership);
+
+      if (membership) {
+        console.log("User already in household. No action needed.");
+        if (isMounted) {
+          setMessage("User already in household");
+        }
+        return;
+      }
+
+      console.log("Step: creating household 'My Home'...");
+
+      const { data: household, error: householdError } = await supabase
+        .from("households")
+        .insert({ name: "My Home" })
+        .select("id, name")
+        .single();
+
+      if (householdError) {
+        console.error("Error creating household:", householdError);
+        return;
+      }
+
+      console.log("Created household:", household);
+      console.log("Step: linking user to household...");
+
+      const { data: memberRow, error: memberInsertError } = await supabase
+        .from("household_members")
+        .insert({
+          household_id: household.id,
+          user_id: profile.id,
+        })
+        .select("id, household_id, user_id")
+        .single();
+
+      if (memberInsertError) {
+        console.error("Error inserting household member:", memberInsertError);
+        return;
+      }
+
+      console.log("Inserted household_members row:", memberRow);
+      console.log("Household flow completed.");
+
       if (isMounted) {
-        setMessage("User saved");
+        setMessage("Household created");
       }
     }
 
