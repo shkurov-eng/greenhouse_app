@@ -46,6 +46,7 @@ export default function Home() {
   const [roomName, setRoomName] = useState("");
   const [rooms, setRooms] = useState<Room[]>([]);
   const [roomFiles, setRoomFiles] = useState<Record<string, File | null>>({});
+  const [roomUploadStatus, setRoomUploadStatus] = useState<Record<string, string>>({});
   const [debugInfo, setDebugInfo] = useState<DebugInfo>({
     telegram: null,
     tg: null,
@@ -279,21 +280,45 @@ export default function Home() {
   }
 
   function handleRoomFileChange(roomId: string, file: File | null) {
+    console.log("Room file selected:", { roomId, fileName: file?.name ?? null });
     setRoomFiles((prev) => ({
       ...prev,
       [roomId]: file,
     }));
+    setRoomUploadStatus((prev) => ({
+      ...prev,
+      [roomId]: file ? `Selected: ${file.name}` : "No file selected",
+    }));
   }
 
   async function handleUploadImage(roomId: string) {
-    const file = roomFiles[roomId];
-    if (!file) {
-      console.log("No file selected for room:", roomId);
+    if (!householdId) {
+      const text = "Cannot upload: household_id is missing.";
+      console.log(text);
+      setRoomUploadStatus((prev) => ({
+        ...prev,
+        [roomId]: text,
+      }));
       return;
     }
 
-    const filePath = `${householdId ?? "no-household"}/${roomId}/${Date.now()}-${file.name}`;
+    const file = roomFiles[roomId];
+    if (!file) {
+      const text = "No file selected";
+      console.log("No file selected for room:", roomId);
+      setRoomUploadStatus((prev) => ({
+        ...prev,
+        [roomId]: text,
+      }));
+      return;
+    }
+
+    const filePath = `${householdId}/${roomId}/${Date.now()}-${file.name}`;
     console.log("Uploading room image...", { roomId, filePath });
+    setRoomUploadStatus((prev) => ({
+      ...prev,
+      [roomId]: "Uploading...",
+    }));
 
     const { error: uploadError } = await supabase.storage
       .from("rooms")
@@ -301,6 +326,10 @@ export default function Home() {
 
     if (uploadError) {
       console.error("Error uploading room image:", uploadError);
+      setRoomUploadStatus((prev) => ({
+        ...prev,
+        [roomId]: `Upload error: ${uploadError.message}`,
+      }));
       return;
     }
 
@@ -315,6 +344,10 @@ export default function Home() {
 
     if (updateError) {
       console.error("Error saving room background_url:", updateError);
+      setRoomUploadStatus((prev) => ({
+        ...prev,
+        [roomId]: `DB update error: ${updateError.message}`,
+      }));
       return;
     }
 
@@ -322,9 +355,11 @@ export default function Home() {
       ...prev,
       [roomId]: null,
     }));
-    if (householdId) {
-      await fetchRoomsForHousehold(householdId);
-    }
+    setRoomUploadStatus((prev) => ({
+      ...prev,
+      [roomId]: "Uploaded successfully",
+    }));
+    await fetchRoomsForHousehold(householdId);
   }
 
   return (
@@ -336,7 +371,9 @@ export default function Home() {
         onChange={(event) => setRoomName(event.target.value)}
         placeholder="Room name"
       />
-      <button onClick={handleCreateRoom}>Create Room</button>
+      <button type="button" onClick={handleCreateRoom}>
+        Create Room
+      </button>
       <ul>
         {rooms.length === 0 ? (
           <li>No rooms yet</li>
@@ -354,7 +391,10 @@ export default function Home() {
                   handleRoomFileChange(room.id, event.target.files?.[0] ?? null)
                 }
               />
-              <button onClick={() => handleUploadImage(room.id)}>Upload Image</button>
+              <button type="button" onClick={() => handleUploadImage(room.id)}>
+                Upload Image
+              </button>
+              <p>{roomUploadStatus[room.id] ?? ""}</p>
             </li>
           ))
         )}
