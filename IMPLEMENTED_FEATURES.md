@@ -6,7 +6,7 @@ This document summarizes what has already been implemented in the project.
 
 - Next.js app (App Router) with TypeScript.
 - Supabase (PostgreSQL + Storage); **browser no longer queries tables directly**.
-- Typed client API wrapper: `src/lib/api.ts` (calls `POST /api/secure` and `POST /api/rooms/upload`). Secure actions include household list/create/set-active/`deleteHousehold`, `deleteRoom`, and existing room/plant flows (see `SecureAction` in `src/app/api/secure/route.ts`).
+- Typed client API wrapper: `src/lib/api.ts` (calls `POST /api/secure` and `POST /api/rooms/upload`). Secure actions include household list/create/set-active/`deleteHousehold`/`renameHousehold`, room create/`renameRoom`/`deleteRoom`, and existing room/plant flows (see `SecureAction` in `src/app/api/secure/route.ts`).
 - Server-side Supabase admin client: `src/lib/server/supabaseAdmin.ts` (service role, lazy init).
 - Telegram auth helper: `src/lib/server/telegramAuth.ts` (`initData` HMAC verification; optional local dev mode).
 - Environment variables (see also `.env.example`):
@@ -42,7 +42,7 @@ This document summarizes what has already been implemented in the project.
     - `api_list_households`, `api_create_household`, `api_set_active_household`; `api_join_household` **adds** membership and sets the joined home active (user can belong to several homes).
     - Legacy unique-on-`user_id` alone on `household_members` must be dropped in favor of `UNIQUE (household_id, user_id)` (script attempts common constraint/index names, including `household_members_user_id_unique`).
     - `INSERT ... ON CONFLICT` in PL/pgSQL uses **dynamic `EXECUTE ... USING`** where needed so `RETURNS TABLE (household_id, ...)` output names do not shadow column names.
-    - UI: card-style **home picker** (horizontal scroll when multiple homes), **Create new home** modal, **delete home** (trash on each card; confirm; removes the household for all members), same secure API patterns. If the user deletes their last home, `loadHouseholds` runs `bootstrapUser` again so a default home is recreated.
+    - UI: card-style **home picker** (horizontal scroll when multiple homes), **Create new home** modal, **rename home** (pencil → modal; `api_rename_household`), **delete home** (trash on each card; confirm; removes the household for all members), same secure API patterns. If the user deletes their last home, `loadHouseholds` runs `bootstrapUser` again so a default home is recreated.
 
 ## Stage 3 - Rooms
 
@@ -54,6 +54,7 @@ This document summarizes what has already been implemented in the project.
   - Legacy `rooms.sql` described public policies; **effective production shape** is private + signed URLs.
 - Rooms UI:
   - Rooms list, room detail, FAB add room, add room modal
+  - **Rename room** from overview card or room header (pencil → modal); RPC `api_rename_room`; response signed like `createRoom`.
   - **Delete room** from overview card (confirm dialog); RPC `api_delete_room` (cascade removes plants/markers per schema).
 - Room images:
   - Upload: `POST /api/rooms/upload` (service role uploads file, RPC attaches path to room).
@@ -93,7 +94,7 @@ This document summarizes what has already been implemented in the project.
 - `plants.sql` — plants + `plant_markers` + indexes.
 - `households_join.sql` — `invite_code` on `households` + unique index.
 - `security_hardening.sql` — RLS, revoke direct table access from anon/auth, `public.api_*` RPCs, private `rooms` storage, `rooms.background_path`, grants for RPC execution.
-- `multi_household_delete_room.sql` — **run after** `security_hardening.sql`: `active_household_id` on `profiles`, relax single-home `household_members` uniqueness, replace `api_household_id_by_profile` / `api_bootstrap_user` / `api_join_household`, add `api_list_households`, `api_create_household`, `api_set_active_household`, `api_delete_room`, `api_delete_household` (optional tasks cleanup when `public.tasks` exists), and grants. Required for multi-home UI, room delete, and household delete in the app. If this file was applied before `api_delete_household` existed, re-run the new function + `grant` block from the bottom of the file in the SQL Editor.
+- `multi_household_delete_room.sql` — **run after** `security_hardening.sql`: `active_household_id` on `profiles`, relax single-home `household_members` uniqueness, replace `api_household_id_by_profile` / `api_bootstrap_user` / `api_join_household`, add `api_list_households`, `api_create_household`, `api_set_active_household`, `api_delete_room`, `api_rename_household`, `api_rename_room`, `api_delete_household` (optional tasks cleanup when `public.tasks` exists), and grants. Required for multi-home UI, renames, room/household delete. If the file was applied in parts, see incremental comments at the end of the SQL file for missing RPCs.
 
 ## Current Behavior Summary
 

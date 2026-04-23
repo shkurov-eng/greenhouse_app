@@ -15,6 +15,8 @@ import {
   listHouseholds,
   listRoomDetails,
   listRooms,
+  renameHousehold,
+  renameRoom,
   setActiveHousehold,
   updatePlant,
   uploadRoomImage,
@@ -87,6 +89,12 @@ export default function Home() {
   const [newHomeName, setNewHomeName] = useState("");
   const [householdSummaries, setHouseholdSummaries] = useState<HouseholdSummary[]>([]);
   const [joinCode, setJoinCode] = useState("");
+  const [isRenameHomeOpen, setIsRenameHomeOpen] = useState(false);
+  const [renameHomeId, setRenameHomeId] = useState<string | null>(null);
+  const [renameHomeInput, setRenameHomeInput] = useState("");
+  const [isRenameRoomOpen, setIsRenameRoomOpen] = useState(false);
+  const [renameRoomId, setRenameRoomId] = useState<string | null>(null);
+  const [renameRoomInput, setRenameRoomInput] = useState("");
   const [roomName, setRoomName] = useState("");
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -407,6 +415,42 @@ export default function Home() {
     setMessage("Home deleted");
   }
 
+  async function handleSubmitRenameHome() {
+    const id = renameHomeId;
+    const label = renameHomeInput.trim();
+    if (!id) {
+      return;
+    }
+    if (!label) {
+      setMessage("Enter home name");
+      return;
+    }
+    await renameHousehold(getCurrentInitData(), id, label);
+    setIsRenameHomeOpen(false);
+    setRenameHomeId(null);
+    setRenameHomeInput("");
+    await loadHouseholds();
+    setMessage("Home renamed");
+  }
+
+  async function handleSubmitRenameRoom() {
+    const id = renameRoomId;
+    const label = renameRoomInput.trim();
+    if (!id) {
+      return;
+    }
+    if (!label) {
+      setMessage("Enter room name");
+      return;
+    }
+    await renameRoom(getCurrentInitData(), id, label);
+    setIsRenameRoomOpen(false);
+    setRenameRoomId(null);
+    setRenameRoomInput("");
+    await fetchRoomsForHousehold();
+    setMessage("Room renamed");
+  }
+
   function householdInitials(name: string) {
     const parts = name.trim().split(/\s+/).filter(Boolean);
     if (parts.length >= 2) {
@@ -654,14 +698,26 @@ export default function Home() {
                 <p className="text-sm font-semibold text-[#006c49]">GreenHouse</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <p className="max-w-[50%] truncate text-xs font-medium text-[#6c7a71]">
-                {selectedRoom.name}
-              </p>
+            <div className="flex min-w-0 max-w-[min(100%,20rem)] flex-1 items-center justify-end gap-2 sm:max-w-none">
+              <div className="flex min-w-0 items-center gap-1">
+                <p className="truncate text-xs font-medium text-[#6c7a71]">{selectedRoom.name}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRenameRoomId(selectedRoom.id);
+                    setRenameRoomInput(selectedRoom.name);
+                    setIsRenameRoomOpen(true);
+                  }}
+                  className="shrink-0 rounded-md p-1 text-[#6c7a71] transition hover:bg-[#e6f5ef] hover:text-[#006c49]"
+                  aria-label="Rename room"
+                >
+                  <span className="material-symbols-outlined text-[18px]">edit</span>
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setIsAddPlantOpen(true)}
-                className="rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-3 py-1 text-xs font-semibold text-white"
+                className="shrink-0 rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-3 py-1 text-xs font-semibold text-white"
               >
                 Add Plant
               </button>
@@ -930,6 +986,18 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={() => {
+                          setRenameHomeId(h.household_id);
+                          setRenameHomeInput(h.household_name);
+                          setIsRenameHomeOpen(true);
+                        }}
+                        className="flex shrink-0 items-start justify-center px-1.5 pb-2 pt-3 text-[#6c7a71] transition hover:bg-[#e6f5ef]/80 hover:text-[#006c49] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#006c49]/30"
+                        aria-label={`Rename home ${h.household_name}`}
+                      >
+                        <span className="material-symbols-outlined text-[20px]">edit</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
                           void runSafely(() => handleDeleteHousehold(h.household_id, h.household_name));
                         }}
                         className="flex shrink-0 items-start justify-center rounded-tr-2xl rounded-br-2xl px-2.5 pb-2 pt-3 text-[#6c7a71] transition hover:bg-[#ffdad6]/50 hover:text-[#93000a] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ba1a1a]/40"
@@ -1013,6 +1081,19 @@ export default function Home() {
                         No image
                       </div>
                     )}
+                    <button
+                      type="button"
+                      className="absolute left-2 top-2 rounded-full bg-white/95 p-1.5 text-[#006c49] shadow-md active:scale-95"
+                      aria-label={`Rename ${room.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setRenameRoomId(room.id);
+                        setRenameRoomInput(room.name);
+                        setIsRenameRoomOpen(true);
+                      }}
+                    >
+                      <span className="material-symbols-outlined text-lg">edit</span>
+                    </button>
                     <button
                       type="button"
                       className="absolute right-2 top-2 rounded-full bg-white/95 p-1.5 text-[#93000a] shadow-md active:scale-95"
@@ -1131,6 +1212,82 @@ export default function Home() {
                 className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
               >
                 Create
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isRenameRoomOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/30 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
+          <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
+            <h3 className="text-base font-semibold text-[#1f1b17]">Rename room</h3>
+            <p className="mt-1 text-sm text-[#6c7a71]">Shown on cards and in the room header.</p>
+            <input
+              value={renameRoomInput}
+              onChange={(event) => setRenameRoomInput(event.target.value)}
+              placeholder="Room name"
+              className="mt-4 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+              autoFocus
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRenameRoomOpen(false);
+                  setRenameRoomId(null);
+                  setRenameRoomInput("");
+                }}
+                className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-medium text-[#3c4a42]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void runSafely(handleSubmitRenameRoom);
+                }}
+                className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {!selectedRoom && isRenameHomeOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/30 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
+          <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
+            <h3 className="text-base font-semibold text-[#1f1b17]">Rename home</h3>
+            <p className="mt-1 text-sm text-[#6c7a71]">Everyone in this home sees the new name.</p>
+            <input
+              value={renameHomeInput}
+              onChange={(event) => setRenameHomeInput(event.target.value)}
+              placeholder="Home name"
+              className="mt-4 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+              autoFocus
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRenameHomeOpen(false);
+                  setRenameHomeId(null);
+                  setRenameHomeInput("");
+                }}
+                className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-medium text-[#3c4a42]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void runSafely(handleSubmitRenameHome);
+                }}
+                className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
+              >
+                Save
               </button>
             </div>
           </div>

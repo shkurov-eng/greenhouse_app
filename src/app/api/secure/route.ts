@@ -10,8 +10,10 @@ type SecureAction =
   | "createHousehold"
   | "setActiveHousehold"
   | "deleteHousehold"
+  | "renameHousehold"
   | "listRooms"
   | "createRoom"
+  | "renameRoom"
   | "deleteRoom"
   | "listRoomDetails"
   | "createPlant"
@@ -253,6 +255,26 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ data: { ok: true as const } });
       }
 
+      case "renameHousehold": {
+        const householdId = asUuid(payload.householdId, "householdId");
+        const name = asString(payload.name, "name");
+        const result = await rpc("api_rename_household", {
+          p_telegram_id: telegramId,
+          p_household_id: householdId,
+          p_name: name,
+        });
+        const row = unwrapSingleRow<Record<string, unknown>>(result);
+        const data = {
+          household_id: String(row.household_id),
+          household_name: String(row.household_name ?? ""),
+          invite_code:
+            row.invite_code == null || row.invite_code === ""
+              ? null
+              : String(row.invite_code),
+        };
+        return NextResponse.json({ data });
+      }
+
       case "listRooms": {
         const rooms = (await rpc("api_list_rooms", {
           p_telegram_id: telegramId,
@@ -265,6 +287,19 @@ export async function POST(request: NextRequest) {
         const name = asString(payload.name, "name");
         const result = await rpc("api_create_room", {
           p_telegram_id: telegramId,
+          p_name: name,
+        });
+        const room = unwrapSingleRow<Record<string, unknown>>(result);
+        const [data] = await enrichRoomsWithSignedUrls([room]);
+        return NextResponse.json({ data });
+      }
+
+      case "renameRoom": {
+        const roomId = asUuid(payload.roomId, "roomId");
+        const name = asString(payload.name, "name");
+        const result = await rpc("api_rename_room", {
+          p_telegram_id: telegramId,
+          p_room_id: roomId,
           p_name: name,
         });
         const room = unwrapSingleRow<Record<string, unknown>>(result);

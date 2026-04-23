@@ -140,6 +140,18 @@ export async function deleteHousehold(initData: string | null, householdId: stri
   });
 }
 
+export async function renameHousehold(initData: string | null, householdId: string, name: string) {
+  return secureRequest<{
+    household_id: string;
+    household_name: string;
+    invite_code: string | null;
+  }>({
+    action: "renameHousehold",
+    initData,
+    payload: { householdId, name },
+  });
+}
+
 export async function listRooms(initData: string | null) {
   return secureRequest<Room[]>({
     action: "listRooms",
@@ -152,6 +164,14 @@ export async function createRoom(initData: string | null, name: string) {
     action: "createRoom",
     initData,
     payload: { name },
+  });
+}
+
+export async function renameRoom(initData: string | null, roomId: string, name: string) {
+  return secureRequest<Room>({
+    action: "renameRoom",
+    initData,
+    payload: { roomId, name },
   });
 }
 
