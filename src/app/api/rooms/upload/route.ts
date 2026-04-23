@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { supabaseAdmin } from "@/lib/server/supabaseAdmin";
+import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
 import { getRequestTelegramId } from "@/lib/server/telegramAuth";
 
 type UploadPreparation = {
@@ -8,8 +8,22 @@ type UploadPreparation = {
   file_path: string;
 };
 
+function unwrapSingleRow<T>(data: T | T[] | null | undefined): T {
+  if (Array.isArray(data)) {
+    if (data.length === 0) {
+      throw new Error("Expected a row but received an empty result");
+    }
+    return data[0] as T;
+  }
+  if (data == null) {
+    throw new Error("Expected a row but received null");
+  }
+  return data as T;
+}
+
 export async function POST(request: NextRequest) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
     const telegramId = getRequestTelegramId(request);
     const formData = await request.formData();
     const roomIdValue = formData.get("roomId");
@@ -35,7 +49,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: prepError.message }, { status: 400 });
     }
 
-    const prepared = preparation as UploadPreparation | null;
+    const prepared = unwrapSingleRow<UploadPreparation>(
+      preparation as UploadPreparation | UploadPreparation[] | null,
+    );
     if (!prepared?.file_path) {
       return NextResponse.json({ error: "Upload path was not returned" }, { status: 400 });
     }
@@ -62,7 +78,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: attachError.message }, { status: 400 });
     }
 
-    return NextResponse.json({ data: roomData });
+    const normalizedRoom = unwrapSingleRow<Record<string, unknown>>(
+      roomData as Record<string, unknown> | Record<string, unknown>[] | null,
+    );
+
+    return NextResponse.json({ data: normalizedRoom });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Upload failed";
     return NextResponse.json({ error: message }, { status: 400 });

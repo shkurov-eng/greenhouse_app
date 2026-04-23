@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { supabaseAdmin } from "@/lib/server/supabaseAdmin";
+import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
 import { getRequestTelegramId } from "@/lib/server/telegramAuth";
 
 type SecureAction =
@@ -19,6 +19,19 @@ type RequestBody = {
   action?: SecureAction;
   payload?: Record<string, unknown>;
 };
+
+function unwrapSingleRow<T>(data: T | T[] | null | undefined): T {
+  if (Array.isArray(data)) {
+    if (data.length === 0) {
+      throw new Error("Expected a row but received an empty result");
+    }
+    return data[0] as T;
+  }
+  if (data == null) {
+    throw new Error("Expected a row but received null");
+  }
+  return data as T;
+}
 
 function asString(value: unknown, fieldName: string) {
   if (typeof value !== "string" || !value.trim()) {
@@ -46,6 +59,7 @@ function asPlantStatus(value: unknown) {
 }
 
 async function rpc<T>(fn: string, params: Record<string, unknown>) {
+  const supabaseAdmin = getSupabaseAdmin();
   const { data, error } = await supabaseAdmin.rpc(fn, params);
   if (error) {
     throw new Error(error.message);
@@ -54,6 +68,7 @@ async function rpc<T>(fn: string, params: Record<string, unknown>) {
 }
 
 async function enrichRoomsWithSignedUrls(rows: Array<Record<string, unknown>>) {
+  const supabaseAdmin = getSupabaseAdmin();
   const paths = rows
     .map((room) => room.background_path)
     .filter((value): value is string => typeof value === "string" && value.length > 0);
@@ -100,19 +115,21 @@ export async function POST(request: NextRequest) {
     switch (action) {
       case "bootstrap": {
         const username = asOptionalString(payload.username);
-        const data = await rpc("api_bootstrap_user", {
+        const result = await rpc("api_bootstrap_user", {
           p_telegram_id: telegramId,
           p_username: username,
         });
+        const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });
       }
 
       case "joinHousehold": {
         const inviteCode = asString(payload.inviteCode, "inviteCode").toUpperCase();
-        const data = await rpc("api_join_household", {
+        const result = await rpc("api_join_household", {
           p_telegram_id: telegramId,
           p_invite_code: inviteCode,
         });
+        const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });
       }
 
@@ -126,10 +143,11 @@ export async function POST(request: NextRequest) {
 
       case "createRoom": {
         const name = asString(payload.name, "name");
-        const room = await rpc<Record<string, unknown>>("api_create_room", {
+        const result = await rpc<Record<string, unknown> | Record<string, unknown>[]>("api_create_room", {
           p_telegram_id: telegramId,
           p_name: name,
         });
+        const room = unwrapSingleRow<Record<string, unknown>>(result);
         const [data] = await enrichRoomsWithSignedUrls([room]);
         return NextResponse.json({ data });
       }
@@ -148,22 +166,24 @@ export async function POST(request: NextRequest) {
         const name = asString(payload.name, "name");
         const species = asOptionalString(payload.species);
         const status = asPlantStatus(payload.status);
-        const data = await rpc("api_create_plant", {
+        const result = await rpc("api_create_plant", {
           p_telegram_id: telegramId,
           p_room_id: roomId,
           p_name: name,
           p_species: species,
           p_status: status,
         });
+        const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });
       }
 
       case "waterPlant": {
         const plantId = asString(payload.plantId, "plantId");
-        const data = await rpc("api_water_plant", {
+        const result = await rpc("api_water_plant", {
           p_telegram_id: telegramId,
           p_plant_id: plantId,
         });
+        const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });
       }
 
@@ -172,13 +192,14 @@ export async function POST(request: NextRequest) {
         const name = asString(payload.name, "name");
         const species = asOptionalString(payload.species);
         const status = asPlantStatus(payload.status);
-        const data = await rpc("api_update_plant", {
+        const result = await rpc("api_update_plant", {
           p_telegram_id: telegramId,
           p_plant_id: plantId,
           p_name: name,
           p_species: species,
           p_status: status,
         });
+        const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });
       }
 
@@ -190,24 +211,26 @@ export async function POST(request: NextRequest) {
         if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) {
           return NextResponse.json({ error: "Invalid marker coordinates" }, { status: 400 });
         }
-        const data = await rpc("api_upsert_marker", {
+        const result = await rpc("api_upsert_marker", {
           p_telegram_id: telegramId,
           p_room_id: roomId,
           p_plant_id: plantId,
           p_x: x,
           p_y: y,
         });
+        const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });
       }
 
       case "createRoomImageSignedUrl": {
         const roomId = asString(payload.roomId, "roomId");
         const fileName = asString(payload.fileName, "fileName");
-        const data = await rpc("api_prepare_room_image_upload", {
+        const result = await rpc("api_prepare_room_image_upload", {
           p_telegram_id: telegramId,
           p_room_id: roomId,
           p_file_name: fileName,
         });
+        const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });
       }
 

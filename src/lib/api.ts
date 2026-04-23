@@ -38,6 +38,21 @@ type SecureRequest = {
   username?: string | null;
 };
 
+async function readApiPayload<TResponse>(response: Response) {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    const json = (await response.json()) as { data?: TResponse; error?: string };
+    if (!response.ok) {
+      throw new Error(json.error ?? `Request failed with status ${response.status}`);
+    }
+    return json.data as TResponse;
+  }
+
+  const text = await response.text();
+  const compact = text.replace(/\s+/g, " ").trim().slice(0, 220);
+  throw new Error(`Server returned non-JSON response (${response.status}). ${compact}`);
+}
+
 async function secureRequest<TResponse>({ action, payload, initData }: SecureRequest) {
   const response = await fetch("/api/secure", {
     method: "POST",
@@ -51,12 +66,7 @@ async function secureRequest<TResponse>({ action, payload, initData }: SecureReq
     }),
   });
 
-  const json = (await response.json()) as { data?: TResponse; error?: string };
-  if (!response.ok) {
-    throw new Error(json.error ?? "Secure API request failed");
-  }
-
-  return json.data as TResponse;
+  return readApiPayload<TResponse>(response);
 }
 
 export async function bootstrapUser(initData: string | null, username: string | null) {
@@ -164,9 +174,5 @@ export async function uploadRoomImage(
     body: formData,
   });
 
-  const json = (await response.json()) as { data?: Room; error?: string };
-  if (!response.ok) {
-    throw new Error(json.error ?? "Upload failed");
-  }
-  return json.data as Room;
+  return readApiPayload<Room>(response);
 }

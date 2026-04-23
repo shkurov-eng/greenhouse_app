@@ -196,25 +196,15 @@ export default function Home() {
     }
 
     async function saveTelegramUser() {
-      const isDevelopment = process.env.NODE_ENV === "development";
-      const debugTelegramFlag =
-        new URLSearchParams(window.location.search).get("debugTelegram") === "1";
       const tg = await waitForTelegramWebApp();
       tg?.ready?.();
       const telegramInitDataValue = tg?.initData ?? null;
       const telegramUser = tg?.initDataUnsafe?.user;
-      const shouldUseMockUser = !telegramInitDataValue && (isDevelopment || debugTelegramFlag);
+      const shouldUseMockUser = !telegramInitDataValue;
 
       if (isMounted) {
         setIsDebugMock(shouldUseMockUser);
         setTelegramInitData(telegramInitDataValue);
-      }
-
-      if (!telegramInitDataValue && !shouldUseMockUser) {
-        if (isMounted) {
-          setMessage("No Telegram user detected");
-        }
-        return;
       }
 
       const bootstrap = await bootstrapUser(telegramInitDataValue, telegramUser?.username ?? null);
@@ -236,6 +226,17 @@ export default function Home() {
 
     saveTelegramUser().catch((error) => {
       console.error("Unexpected Telegram/Supabase error:", error);
+      if (!isMounted) {
+        return;
+      }
+      const errorText = error instanceof Error ? error.message : "Unexpected auth error";
+      if (errorText.includes("Missing TELEGRAM_BOT_TOKEN")) {
+        setMessage(
+          "Browser debug requires DEV_BROWSER_MODE=true and DEV_TELEGRAM_ID in .env.local",
+        );
+        return;
+      }
+      setMessage(errorText);
     });
 
     return () => {
