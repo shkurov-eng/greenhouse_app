@@ -60,6 +60,7 @@ export default function Home() {
   const [plants, setPlants] = useState<Plant[]>([]);
   const [markers, setMarkers] = useState<PlantMarker[]>([]);
   const [activeMarkerId, setActiveMarkerId] = useState<string | null>(null);
+  const [justWateredMarkerId, setJustWateredMarkerId] = useState<string | null>(null);
   const [selectedPlantIdForMarker, setSelectedPlantIdForMarker] = useState<string>("");
   const [isMarkerEditMode, setIsMarkerEditMode] = useState(false);
   const [isAddPlantOpen, setIsAddPlantOpen] = useState(false);
@@ -493,6 +494,15 @@ export default function Home() {
     setMessage("Plant marked as watered");
   }
 
+  async function handleMarkerTap(plantId: string, markerId: string) {
+    setJustWateredMarkerId(markerId);
+    setTimeout(() => {
+      setJustWateredMarkerId((prev) => (prev === markerId ? null : prev));
+    }, 700);
+    await handleWaterPlant(plantId);
+    setActiveMarkerId((prev) => (prev === markerId ? null : markerId));
+  }
+
   async function handleImageClick(event: React.MouseEvent<HTMLDivElement>) {
     if (!selectedRoom) {
       return;
@@ -664,6 +674,7 @@ export default function Home() {
               {markers.map((marker) => {
                 const markerPlant = plants.find((plant) => plant.id === marker.plant_id);
                 const isActive = activeMarkerId === marker.id;
+                const isJustWatered = justWateredMarkerId === marker.id;
                 const status = markerPlant?.status ?? "healthy";
                 const colors = getMarkerColorClasses(status);
                 return (
@@ -677,10 +688,12 @@ export default function Home() {
                   >
                     <button
                       type="button"
-                      className={`relative h-6 w-6 rounded-full border-2 border-white shadow-md ${colors.pin}`}
+                      className={`relative h-6 w-6 rounded-full border-2 border-white shadow-md transition-all ${
+                        isJustWatered ? "scale-125 ring-4 ring-[#10b981]/35" : ""
+                      } ${colors.pin}`}
                       onClick={(event) => {
                         event.stopPropagation();
-                        setActiveMarkerId((prev) => (prev === marker.id ? null : marker.id));
+                        void handleMarkerTap(marker.plant_id, marker.id);
                       }}
                       title={markerPlant?.name ?? "Plant marker"}
                       aria-label={markerPlant?.name ?? "Plant marker"}
