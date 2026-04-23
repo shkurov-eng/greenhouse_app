@@ -45,6 +45,8 @@ export default function Home() {
   const [message, setMessage] = useState("No Telegram user detected");
   const [isDebugMock, setIsDebugMock] = useState(false);
   const [telegramInitData, setTelegramInitData] = useState<string | null>(null);
+  const [isTelegramWebAppDetected, setIsTelegramWebAppDetected] = useState(false);
+  const [isTelegramUserAgentDetected, setIsTelegramUserAgentDetected] = useState(false);
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [currentHousehold, setCurrentHousehold] = useState<Household | null>(null);
   const [isJoinHomeOpen, setIsJoinHomeOpen] = useState(false);
@@ -201,10 +203,13 @@ export default function Home() {
       const telegramInitDataValue = tg?.initData ?? null;
       const telegramUser = tg?.initDataUnsafe?.user;
       const shouldUseMockUser = !telegramInitDataValue;
+      const isTelegramUa = /telegram/i.test(window.navigator.userAgent);
 
       if (isMounted) {
         setIsDebugMock(shouldUseMockUser);
         setTelegramInitData(telegramInitDataValue);
+        setIsTelegramWebAppDetected(Boolean(tg));
+        setIsTelegramUserAgentDetected(isTelegramUa);
       }
 
       const bootstrap = await bootstrapUser(telegramInitDataValue, telegramUser?.username ?? null);
@@ -649,6 +654,11 @@ export default function Home() {
               {isDebugMock ? (
                 <p className="mt-1 text-xs text-[#944a23]">Debug mode: mock Telegram user</p>
               ) : null}
+              <p className="mt-2 text-[11px] text-[#6c7a71]">
+                Telegram WebApp: {isTelegramWebAppDetected ? "yes" : "no"} · initData:{" "}
+                {telegramInitData ? "present" : "missing"} · telegram user agent:{" "}
+                {isTelegramUserAgentDetected ? "yes" : "no"}
+              </p>
             </div>
           </section>
 
