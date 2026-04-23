@@ -9,6 +9,7 @@ type SecureAction =
   | "listHouseholds"
   | "createHousehold"
   | "setActiveHousehold"
+  | "deleteHousehold"
   | "listRooms"
   | "createRoom"
   | "deleteRoom"
@@ -241,6 +242,15 @@ export async function POST(request: NextRequest) {
         });
         const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });
+      }
+
+      case "deleteHousehold": {
+        const householdId = asUuid(payload.householdId, "householdId");
+        await rpc("api_delete_household", {
+          p_telegram_id: telegramId,
+          p_household_id: householdId,
+        });
+        return NextResponse.json({ data: { ok: true as const } });
       }
 
       case "listRooms": {

@@ -132,6 +132,14 @@ export async function setActiveHousehold(initData: string | null, householdId: s
   });
 }
 
+export async function deleteHousehold(initData: string | null, householdId: string) {
+  return secureRequest<{ ok: true }>({
+    action: "deleteHousehold",
+    initData,
+    payload: { householdId },
+  });
+}
+
 export async function listRooms(initData: string | null) {
   return secureRequest<Room[]>({
     action: "listRooms",

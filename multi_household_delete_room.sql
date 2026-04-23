@@ -328,3 +328,46 @@ grant execute on function public.api_list_households(text) to anon, authenticate
 grant execute on function public.api_create_household(text, text) to anon, authenticated, service_role;
 grant execute on function public.api_set_active_household(text, uuid) to anon, authenticated, service_role;
 grant execute on function public.api_delete_room(text, uuid) to anon, authenticated, service_role;
+
+-- Delete a household the caller belongs to (all members lose access; rooms/plants cascade).
+create or replace function public.api_delete_household(
+  p_telegram_id text,
+  p_household_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_profile_id uuid;
+begin
+  v_profile_id := public.api_profile_id_by_telegram(p_telegram_id);
+
+  if not exists (
+    select 1 from public.household_members hm
+    where hm.user_id = v_profile_id and hm.household_id = p_household_id
+  ) then
+    raise exception 'not a member of this household';
+  end if;
+
+  begin
+    execute 'delete from public.tasks where household_id = $1' using p_household_id;
+  exception
+    when undefined_table then
+      null;
+  end;
+
+  delete from public.household_members hm
+  where hm.household_id = p_household_id;
+
+  delete from public.households h
+  where h.id = p_household_id;
+
+  if not found then
+    raise exception 'household not found';
+  end if;
+end
+$$;
+
+grant execute on function public.api_delete_household(text, uuid) to anon, authenticated, service_role;

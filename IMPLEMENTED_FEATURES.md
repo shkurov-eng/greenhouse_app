@@ -6,7 +6,7 @@ This document summarizes what has already been implemented in the project.
 
 - Next.js app (App Router) with TypeScript.
 - Supabase (PostgreSQL + Storage); **browser no longer queries tables directly**.
-- Typed client API wrapper: `src/lib/api.ts` (calls `POST /api/secure` and `POST /api/rooms/upload`). Secure actions include household list/create/set-active, `deleteRoom`, and existing room/plant flows (see `SecureAction` in `src/app/api/secure/route.ts`).
+- Typed client API wrapper: `src/lib/api.ts` (calls `POST /api/secure` and `POST /api/rooms/upload`). Secure actions include household list/create/set-active/`deleteHousehold`, `deleteRoom`, and existing room/plant flows (see `SecureAction` in `src/app/api/secure/route.ts`).
 - Server-side Supabase admin client: `src/lib/server/supabaseAdmin.ts` (service role, lazy init).
 - Telegram auth helper: `src/lib/server/telegramAuth.ts` (`initData` HMAC verification; optional local dev mode).
 - Environment variables (see also `.env.example`):
@@ -42,7 +42,7 @@ This document summarizes what has already been implemented in the project.
     - `api_list_households`, `api_create_household`, `api_set_active_household`; `api_join_household` **adds** membership and sets the joined home active (user can belong to several homes).
     - Legacy unique-on-`user_id` alone on `household_members` must be dropped in favor of `UNIQUE (household_id, user_id)` (script attempts common constraint/index names, including `household_members_user_id_unique`).
     - `INSERT ... ON CONFLICT` in PL/pgSQL uses **dynamic `EXECUTE ... USING`** where needed so `RETURNS TABLE (household_id, ...)` output names do not shadow column names.
-  - UI: card-style **home picker** (horizontal scroll when multiple homes), **Create new home** modal, same secure API patterns.
+    - UI: card-style **home picker** (horizontal scroll when multiple homes), **Create new home** modal, **delete home** (trash on each card; confirm; removes the household for all members), same secure API patterns. If the user deletes their last home, `loadHouseholds` runs `bootstrapUser` again so a default home is recreated.
 
 ## Stage 3 - Rooms
 
@@ -65,12 +65,19 @@ This document summarizes what has already been implemented in the project.
 - Plants: `household_id`, `room_id`, `name`, `species`, `status`, `last_watered_at`, etc.
 - `plant_markers`: normalized `x`, `y` in `0..1`, unique per `plant_id`
 - Plant CRUD, marker placement, edit-from-plant-dialog flows as before (all via `/api/secure` + RPC).
+- **Marker pin color and active-marker status chip** (in `src/app/page.tsx`) use **watering urgency derived from `last_watered_at`**, not the stored `plants.status` field, so colors track time since last water without waiting for server-side status flips.
 
 ## Stage 5 - Watering
 
 - Watering updates `last_watered_at` and `status` via secure API / RPC.
 - Marker tap still waters plant; flash animation unchanged.
-- Plant **status in UI** follows values returned from the API (no client-side time-based recalculation from `last_watered_at` in the current build).
+- **Client-side urgency** (`wateringDerivedStatus` in `page.tsx`), aligned with marker colors:
+  - **Green (`healthy`):** last watered less than **5 minutes** ago.
+  - **Yellow (`thirsty`):** **5 minutes** to **1 hour** since last water.
+  - **Red (`overdue`):** more than **1 hour** since last water, or **`last_watered_at` is null** (never watered).
+- **Plants-in-room list:** the small uppercase status line uses the same derivation so it matches markers.
+- **Edit Plant** still reads/writes the DB `status` field; the list line and markers intentionally ignore that for display and use time since `last_watered_at` only.
+- While a room is open, a **30s `setInterval`** bumps React state so colors refresh without refetch; **closing the room** clears `selectedRoom`, runs effect cleanup (interval stopped), and **reopening** recomputes from the current clock and loaded `last_watered_at`.
 
 ## UI / Design System Work
 
@@ -86,7 +93,7 @@ This document summarizes what has already been implemented in the project.
 - `plants.sql` — plants + `plant_markers` + indexes.
 - `households_join.sql` — `invite_code` on `households` + unique index.
 - `security_hardening.sql` — RLS, revoke direct table access from anon/auth, `public.api_*` RPCs, private `rooms` storage, `rooms.background_path`, grants for RPC execution.
-- `multi_household_delete_room.sql` — **run after** `security_hardening.sql`: `active_household_id` on `profiles`, relax single-home `household_members` uniqueness, replace `api_household_id_by_profile` / `api_bootstrap_user` / `api_join_household`, add `api_list_households`, `api_create_household`, `api_set_active_household`, `api_delete_room`, and grants. Required for multi-home UI and room delete in the app.
+- `multi_household_delete_room.sql` — **run after** `security_hardening.sql`: `active_household_id` on `profiles`, relax single-home `household_members` uniqueness, replace `api_household_id_by_profile` / `api_bootstrap_user` / `api_join_household`, add `api_list_households`, `api_create_household`, `api_set_active_household`, `api_delete_room`, `api_delete_household` (optional tasks cleanup when `public.tasks` exists), and grants. Required for multi-home UI, room delete, and household delete in the app. If this file was applied before `api_delete_household` existed, re-run the new function + `grant` block from the bottom of the file in the SQL Editor.
 
 ## Current Behavior Summary
 

@@ -9,6 +9,7 @@ import {
   createHousehold,
   createPlant,
   createRoom,
+  deleteHousehold,
   deleteRoom,
   joinHousehold,
   listHouseholds,
@@ -163,7 +164,11 @@ export default function Home() {
   }
 
   async function loadHouseholds() {
-    const list = await listHouseholds(getCurrentInitData());
+    let list = await listHouseholds(getCurrentInitData());
+    if (list.length === 0) {
+      await bootstrapUser(getCurrentInitData(), null);
+      list = await listHouseholds(getCurrentInitData());
+    }
     setHouseholdSummaries(list);
     const active = list.find((h) => h.is_active) ?? list[0];
     if (active) {
@@ -173,6 +178,9 @@ export default function Home() {
         name: active.household_name,
         invite_code: active.invite_code,
       });
+    } else {
+      setHouseholdId(null);
+      setCurrentHousehold(null);
     }
   }
 
@@ -380,6 +388,23 @@ export default function Home() {
     }
     await fetchRoomsForHousehold();
     setMessage("Room deleted");
+  }
+
+  async function handleDeleteHousehold(targetHouseholdId: string, homeLabel: string) {
+    const ok = window.confirm(
+      `Delete home "${homeLabel}"? All rooms and plants in this home will be removed for every member.`,
+    );
+    if (!ok) {
+      return;
+    }
+    await deleteHousehold(getCurrentInitData(), targetHouseholdId);
+    if (householdId === targetHouseholdId) {
+      setSelectedRoom(null);
+      clearRoomDetailState();
+    }
+    await loadHouseholds();
+    await fetchRoomsForHousehold();
+    setMessage("Home deleted");
   }
 
   function householdInitials(name: string) {
@@ -849,54 +874,70 @@ export default function Home() {
                   const isCurrent = h.household_id === householdId;
                   const tint = householdCardTint(index);
                   return (
-                    <button
+                    <div
                       key={h.household_id}
-                      type="button"
-                      onClick={() => {
-                        if (!isCurrent) {
-                          void runSafely(() => handleSwitchHousehold(h.household_id));
-                        }
-                      }}
-                      className={`group text-left transition ${
+                      className={`group flex transition ${
                         homesForPicker.length <= 1 ? "w-full" : "w-[min(100%,11.5rem)] shrink-0 snap-start sm:w-44"
-                      } rounded-2xl border-2 p-3.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#006c49] focus-visible:ring-offset-2 ${
+                      } rounded-2xl border-2 focus-within:ring-2 focus-within:ring-[#006c49] focus-within:ring-offset-2 ${
                         isCurrent
-                          ? "cursor-default border-[#006c49] bg-white shadow-[0_6px_24px_rgba(0,108,73,0.15)]"
-                          : "cursor-pointer border-transparent bg-white/70 shadow-sm hover:border-[#bbcabf]/80 hover:bg-white hover:shadow-md active:scale-[0.98]"
+                          ? "border-[#006c49] bg-white shadow-[0_6px_24px_rgba(0,108,73,0.15)]"
+                          : "border-transparent bg-white/70 shadow-sm hover:border-[#bbcabf]/80 hover:bg-white hover:shadow-md"
                       }`}
                     >
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-bold text-white shadow-inner ${tint}`}
-                        >
-                          {householdInitials(h.household_name)}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-semibold leading-snug text-[#1f1b17]">
-                            {h.household_name}
-                          </p>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            {isCurrent ? (
-                              <span className="inline-flex items-center gap-0.5 rounded-full bg-[#e6f5ef] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#006c49]">
-                                <span
-                                  className="material-symbols-outlined text-[12px]"
-                                  style={{
-                                    fontVariationSettings: '"FILL" 1, "wght" 600, "GRAD" 0, "opsz" 20',
-                                  }}
-                                >
-                                  check_circle
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!isCurrent) {
+                            void runSafely(() => handleSwitchHousehold(h.household_id));
+                          }
+                        }}
+                        className={`min-w-0 flex-1 rounded-2xl p-3.5 text-left focus:outline-none ${
+                          isCurrent ? "cursor-default" : "cursor-pointer active:scale-[0.98]"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div
+                            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-bold text-white shadow-inner ${tint}`}
+                          >
+                            {householdInitials(h.household_name)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-semibold leading-snug text-[#1f1b17]">
+                              {h.household_name}
+                            </p>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              {isCurrent ? (
+                                <span className="inline-flex items-center gap-0.5 rounded-full bg-[#e6f5ef] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#006c49]">
+                                  <span
+                                    className="material-symbols-outlined text-[12px]"
+                                    style={{
+                                      fontVariationSettings: '"FILL" 1, "wght" 600, "GRAD" 0, "opsz" 20',
+                                    }}
+                                  >
+                                    check_circle
+                                  </span>
+                                  Active
                                 </span>
-                                Active
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-semibold uppercase tracking-wide text-[#6c7a71]">
-                                Tap to open
-                              </span>
-                            )}
+                              ) : (
+                                <span className="text-[10px] font-semibold uppercase tracking-wide text-[#6c7a71]">
+                                  Tap to open
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void runSafely(() => handleDeleteHousehold(h.household_id, h.household_name));
+                        }}
+                        className="flex shrink-0 items-start justify-center rounded-tr-2xl rounded-br-2xl px-2.5 pb-2 pt-3 text-[#6c7a71] transition hover:bg-[#ffdad6]/50 hover:text-[#93000a] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ba1a1a]/40"
+                        aria-label={`Delete home ${h.household_name}`}
+                      >
+                        <span className="material-symbols-outlined text-[20px]">delete</span>
+                      </button>
+                    </div>
                   );
                 })}
               </div>
