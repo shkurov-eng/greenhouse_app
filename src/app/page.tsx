@@ -41,6 +41,12 @@ type PlantMarker = {
 
 type PlantStatus = "healthy" | "thirsty" | "overdue";
 
+type Household = {
+  id: string;
+  name: string;
+  invite_code: string | null;
+};
+
 declare global {
   interface Window {
     Telegram?: {
@@ -52,7 +58,11 @@ declare global {
 export default function Home() {
   const [message, setMessage] = useState("No Telegram user detected");
   const [isDebugMock, setIsDebugMock] = useState(false);
+  const [profileId, setProfileId] = useState<string | null>(null);
   const [householdId, setHouseholdId] = useState<string | null>(null);
+  const [currentHousehold, setCurrentHousehold] = useState<Household | null>(null);
+  const [isJoinHomeOpen, setIsJoinHomeOpen] = useState(false);
+  const [joinCode, setJoinCode] = useState("");
   const [roomName, setRoomName] = useState("");
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -74,6 +84,15 @@ export default function Home() {
   const [editPlantStatus, setEditPlantStatus] = useState<PlantStatus>("healthy");
   const [roomFiles, setRoomFiles] = useState<Record<string, File | null>>({});
   const [roomUploadStatus, setRoomUploadStatus] = useState<Record<string, string>>({});
+
+  function generateInviteCode() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let code = "";
+    for (let i = 0; i < 6; i += 1) {
+      code += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return code;
+  }
 
   function getMarkerColorClasses(status: PlantStatus) {
     if (status === "healthy") {
@@ -227,6 +246,42 @@ export default function Home() {
     });
   }
 
+  async function fetchHouseholdById(id: string) {
+    const { data, error } = await supabase
+      .from("households")
+      .select("id, name, invite_code")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error fetching household:", error);
+      return null;
+    }
+
+    return (data ?? null) as Household | null;
+  }
+
+  async function ensureHouseholdInviteCode(household: Household) {
+    if (household.invite_code) {
+      return household;
+    }
+
+    const newCode = generateInviteCode();
+    const { data, error } = await supabase
+      .from("households")
+      .update({ invite_code: newCode })
+      .eq("id", household.id)
+      .select("id, name, invite_code")
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error setting invite code:", error);
+      return household;
+    }
+
+    return (data ?? household) as Household;
+  }
+
   useEffect(() => {
     let isMounted = true;
 
@@ -309,6 +364,7 @@ export default function Home() {
         console.error("Profile not found after save.");
         return;
       }
+      setProfileId(profile.id);
 
       const { data: membership, error: membershipError } = await supabase
         .from("household_members")
@@ -328,9 +384,10 @@ export default function Home() {
           setMessage("User already in household");
         }
       } else {
+        const inviteCode = generateInviteCode();
         const { data: household, error: householdError } = await supabase
           .from("households")
-          .insert({ name: "My Home" })
+          .insert({ name: "My Home", invite_code: inviteCode })
           .select("id, name")
           .single();
 
@@ -363,6 +420,11 @@ export default function Home() {
       if (currentHouseholdId) {
         if (isMounted) {
           setHouseholdId(currentHouseholdId);
+        }
+        const household = await fetchHouseholdById(currentHouseholdId);
+        if (household) {
+          const withCode = await ensureHouseholdInviteCode(household);
+          setCurrentHousehold(withCode);
         }
         await fetchRoomsForHousehold(currentHouseholdId);
       }
@@ -442,6 +504,56 @@ export default function Home() {
     setIsCreateRoomOpen(false);
     setMessage("Room created");
     await fetchRoomsForHousehold(householdId);
+  }
+
+  async function handleJoinHome() {
+    if (!profileId) {
+      setMessage("Profile is not ready");
+      return;
+    }
+
+    const code = joinCode.trim().toUpperCase();
+    if (!code) {
+      setMessage("Enter invite code");
+      return;
+    }
+
+    const { data: targetHome, error: targetHomeError } = await supabase
+      .from("households")
+      .select("id, name, invite_code")
+      .eq("invite_code", code)
+      .maybeSingle();
+
+    if (targetHomeError) {
+      console.error("Error finding household by invite code:", targetHomeError);
+      return;
+    }
+    if (!targetHome) {
+      setMessage("Invite code not found");
+      return;
+    }
+    if (targetHome.id === householdId) {
+      setMessage("You are already in this home");
+      return;
+    }
+
+    const { error: joinError } = await supabase
+      .from("household_members")
+      .update({ household_id: targetHome.id })
+      .eq("user_id", profileId);
+
+    if (joinError) {
+      console.error("Error joining household:", joinError);
+      return;
+    }
+
+    setHouseholdId(targetHome.id);
+    setCurrentHousehold(targetHome as Household);
+    setSelectedRoom(null);
+    setIsJoinHomeOpen(false);
+    setJoinCode("");
+    await fetchRoomsForHousehold(targetHome.id);
+    setMessage(`Joined ${targetHome.name}`);
   }
 
   async function handleCreatePlant() {
@@ -867,6 +979,25 @@ export default function Home() {
             </div>
           </section>
 
+          <section className="mb-6 rounded-[24px] bg-white p-4 shadow-[0_4px_20px_rgba(148,74,35,0.06)]">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6c7a71]">
+              Current Home
+            </p>
+            <p className="mt-1 text-lg font-semibold text-[#1f1b17]">
+              {currentHousehold?.name ?? "My Home"}
+            </p>
+            <p className="mt-1 text-xs text-[#6c7a71]">
+              Invite code: {currentHousehold?.invite_code ?? "Generating..."}
+            </p>
+            <button
+              type="button"
+              onClick={() => setIsJoinHomeOpen(true)}
+              className="mt-3 rounded-xl border border-[#bbcabf] px-3 py-2 text-xs font-semibold text-[#3c4a42]"
+            >
+              Join other home
+            </button>
+          </section>
+
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {rooms.length === 0 ? (
               <div className="rounded-[24px] bg-white p-5 text-sm text-[#6c7a71] shadow-[0_4px_20px_rgba(148,74,35,0.06)]">
@@ -960,6 +1091,38 @@ export default function Home() {
                 className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
               >
                 Create Room
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {!selectedRoom && isJoinHomeOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/30 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
+          <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
+            <h3 className="text-base font-semibold text-[#1f1b17]">Join Home</h3>
+            <p className="mt-1 text-sm text-[#6c7a71]">Enter invite code</p>
+            <input
+              value={joinCode}
+              onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+              placeholder="ABC123"
+              className="mt-4 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm uppercase outline-none focus:border-[#006c49]"
+              autoFocus
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsJoinHomeOpen(false)}
+                className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-medium text-[#3c4a42]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleJoinHome}
+                className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
+              >
+                Join
               </button>
             </div>
           </div>
