@@ -6,7 +6,7 @@ This document summarizes what has already been implemented in the project.
 
 - Next.js app (App Router) with TypeScript.
 - Supabase (PostgreSQL + Storage); **browser no longer queries tables directly**.
-- Typed client API wrapper: `src/lib/api.ts` (calls `POST /api/secure` and `POST /api/rooms/upload`).
+- Typed client API wrapper: `src/lib/api.ts` (calls `POST /api/secure` and `POST /api/rooms/upload`). Secure actions include household list/create/set-active, `deleteRoom`, and existing room/plant flows (see `SecureAction` in `src/app/api/secure/route.ts`).
 - Server-side Supabase admin client: `src/lib/server/supabaseAdmin.ts` (service role, lazy init).
 - Telegram auth helper: `src/lib/server/telegramAuth.ts` (`initData` HMAC verification; optional local dev mode).
 - Environment variables (see also `.env.example`):
@@ -35,9 +35,14 @@ This document summarizes what has already been implemented in the project.
 - Household bootstrap and join are done through RPC (`api_bootstrap_user`, `api_join_household`) invoked from `/api/secure`.
 - Invite codes are generated server-side in SQL where applicable.
 - Join-home in UI:
-  - Current home card shows invite code
-  - User can join another home via invite code modal
-  - Membership is updated server-side with membership checks
+  - Homes section shows invite code with **copy to clipboard** action.
+  - User can join another home via invite code modal (`Join with code`).
+  - **Multi-household** (after `multi_household_delete_room.sql` on Supabase):
+    - `profiles.active_household_id` — which household drives `listRooms` and other room/plant RPCs.
+    - `api_list_households`, `api_create_household`, `api_set_active_household`; `api_join_household` **adds** membership and sets the joined home active (user can belong to several homes).
+    - Legacy unique-on-`user_id` alone on `household_members` must be dropped in favor of `UNIQUE (household_id, user_id)` (script attempts common constraint/index names, including `household_members_user_id_unique`).
+    - `INSERT ... ON CONFLICT` in PL/pgSQL uses **dynamic `EXECUTE ... USING`** where needed so `RETURNS TABLE (household_id, ...)` output names do not shadow column names.
+  - UI: card-style **home picker** (horizontal scroll when multiple homes), **Create new home** modal, same secure API patterns.
 
 ## Stage 3 - Rooms
 
@@ -49,6 +54,7 @@ This document summarizes what has already been implemented in the project.
   - Legacy `rooms.sql` described public policies; **effective production shape** is private + signed URLs.
 - Rooms UI:
   - Rooms list, room detail, FAB add room, add room modal
+  - **Delete room** from overview card (confirm dialog); RPC `api_delete_room` (cascade removes plants/markers per schema).
 - Room images:
   - Upload: `POST /api/rooms/upload` (service role uploads file, RPC attaches path to room).
   - Display: `listRooms` / `createRoom` responses include **`signed_background_url`** (short-lived signed URL from Storage).
@@ -69,6 +75,9 @@ This document summarizes what has already been implemented in the project.
 ## UI / Design System Work
 
 - Stitch-style layout, Material Symbols, cards, mobile shell (unchanged intent).
+- **Bottom navigation** (`src/components/MobileShell.tsx`): `Link` routes — **Rooms** `/`, **Inbox** `/tasks`, **Settings** `/settings` (active tab from pathname). Main rooms experience stays on `/`.
+- **Placeholder pages:** `src/app/tasks/page.tsx` (tasks / inbox stub), `src/app/settings/page.tsx` (settings stub), each with back link to `/`.
+- Overview header **settings** icon links to `/settings`.
 - **Fonts:** `next/font/google` (Plus Jakarta Sans) was removed so **production build does not depend on Google Fonts at fetch time**; app font stack is set in `src/app/globals.css` (system / web-safe stack under `--font-plus-jakarta`).
 
 ## SQL / Migration Files Present
@@ -77,10 +86,11 @@ This document summarizes what has already been implemented in the project.
 - `plants.sql` — plants + `plant_markers` + indexes.
 - `households_join.sql` — `invite_code` on `households` + unique index.
 - `security_hardening.sql` — RLS, revoke direct table access from anon/auth, `public.api_*` RPCs, private `rooms` storage, `rooms.background_path`, grants for RPC execution.
+- `multi_household_delete_room.sql` — **run after** `security_hardening.sql`: `active_household_id` on `profiles`, relax single-home `household_members` uniqueness, replace `api_household_id_by_profile` / `api_bootstrap_user` / `api_join_household`, add `api_list_households`, `api_create_household`, `api_set_active_household`, `api_delete_room`, and grants. Required for multi-home UI and room delete in the app.
 
 ## Current Behavior Summary
 
 - **Production:** open only from Telegram Mini App (menu / `web_app` button). Server requires valid `initData` + `TELEGRAM_BOT_TOKEN`.
 - **Local browser debug:** `npm run dev` + `DEV_BROWSER_MODE=true` + `DEV_TELEGRAM_ID` + `SUPABASE_SERVICE_ROLE_KEY` (not available on deployed Vercel preview/prod by design).
-- All data access: `POST /api/secure`, `POST /api/rooms/upload`; RLS + RPC enforce household scope.
+- All data access: `POST /api/secure`, `POST /api/rooms/upload`; RLS + RPC enforce household scope (active household from `profiles.active_household_id` when migration applied).
 - Room thumbnails and detail images use **signed URLs**; legacy public URLs are supported via path extraction when needed.

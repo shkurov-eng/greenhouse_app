@@ -27,6 +27,28 @@ import {
   type Room,
 } from "@/lib/api";
 
+/** UI watering urgency from clock: green under 5 min, yellow 5 min–1 h, red after 1 h (or never watered). */
+const THIRSTY_AFTER_MS = 5 * 60 * 1000;
+const OVERDUE_AFTER_MS = 60 * 60 * 1000;
+
+function wateringDerivedStatus(lastWateredAt: string | null): PlantStatus {
+  if (!lastWateredAt) {
+    return "overdue";
+  }
+  const t = new Date(lastWateredAt).getTime();
+  if (Number.isNaN(t)) {
+    return "overdue";
+  }
+  const elapsed = Date.now() - t;
+  if (elapsed < THIRSTY_AFTER_MS) {
+    return "healthy";
+  }
+  if (elapsed < OVERDUE_AFTER_MS) {
+    return "thirsty";
+  }
+  return "overdue";
+}
+
 type TelegramWebAppUser = {
   id: number;
   username?: string;
@@ -85,6 +107,18 @@ export default function Home() {
   const [editPlantStatus, setEditPlantStatus] = useState<PlantStatus>("healthy");
   const [roomFiles, setRoomFiles] = useState<Record<string, File | null>>({});
   const [roomUploadStatus, setRoomUploadStatus] = useState<Record<string, string>>({});
+  /** Bumps on an interval so marker colors refresh from `last_watered_at` without refetch. */
+  const [, setWateringUiTick] = useState(0);
+
+  useEffect(() => {
+    if (!selectedRoom) {
+      return;
+    }
+    const id = window.setInterval(() => {
+      setWateringUiTick((n) => n + 1);
+    }, 30_000);
+    return () => window.clearInterval(id);
+  }, [selectedRoom]);
 
   function getMarkerColorClasses(status: PlantStatus) {
     if (status === "healthy") {
@@ -631,7 +665,7 @@ export default function Home() {
                 const markerPlant = plants.find((plant) => plant.id === marker.plant_id);
                 const isActive = activeMarkerId === marker.id;
                 const isJustWatered = justWateredMarkerId === marker.id;
-                const status = markerPlant?.status ?? "healthy";
+                const status = wateringDerivedStatus(markerPlant?.last_watered_at ?? null);
                 const colors = getMarkerColorClasses(status);
                 return (
                   <div
@@ -702,7 +736,7 @@ export default function Home() {
                             <p className="text-xs text-[#6c7a71]">{plant.species}</p>
                           ) : null}
                           <p className="mt-1 text-[10px] uppercase tracking-wide text-[#6c7a71]">
-                            {plant.status}
+                            {wateringDerivedStatus(plant.last_watered_at)}
                           </p>
                           <p className="text-[10px] text-[#6c7a71]">
                             Last watered: {formatLastWatered(plant.last_watered_at)}
