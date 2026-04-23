@@ -107,10 +107,16 @@ async function enrichRoomsWithSignedUrls(rows: Array<Record<string, unknown>>) {
 }
 
 export async function POST(request: NextRequest) {
+  let actionForLog = "unknown";
+  const userAgent = request.headers.get("user-agent") ?? "";
+  const hasInitDataHeader = Boolean(request.headers.get("x-telegram-init-data"));
+  const isTelegramUserAgent = /telegram/i.test(userAgent);
+
   try {
     const telegramId = getRequestTelegramId(request);
     const body = (await request.json()) as RequestBody;
     const action = body.action;
+    actionForLog = action ?? "unknown";
     const payload = body.payload ?? {};
 
     if (!action) {
@@ -244,6 +250,14 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown secure API error";
+    console.warn("[secure-api] request failed", {
+      action: actionForLog,
+      hasInitDataHeader,
+      isTelegramUserAgent,
+      method: request.method,
+      path: request.nextUrl.pathname,
+      message,
+    });
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
