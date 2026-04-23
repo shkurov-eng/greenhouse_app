@@ -1,26 +1,65 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { supabase } from "@/lib/supabase";
 
-export default function Home() {
-  useEffect(() => {
-    async function testSupabaseConnection() {
-      const { data, error } = await supabase.from("profiles").select("*");
+type TelegramWebAppUser = {
+  id: number;
+  username?: string;
+};
 
-      if (error) {
-        console.error("Supabase connection error:", error);
+type TelegramWebApp = {
+  initDataUnsafe?: {
+    user?: TelegramWebAppUser;
+  };
+};
+
+declare global {
+  interface Window {
+    Telegram?: {
+      WebApp?: TelegramWebApp;
+    };
+  }
+}
+
+export default function Home() {
+  const [message, setMessage] = useState("Open inside Telegram");
+
+  useEffect(() => {
+    async function saveTelegramUser() {
+      const tg = window.Telegram?.WebApp;
+      const user = tg?.initDataUnsafe?.user;
+
+      if (!user) {
+        setMessage("Open inside Telegram");
         return;
       }
 
-      console.log("Supabase profiles result:", data);
+      const { data, error } = await supabase
+        .from("profiles")
+        .upsert(
+          {
+            telegram_id: user.id,
+            username: user.username ?? null,
+          },
+          { onConflict: "telegram_id" },
+        )
+        .select();
+
+      if (error) {
+        console.error("Error saving Telegram user:", error);
+        return;
+      }
+
+      console.log("Telegram user upsert result:", data);
+      setMessage("User saved");
     }
 
-    testSupabaseConnection().catch((error) => {
-      console.error("Unexpected Supabase error:", error);
+    saveTelegramUser().catch((error) => {
+      console.error("Unexpected Telegram/Supabase error:", error);
     });
   }, []);
 
-  return <main>Supabase connected</main>;
+  return <main>{message}</main>;
 }
