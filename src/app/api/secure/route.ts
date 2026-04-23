@@ -6,8 +6,12 @@ import { getRequestTelegramId } from "@/lib/server/telegramAuth";
 type SecureAction =
   | "bootstrap"
   | "joinHousehold"
+  | "listHouseholds"
+  | "createHousehold"
+  | "setActiveHousehold"
   | "listRooms"
   | "createRoom"
+  | "deleteRoom"
   | "listRoomDetails"
   | "createPlant"
   | "waterPlant"
@@ -56,6 +60,16 @@ function asPlantStatus(value: unknown) {
     return value;
   }
   throw new Error("Invalid plant status");
+}
+
+function asUuid(value: unknown, fieldName: string) {
+  const s = asString(value, fieldName);
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)
+  ) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  return s;
 }
 
 async function rpc(fn: string, params: Record<string, unknown>): Promise<unknown> {
@@ -192,6 +206,43 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ data });
       }
 
+      case "listHouseholds": {
+        const raw = (await rpc("api_list_households", {
+          p_telegram_id: telegramId,
+        })) as Array<Record<string, unknown>> | null;
+        const rows = raw ?? [];
+        const data = rows.map((row) => ({
+          household_id: String(row.household_id),
+          household_name: String(row.household_name ?? ""),
+          invite_code:
+            row.invite_code == null || row.invite_code === ""
+              ? null
+              : String(row.invite_code),
+          is_active: Boolean(row.is_active),
+        }));
+        return NextResponse.json({ data });
+      }
+
+      case "createHousehold": {
+        const name = asOptionalString(payload.name);
+        const result = await rpc("api_create_household", {
+          p_telegram_id: telegramId,
+          p_name: name,
+        });
+        const data = unwrapSingleRow<Record<string, unknown>>(result);
+        return NextResponse.json({ data });
+      }
+
+      case "setActiveHousehold": {
+        const householdId = asUuid(payload.householdId, "householdId");
+        const result = await rpc("api_set_active_household", {
+          p_telegram_id: telegramId,
+          p_household_id: householdId,
+        });
+        const data = unwrapSingleRow<Record<string, unknown>>(result);
+        return NextResponse.json({ data });
+      }
+
       case "listRooms": {
         const rooms = (await rpc("api_list_rooms", {
           p_telegram_id: telegramId,
@@ -209,6 +260,15 @@ export async function POST(request: NextRequest) {
         const room = unwrapSingleRow<Record<string, unknown>>(result);
         const [data] = await enrichRoomsWithSignedUrls([room]);
         return NextResponse.json({ data });
+      }
+
+      case "deleteRoom": {
+        const roomId = asUuid(payload.roomId, "roomId");
+        await rpc("api_delete_room", {
+          p_telegram_id: telegramId,
+          p_room_id: roomId,
+        });
+        return NextResponse.json({ data: { ok: true as const } });
       }
 
       case "listRoomDetails": {

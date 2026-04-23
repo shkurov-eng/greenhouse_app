@@ -1,19 +1,26 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import { MobileShell } from "@/components/MobileShell";
 import {
   bootstrapUser,
+  createHousehold,
   createPlant,
   createRoom,
+  deleteRoom,
   joinHousehold,
+  listHouseholds,
   listRoomDetails,
   listRooms,
+  setActiveHousehold,
   updatePlant,
   uploadRoomImage,
   upsertMarker,
   waterPlant,
   type Household,
+  type HouseholdSummary,
   type Plant,
   type PlantMarker,
   type PlantStatus,
@@ -53,6 +60,9 @@ export default function Home() {
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [currentHousehold, setCurrentHousehold] = useState<Household | null>(null);
   const [isJoinHomeOpen, setIsJoinHomeOpen] = useState(false);
+  const [isCreateHomeOpen, setIsCreateHomeOpen] = useState(false);
+  const [newHomeName, setNewHomeName] = useState("");
+  const [householdSummaries, setHouseholdSummaries] = useState<HouseholdSummary[]>([]);
   const [joinCode, setJoinCode] = useState("");
   const [roomName, setRoomName] = useState("");
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
@@ -116,6 +126,20 @@ export default function Home() {
 
   function getCurrentInitData() {
     return telegramInitDataRef.current ?? telegramInitData;
+  }
+
+  async function loadHouseholds() {
+    const list = await listHouseholds(getCurrentInitData());
+    setHouseholdSummaries(list);
+    const active = list.find((h) => h.is_active) ?? list[0];
+    if (active) {
+      setHouseholdId(active.household_id);
+      setCurrentHousehold({
+        id: active.household_id,
+        name: active.household_name,
+        invite_code: active.invite_code,
+      });
+    }
   }
 
   function clearRoomDetailState() {
@@ -219,18 +243,10 @@ export default function Home() {
         setIsTelegramUserAgentDetected(isTelegramUa);
       }
 
-      const bootstrap = await bootstrapUser(telegramInitDataValue, telegramUser?.username ?? null);
-      const currentHouseholdId = bootstrap.household_id;
+      await bootstrapUser(telegramInitDataValue, telegramUser?.username ?? null);
 
-      if (currentHouseholdId && isMounted) {
-        if (isMounted) {
-          setHouseholdId(currentHouseholdId);
-        }
-        setCurrentHousehold({
-          id: currentHouseholdId,
-          name: bootstrap.household_name,
-          invite_code: bootstrap.invite_code,
-        });
+      if (isMounted) {
+        await loadHouseholds();
         await fetchRoomsForHousehold();
         setMessage("User initialized");
       }
@@ -283,22 +299,53 @@ export default function Home() {
 
     const targetHome = await joinHousehold(getCurrentInitData(), code);
     if (targetHome.household_id === householdId) {
-      setMessage("You are already in this home");
+      setMessage("This home is already active");
+      await loadHouseholds();
       return;
     }
 
-    setHouseholdId(targetHome.household_id);
-    setCurrentHousehold({
-      id: targetHome.household_id,
-      name: targetHome.household_name,
-      invite_code: targetHome.invite_code,
-    });
     setSelectedRoom(null);
     clearRoomDetailState();
     setIsJoinHomeOpen(false);
     setJoinCode("");
+    await loadHouseholds();
     await fetchRoomsForHousehold();
     setMessage(`Joined ${targetHome.household_name}`);
+  }
+
+  async function handleSwitchHousehold(targetId: string) {
+    await setActiveHousehold(getCurrentInitData(), targetId);
+    setSelectedRoom(null);
+    clearRoomDetailState();
+    await loadHouseholds();
+    await fetchRoomsForHousehold();
+    setMessage("Home switched");
+  }
+
+  async function handleCreateHome() {
+    const label = newHomeName.trim();
+    await createHousehold(getCurrentInitData(), label.length > 0 ? label : null);
+    setNewHomeName("");
+    setIsCreateHomeOpen(false);
+    setSelectedRoom(null);
+    clearRoomDetailState();
+    await loadHouseholds();
+    await fetchRoomsForHousehold();
+    setMessage("New home created");
+  }
+
+  async function handleDeleteRoom(roomId: string, roomLabel: string) {
+    const ok = window.confirm(`Delete room "${roomLabel}"? Plants in this room will be removed.`);
+    if (!ok) {
+      return;
+    }
+    await deleteRoom(getCurrentInitData(), roomId);
+    if (selectedRoom?.id === roomId) {
+      setSelectedRoom(null);
+      clearRoomDetailState();
+    }
+    await fetchRoomsForHousehold();
+    setMessage("Room deleted");
   }
 
   async function handleCreatePlant() {
@@ -480,6 +527,7 @@ export default function Home() {
   }
 
   return (
+    <MobileShell>
     <main className="min-h-screen bg-[#fff8f5] pb-32 text-[#1f1b17]">
       {selectedRoom ? (
         <div className="mx-auto flex w-full max-w-5xl flex-col">
@@ -646,9 +694,13 @@ export default function Home() {
               <span className="material-symbols-outlined text-[#006c49]">potted_plant</span>
               <p className="text-lg font-extrabold tracking-tight text-[#006c49]">GreenHouse</p>
             </div>
-            <button className="rounded-full bg-white p-2 text-[#6c7a71] shadow-sm">
+            <Link
+              href="/settings"
+              className="rounded-full bg-white p-2 text-[#6c7a71] shadow-sm"
+              aria-label="Settings"
+            >
               <span className="material-symbols-outlined">settings</span>
-            </button>
+            </Link>
           </header>
 
           <section className="mb-8 flex items-end justify-between">
@@ -679,13 +731,44 @@ export default function Home() {
             <p className="mt-1 text-xs text-[#6c7a71]">
               Invite code: {currentHousehold?.invite_code ?? "Generating..."}
             </p>
-            <button
-              type="button"
-              onClick={() => setIsJoinHomeOpen(true)}
-              className="mt-3 rounded-xl border border-[#bbcabf] px-3 py-2 text-xs font-semibold text-[#3c4a42]"
-            >
-              Join other home
-            </button>
+            {householdSummaries.length > 1 ? (
+              <label className="mt-3 block text-xs font-semibold text-[#3c4a42]">
+                Active home
+                <select
+                  value={householdId ?? ""}
+                  onChange={(event) => {
+                    const nextId = event.target.value;
+                    if (nextId && nextId !== householdId) {
+                      void runSafely(() => handleSwitchHousehold(nextId));
+                    }
+                  }}
+                  className="mt-1 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+                >
+                  {householdSummaries.map((h) => (
+                    <option key={h.household_id} value={h.household_id}>
+                      {h.household_name}
+                      {h.is_active ? " (active)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setIsCreateHomeOpen(true)}
+                className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-3 py-2 text-xs font-semibold text-white"
+              >
+                Create new home
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsJoinHomeOpen(true)}
+                className="rounded-xl border border-[#bbcabf] px-3 py-2 text-xs font-semibold text-[#3c4a42]"
+              >
+                Join other home
+              </button>
+            </div>
           </section>
 
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -703,7 +786,7 @@ export default function Home() {
                     void runSafely(() => fetchRoomDetails(room.id));
                   }}
                 >
-                  <div className="h-48 bg-[#f6ece6]">
+                  <div className="relative h-48 bg-[#f6ece6]">
                     {getRoomImageUrl(room) ? (
                       <img
                         src={getRoomImageUrl(room) ?? undefined}
@@ -715,6 +798,17 @@ export default function Home() {
                         No image
                       </div>
                     )}
+                    <button
+                      type="button"
+                      className="absolute right-2 top-2 rounded-full bg-white/95 p-1.5 text-[#93000a] shadow-md active:scale-95"
+                      aria-label={`Delete ${room.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void runSafely(() => handleDeleteRoom(room.id, room.name));
+                      }}
+                    >
+                      <span className="material-symbols-outlined text-lg">delete</span>
+                    </button>
                   </div>
 
                   <div className="p-4">
@@ -788,6 +882,40 @@ export default function Home() {
                 className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
               >
                 Create Room
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {!selectedRoom && isCreateHomeOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/30 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
+          <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
+            <h3 className="text-base font-semibold text-[#1f1b17]">Create new home</h3>
+            <p className="mt-1 text-sm text-[#6c7a71]">Starts an empty household. You can switch anytime.</p>
+            <input
+              value={newHomeName}
+              onChange={(event) => setNewHomeName(event.target.value)}
+              placeholder="Home name (optional)"
+              className="mt-4 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+              autoFocus
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsCreateHomeOpen(false)}
+                className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-medium text-[#3c4a42]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void runSafely(handleCreateHome);
+                }}
+                className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
+              >
+                Create
               </button>
             </div>
           </div>
@@ -933,27 +1061,7 @@ export default function Home() {
         </div>
       ) : null}
 
-      <nav className="fixed bottom-0 left-0 z-40 flex w-full items-center justify-around rounded-t-2xl bg-white/90 px-4 pb-6 pt-3 shadow-[0_-4px_20px_rgba(27,67,50,0.05)] backdrop-blur-lg">
-        <button className="flex flex-col items-center rounded-xl bg-[#e6f5ef] px-4 py-1 text-[#006c49]">
-          <span
-            className="material-symbols-outlined"
-            style={{ fontVariationSettings: '"FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24' }}
-          >
-            grid_view
-          </span>
-          <span className="mt-1 text-[11px] font-semibold uppercase tracking-wider">Rooms</span>
-        </button>
-        <button className="flex flex-col items-center px-4 py-1 text-[#6c7a71]">
-          <span className="material-symbols-outlined">all_inbox</span>
-          <span className="mt-1 text-[11px] font-semibold uppercase tracking-wider">Inbox</span>
-        </button>
-        <button className="flex flex-col items-center px-4 py-1 text-[#6c7a71]">
-          <span className="material-symbols-outlined">settings</span>
-          <span className="mt-1 text-[11px] font-semibold uppercase tracking-wider">
-            Settings
-          </span>
-        </button>
-      </nav>
     </main>
+    </MobileShell>
   );
 }

@@ -4,152 +4,83 @@ This document summarizes what has already been implemented in the project.
 
 ## Tech Stack and Base Setup
 
-- Next.js app with TypeScript.
-- Supabase client is simplified to a single client file:
-  - `src/lib/supabase.ts`
-- Environment variables used:
-  - `NEXT_PUBLIC_SUPABASE_URL`
-  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- Next.js app (App Router) with TypeScript.
+- Supabase (PostgreSQL + Storage); **browser no longer queries tables directly**.
+- Typed client API wrapper: `src/lib/api.ts` (calls `POST /api/secure` and `POST /api/rooms/upload`).
+- Server-side Supabase admin client: `src/lib/server/supabaseAdmin.ts` (service role, lazy init).
+- Telegram auth helper: `src/lib/server/telegramAuth.ts` (`initData` HMAC verification; optional local dev mode).
+- Environment variables (see also `.env.example`):
+  - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+  - `SUPABASE_SERVICE_ROLE_KEY` (server only)
+  - `TELEGRAM_BOT_TOKEN` (production / real Mini App)
+  - Optional local browser debug: `DEV_BROWSER_MODE=true`, `DEV_TELEGRAM_ID` (only with `npm run dev`)
+- `src/lib/supabase.ts` remains for potential non-UI use; **main UI does not use it for data access**.
 - Git repository initialized for the project.
 
 ## Stage 1 - Foundation
 
-- Telegram Mini App integration is implemented in `src/app/page.tsx`.
-- Telegram SDK script is loaded in `src/app/layout.tsx`:
+- Telegram Mini App integration in `src/app/page.tsx`.
+- Telegram SDK script in `src/app/layout.tsx`:
   - `https://telegram.org/js/telegram-web-app.js`
-- Telegram user handling:
-  - Reads `window.Telegram?.WebApp?.initDataUnsafe?.user`
-  - Saves user to `profiles` table (`telegram_id`, `username`)
-- Debug mode support:
-  - If Telegram user is missing, mock user can be used in development.
-  - Query flag support: `?debugTelegram=1`
-- Console debug logging and runtime checks were implemented and then cleaned up where needed.
+- Bootstrap flow:
+  - Reads `window.Telegram?.WebApp?.initData` (signed string) and passes it to the server on every secure request via header `x-telegram-init-data`.
+  - **`telegramInitDataRef`** keeps `initData` in sync immediately so the first `listRooms` after bootstrap does not race React state (avoids missing header).
+  - Username still read from `initDataUnsafe.user` when present (display/bootstrap hint only).
+- Server validates `initData` with `TELEGRAM_BOT_TOKEN` and resolves Telegram user id before any DB work.
+- **Overview screen debug line** (for troubleshooting): shows whether WebApp object exists, whether `initData` is present, and Telegram-like user agent.
+- Optional secure API logging on failures: `src/app/api/secure/route.ts` logs `action`, `hasInitDataHeader`, `isTelegramUserAgent`, etc. (no `initData` body in logs).
 
 ## Stage 2 - Households
 
-- Household logic implemented in app flow:
-  - Fetch profile by `telegram_id`
-  - Check membership in `household_members`
-  - If missing:
-    - Create household (`My Home`)
-    - Link user to household
-  - If existing:
-    - Reuse existing household
-- Join-home functionality implemented:
-  - `households.invite_code` support added
+- Household bootstrap and join are done through RPC (`api_bootstrap_user`, `api_join_household`) invoked from `/api/secure`.
+- Invite codes are generated server-side in SQL where applicable.
+- Join-home in UI:
   - Current home card shows invite code
   - User can join another home via invite code modal
-  - Membership is switched by updating current user's `household_members.household_id`
+  - Membership is updated server-side with membership checks
 
 ## Stage 3 - Rooms
 
-- Rooms database setup:
-  - `rooms` table with `household_id`, `name`, `background_url`, timestamps
+- Rooms data model:
+  - `rooms` with `household_id`, `name`, `background_url`, `background_path` (after `security_hardening.sql`), timestamps
   - index on `household_id`
-- Rooms Storage setup:
-  - Supabase Storage bucket `rooms`
-  - Storage RLS policies for public read/insert/update on `rooms` bucket
+- Storage bucket `rooms`:
+  - After hardening: **private** bucket; policies for `service_role` only (see `security_hardening.sql`).
+  - Legacy `rooms.sql` described public policies; **effective production shape** is private + signed URLs.
 - Rooms UI:
-  - Rooms list view
-  - Room detail view
-  - Floating add-room button (`+`) in mobile UI
-  - Add room modal
-- Room image upload:
-  - Upload image per room to Supabase Storage
-  - Save public URL into `rooms.background_url`
-  - Show upload status in UI
-- Image display behavior:
-  - Room detail uses `object-contain` to avoid clipping on mobile
+  - Rooms list, room detail, FAB add room, add room modal
+- Room images:
+  - Upload: `POST /api/rooms/upload` (service role uploads file, RPC attaches path to room).
+  - Display: `listRooms` / `createRoom` responses include **`signed_background_url`** (short-lived signed URL from Storage).
+  - **Legacy rows** with only `background_url` (old public URL) and empty `background_path`: server tries to derive storage path from the public URL and sign it so images keep working after bucket goes private.
 
 ## Stage 4 - Plants and Markers
 
-- Plants schema support:
-  - `plants` table used with fields:
-    - `household_id`, `room_id`, `name`, `species`, `status`
-    - `last_watered_at` support added
-- Markers schema support:
-  - `plant_markers` table with normalized coordinates:
-    - `x`, `y` in range `0..1`
-  - One marker per plant via unique index on `plant_id`
-- Plant features:
-  - Add plant modal in room detail
-  - Plant list in room detail
-  - Edit plant dialog:
-    - edit `name`, `species`, `status`
-    - action button to edit marker
-- Marker placement flow was simplified:
-  - Marker selection dropdown was removed from room detail
-  - Marker editing is now initiated from `Edit Plant`
-  - `Edit marker` inside the plant edit dialog enables marker placement mode
-- Marker features:
-  - Markers rendered as pins on top of room image
-  - Marker tooltip with plant name and status
-  - Marker colors based on status:
-    - healthy / thirsty / overdue
-  - Marker position is locked by default
-  - Marker position changes only in explicit marker edit mode
-  - Marker edit mode can be canceled
-- UX flow:
-  - After adding a plant, app automatically enters marker placement mode for that new plant
-  - User can tap image to place marker immediately
+- Plants: `household_id`, `room_id`, `name`, `species`, `status`, `last_watered_at`, etc.
+- `plant_markers`: normalized `x`, `y` in `0..1`, unique per `plant_id`
+- Plant CRUD, marker placement, edit-from-plant-dialog flows as before (all via `/api/secure` + RPC).
 
 ## Stage 5 - Watering
 
-- Watering action implemented:
-  - `Watered` button on each plant
-  - Updates:
-    - `last_watered_at = now()`
-    - `status = healthy`
-- Marker tap behavior:
-  - Tapping a marker marks that plant as watered
-- Visual feedback:
-  - Marker shows short highlight/flash animation when watered
-- Status automation (debug thresholds currently enabled):
-  - Status is recalculated from `last_watered_at` on room load
-  - Current debug timing:
-    - `thirsty` after 5 minutes
-    - `overdue` after 1 hour
+- Watering updates `last_watered_at` and `status` via secure API / RPC.
+- Marker tap still waters plant; flash animation unchanged.
+- Plant **status in UI** follows values returned from the API (no client-side time-based recalculation from `last_watered_at` in the current build).
 
 ## UI / Design System Work
 
-- Main screens were refactored to match the Stitch mockup style (`_ui_mockups`):
-  - Warm color palette
-  - Plus Jakarta Sans typography
-  - Material Symbols icons
-  - Rounded cards, soft shadows, mobile-first spacing
-- Added structured app shell behavior:
-  - Header styles for overview and detail
-  - Bottom navigation visual layer
-  - Mobile floating action button
-- Mobile modal fixes:
-  - Add Room and Add Plant dialogs are now above bottom nav
-  - Extra bottom padding and scroll handling to keep action buttons accessible
+- Stitch-style layout, Material Symbols, cards, mobile shell (unchanged intent).
+- **Fonts:** `next/font/google` (Plus Jakarta Sans) was removed so **production build does not depend on Google Fonts at fetch time**; app font stack is set in `src/app/globals.css` (system / web-safe stack under `--font-plus-jakarta`).
 
 ## SQL / Migration Files Present
 
-- `rooms.sql`
-  - rooms table, index, storage bucket creation, storage policies
-- `plants.sql`
-  - plants table and updates (including status and last_watered_at)
-  - plant_markers table and indexes
-- `households_join.sql`
-  - adds `invite_code` to `households`
-  - unique index for invite code
-- `security_hardening.sql`
-  - enables RLS for core tables
-  - revokes direct `anon/authenticated` table access
-  - adds `SECURITY DEFINER` RPC functions (`public.api_*`)
-  - switches `rooms` Storage bucket to private policies for `service_role`
-  - adds `rooms.background_path` for private image flow
+- `rooms.sql` — initial rooms table, index, bucket creation, **historical** public storage policies (superseded by `security_hardening.sql` when applied).
+- `plants.sql` — plants + `plant_markers` + indexes.
+- `households_join.sql` — `invite_code` on `households` + unique index.
+- `security_hardening.sql` — RLS, revoke direct table access from anon/auth, `public.api_*` RPCs, private `rooms` storage, `rooms.background_path`, grants for RPC execution.
 
 ## Current Behavior Summary
 
-- User opens app via Telegram Mini App (or local browser debug mode).
-- Identity is resolved server-side:
-  - Telegram `initData` verification (signature check)
-  - or dev fallback from server env when `DEV_BROWSER_MODE=true`.
-- Browser uses secure API endpoints instead of direct table queries:
-  - `POST /api/secure`
-  - `POST /api/rooms/upload`
-- Household/rooms/plants/markers operations run through RPC functions with membership and ownership checks.
-- Room images are uploaded to private Storage and returned via signed URLs.
+- **Production:** open only from Telegram Mini App (menu / `web_app` button). Server requires valid `initData` + `TELEGRAM_BOT_TOKEN`.
+- **Local browser debug:** `npm run dev` + `DEV_BROWSER_MODE=true` + `DEV_TELEGRAM_ID` + `SUPABASE_SERVICE_ROLE_KEY` (not available on deployed Vercel preview/prod by design).
+- All data access: `POST /api/secure`, `POST /api/rooms/upload`; RLS + RPC enforce household scope.
+- Room thumbnails and detail images use **signed URLs**; legacy public URLs are supported via path extraction when needed.

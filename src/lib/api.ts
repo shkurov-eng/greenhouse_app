@@ -6,6 +6,13 @@ export type Household = {
   invite_code: string | null;
 };
 
+export type HouseholdSummary = {
+  household_id: string;
+  household_name: string;
+  invite_code: string | null;
+  is_active: boolean;
+};
+
 export type Room = {
   id: string;
   name: string;
@@ -94,6 +101,37 @@ export async function joinHousehold(initData: string | null, inviteCode: string)
   });
 }
 
+export async function listHouseholds(initData: string | null) {
+  return secureRequest<HouseholdSummary[]>({
+    action: "listHouseholds",
+    initData,
+  });
+}
+
+export async function createHousehold(initData: string | null, name?: string | null) {
+  return secureRequest<{
+    household_id: string;
+    household_name: string;
+    invite_code: string | null;
+  }>({
+    action: "createHousehold",
+    initData,
+    payload: name ? { name } : {},
+  });
+}
+
+export async function setActiveHousehold(initData: string | null, householdId: string) {
+  return secureRequest<{
+    household_id: string;
+    household_name: string;
+    invite_code: string | null;
+  }>({
+    action: "setActiveHousehold",
+    initData,
+    payload: { householdId },
+  });
+}
+
 export async function listRooms(initData: string | null) {
   return secureRequest<Room[]>({
     action: "listRooms",
@@ -106,6 +144,14 @@ export async function createRoom(initData: string | null, name: string) {
     action: "createRoom",
     initData,
     payload: { name },
+  });
+}
+
+export async function deleteRoom(initData: string | null, roomId: string) {
+  return secureRequest<{ ok: true }>({
+    action: "deleteRoom",
+    initData,
+    payload: { roomId },
   });
 }
 
