@@ -28,6 +28,7 @@ type Plant = {
   name: string;
   species: string | null;
   status: PlantStatus;
+  last_watered_at: string | null;
 };
 
 type PlantMarker = {
@@ -93,6 +94,50 @@ export default function Home() {
     };
   }
 
+  function formatLastWatered(lastWateredAt: string | null) {
+    if (!lastWateredAt) {
+      return "Never";
+    }
+
+    const date = new Date(lastWateredAt);
+    if (Number.isNaN(date.getTime())) {
+      return "Unknown";
+    }
+
+    const diffMs = Date.now() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0) {
+      return "Today";
+    }
+    if (diffDays === 1) {
+      return "1 day ago";
+    }
+    return `${diffDays} days ago`;
+  }
+
+  function getStatusFromLastWatered(lastWateredAt: string | null): PlantStatus {
+    if (!lastWateredAt) {
+      return "overdue";
+    }
+
+    const date = new Date(lastWateredAt);
+    if (Number.isNaN(date.getTime())) {
+      return "overdue";
+    }
+
+    const diffMs = Date.now() - date.getTime();
+    const thirstyAfterMs = 5 * 60 * 1000;
+    const overdueAfterMs = 60 * 60 * 1000;
+
+    if (diffMs >= overdueAfterMs) {
+      return "overdue";
+    }
+    if (diffMs >= thirstyAfterMs) {
+      return "thirsty";
+    }
+    return "healthy";
+  }
+
   async function fetchRoomsForHousehold(currentHouseholdId: string) {
     const { data, error } = await supabase
       .from("rooms")
@@ -118,7 +163,7 @@ export default function Home() {
   async function fetchPlantsForRoom(roomId: string) {
     const { data, error } = await supabase
       .from("plants")
-      .select("id, room_id, name, species, status")
+      .select("id, room_id, name, species, status, last_watered_at")
       .eq("room_id", roomId)
       .order("created_at", { ascending: true });
 
@@ -127,7 +172,31 @@ export default function Home() {
       return;
     }
 
-    setPlants((data ?? []) as Plant[]);
+    const nextPlants = (data ?? []) as Plant[];
+    const updates = nextPlants
+      .map((plant) => {
+        const computedStatus = getStatusFromLastWatered(plant.last_watered_at);
+        if (plant.status === computedStatus) {
+          return null;
+        }
+        return { id: plant.id, status: computedStatus };
+      })
+      .filter((item): item is { id: string; status: PlantStatus } => Boolean(item));
+
+    if (updates.length > 0) {
+      await Promise.all(
+        updates.map((item) =>
+          supabase.from("plants").update({ status: item.status }).eq("id", item.id),
+        ),
+      );
+    }
+
+    const syncedPlants = nextPlants.map((plant) => ({
+      ...plant,
+      status: getStatusFromLastWatered(plant.last_watered_at),
+    }));
+
+    setPlants(syncedPlants);
   }
 
   async function fetchMarkersForRoom(roomId: string) {
@@ -385,6 +454,7 @@ export default function Home() {
       name: newPlantName,
       species: plantSpecies.trim() || null,
       status: plantStatus,
+      last_watered_at: plantStatus === "healthy" ? new Date().toISOString() : null,
     });
 
     if (error) {
@@ -398,6 +468,29 @@ export default function Home() {
     setIsAddPlantOpen(false);
     await fetchPlantsForRoom(selectedRoom.id);
     setMessage("Plant added");
+  }
+
+  async function handleWaterPlant(plantId: string) {
+    if (!selectedRoom) {
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const { error } = await supabase
+      .from("plants")
+      .update({
+        last_watered_at: nowIso,
+        status: "healthy",
+      })
+      .eq("id", plantId);
+
+    if (error) {
+      console.error("Error marking plant as watered:", error);
+      return;
+    }
+
+    await fetchPlantsForRoom(selectedRoom.id);
+    setMessage("Plant marked as watered");
   }
 
   async function handleImageClick(event: React.MouseEvent<HTMLDivElement>) {
@@ -655,13 +748,27 @@ export default function Home() {
                       key={plant.id}
                       className="rounded-xl bg-[#fcf2eb] px-3 py-2 text-sm text-[#1f1b17]"
                     >
-                      <p className="font-semibold">{plant.name}</p>
-                      {plant.species ? (
-                        <p className="text-xs text-[#6c7a71]">{plant.species}</p>
-                      ) : null}
-                      <p className="mt-1 text-[10px] uppercase tracking-wide text-[#6c7a71]">
-                        {plant.status}
-                      </p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold">{plant.name}</p>
+                          {plant.species ? (
+                            <p className="text-xs text-[#6c7a71]">{plant.species}</p>
+                          ) : null}
+                          <p className="mt-1 text-[10px] uppercase tracking-wide text-[#6c7a71]">
+                            {plant.status}
+                          </p>
+                          <p className="text-[10px] text-[#6c7a71]">
+                            Last watered: {formatLastWatered(plant.last_watered_at)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleWaterPlant(plant.id)}
+                          className="rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-2.5 py-1.5 text-[11px] font-semibold text-white"
+                        >
+                          Watered
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
