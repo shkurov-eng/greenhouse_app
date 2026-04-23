@@ -64,9 +64,14 @@ export default function Home() {
   const [selectedPlantIdForMarker, setSelectedPlantIdForMarker] = useState<string>("");
   const [isMarkerEditMode, setIsMarkerEditMode] = useState(false);
   const [isAddPlantOpen, setIsAddPlantOpen] = useState(false);
+  const [isEditPlantOpen, setIsEditPlantOpen] = useState(false);
+  const [editingPlantId, setEditingPlantId] = useState<string | null>(null);
   const [plantName, setPlantName] = useState("");
   const [plantSpecies, setPlantSpecies] = useState("");
   const [plantStatus, setPlantStatus] = useState<PlantStatus>("healthy");
+  const [editPlantName, setEditPlantName] = useState("");
+  const [editPlantSpecies, setEditPlantSpecies] = useState("");
+  const [editPlantStatus, setEditPlantStatus] = useState<PlantStatus>("healthy");
   const [roomFiles, setRoomFiles] = useState<Record<string, File | null>>({});
   const [roomUploadStatus, setRoomUploadStatus] = useState<Record<string, string>>({});
 
@@ -381,6 +386,8 @@ export default function Home() {
       setSelectedPlantIdForMarker("");
       setIsMarkerEditMode(false);
       setIsAddPlantOpen(false);
+      setIsEditPlantOpen(false);
+      setEditingPlantId(null);
       return;
     }
 
@@ -449,14 +456,18 @@ export default function Home() {
       return;
     }
 
-    const { error } = await supabase.from("plants").insert({
-      household_id: householdId,
-      room_id: selectedRoom.id,
-      name: newPlantName,
-      species: plantSpecies.trim() || null,
-      status: plantStatus,
-      last_watered_at: plantStatus === "healthy" ? new Date().toISOString() : null,
-    });
+    const { data: createdPlant, error } = await supabase
+      .from("plants")
+      .insert({
+        household_id: householdId,
+        room_id: selectedRoom.id,
+        name: newPlantName,
+        species: plantSpecies.trim() || null,
+        status: plantStatus,
+        last_watered_at: plantStatus === "healthy" ? new Date().toISOString() : null,
+      })
+      .select("id")
+      .single();
 
     if (error) {
       console.error("Error creating plant:", error);
@@ -468,7 +479,13 @@ export default function Home() {
     setPlantStatus("healthy");
     setIsAddPlantOpen(false);
     await fetchPlantsForRoom(selectedRoom.id);
-    setMessage("Plant added");
+    if (createdPlant?.id) {
+      setSelectedPlantIdForMarker(createdPlant.id);
+      setIsMarkerEditMode(true);
+      setMessage("Plant added. Tap image to place marker");
+    } else {
+      setMessage("Plant added");
+    }
   }
 
   async function handleWaterPlant(plantId: string) {
@@ -501,6 +518,55 @@ export default function Home() {
     }, 700);
     await handleWaterPlant(plantId);
     setActiveMarkerId((prev) => (prev === markerId ? null : markerId));
+  }
+
+  function openEditPlantDialog(plant: Plant) {
+    setEditingPlantId(plant.id);
+    setEditPlantName(plant.name);
+    setEditPlantSpecies(plant.species ?? "");
+    setEditPlantStatus(plant.status);
+    setIsEditPlantOpen(true);
+  }
+
+  async function handleSavePlantEdits() {
+    if (!selectedRoom || !editingPlantId) {
+      return;
+    }
+
+    const nextName = editPlantName.trim();
+    if (!nextName) {
+      setMessage("Enter plant name");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("plants")
+      .update({
+        name: nextName,
+        species: editPlantSpecies.trim() || null,
+        status: editPlantStatus,
+      })
+      .eq("id", editingPlantId);
+
+    if (error) {
+      console.error("Error updating plant:", error);
+      return;
+    }
+
+    setIsEditPlantOpen(false);
+    setEditingPlantId(null);
+    await fetchPlantsForRoom(selectedRoom.id);
+    setMessage("Plant updated");
+  }
+
+  function handleEditMarkerForPlant() {
+    if (!editingPlantId) {
+      return;
+    }
+    setSelectedPlantIdForMarker(editingPlantId);
+    setIsMarkerEditMode(true);
+    setIsEditPlantOpen(false);
+    setMessage("Tap image to set marker position");
   }
 
   async function handleImageClick(event: React.MouseEvent<HTMLDivElement>) {
@@ -712,45 +778,23 @@ export default function Home() {
                   </div>
                 );
               })}
-            </div>
-            <div className="mt-4 rounded-[24px] bg-white p-4 shadow-[0_4px_20px_rgba(148,74,35,0.06)]">
-              <div className="mb-3">
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
-                  Marker plant
-                </label>
-                <select
-                  value={selectedPlantIdForMarker}
-                  onChange={(event) => setSelectedPlantIdForMarker(event.target.value)}
-                  className="w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
-                >
-                  {plants.length === 0 ? (
-                    <option value="">Add a plant first</option>
-                  ) : null}
-                  {plants.map((plant) => (
-                    <option key={plant.id} value={plant.id}>
-                      {plant.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="mt-2 flex items-center gap-2">
+              {isMarkerEditMode ? (
+                <div className="absolute left-3 top-3 flex items-center gap-2 rounded-lg bg-white/90 px-2 py-1 text-xs text-[#3c4a42] shadow">
+                  <span>Marker edit mode</span>
                   <button
                     type="button"
-                    onClick={() => setIsMarkerEditMode((prev) => !prev)}
-                    className={`rounded-lg px-3 py-1 text-xs font-semibold ${
-                      isMarkerEditMode
-                        ? "bg-[#ffdad6] text-[#93000a]"
-                        : "bg-[#e6f5ef] text-[#006c49]"
-                    }`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setIsMarkerEditMode(false);
+                    }}
+                    className="rounded bg-[#ffdad6] px-1.5 py-0.5 text-[10px] font-semibold text-[#93000a]"
                   >
-                    {isMarkerEditMode ? "Cancel edit" : "Edit marker"}
+                    Cancel
                   </button>
-                  <p className="text-xs text-[#6c7a71]">
-                    {isMarkerEditMode
-                      ? "Tap image to set marker position"
-                      : "Markers are locked"}
-                  </p>
                 </div>
-              </div>
+              ) : null}
+            </div>
+            <div className="mt-4 rounded-[24px] bg-white p-4 shadow-[0_4px_20px_rgba(148,74,35,0.06)]">
               <h3 className="text-sm font-semibold text-[#3c4a42]">Plants in this room</h3>
               {plants.length === 0 ? (
                 <p className="mt-2 text-sm text-[#6c7a71]">No plants yet</p>
@@ -774,13 +818,22 @@ export default function Home() {
                             Last watered: {formatLastWatered(plant.last_watered_at)}
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleWaterPlant(plant.id)}
-                          className="rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-2.5 py-1.5 text-[11px] font-semibold text-white"
-                        >
-                          Watered
-                        </button>
+                        <div className="flex flex-col gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleWaterPlant(plant.id)}
+                            className="rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-2.5 py-1.5 text-[11px] font-semibold text-white"
+                          >
+                            Watered
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openEditPlantDialog(plant)}
+                            className="rounded-lg border border-[#bbcabf] px-2.5 py-1.5 text-[11px] font-semibold text-[#3c4a42]"
+                          >
+                            Edit Plant
+                          </button>
+                        </div>
                       </div>
                     </li>
                   ))}
@@ -882,7 +935,7 @@ export default function Home() {
       )}
 
       {!selectedRoom && isCreateRoomOpen ? (
-        <div className="fixed inset-0 z-40 flex items-end bg-black/30 p-4 sm:items-center sm:justify-center">
+        <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/30 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
           <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
             <h3 className="text-base font-semibold text-[#1f1b17]">Add Room</h3>
             <p className="mt-1 text-sm text-[#6c7a71]">Create a new room in your household</p>
@@ -914,7 +967,7 @@ export default function Home() {
       ) : null}
 
       {selectedRoom && isAddPlantOpen ? (
-        <div className="fixed inset-0 z-40 flex items-end bg-black/30 p-4 sm:items-center sm:justify-center">
+        <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/30 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
           <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
             <h3 className="text-base font-semibold text-[#1f1b17]">Add Plant</h3>
             <p className="mt-1 text-sm text-[#6c7a71]">{selectedRoom.name}</p>
@@ -954,6 +1007,60 @@ export default function Home() {
                 className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
               >
                 Add Plant
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedRoom && isEditPlantOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/30 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
+          <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
+            <h3 className="text-base font-semibold text-[#1f1b17]">Edit Plant</h3>
+            <p className="mt-1 text-sm text-[#6c7a71]">{selectedRoom.name}</p>
+            <input
+              value={editPlantName}
+              onChange={(event) => setEditPlantName(event.target.value)}
+              placeholder="Plant name"
+              className="mt-4 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+              autoFocus
+            />
+            <input
+              value={editPlantSpecies}
+              onChange={(event) => setEditPlantSpecies(event.target.value)}
+              placeholder="Species (optional)"
+              className="mt-2 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+            />
+            <select
+              value={editPlantStatus}
+              onChange={(event) => setEditPlantStatus(event.target.value as PlantStatus)}
+              className="mt-2 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+            >
+              <option value="healthy">healthy</option>
+              <option value="thirsty">thirsty</option>
+              <option value="overdue">overdue</option>
+            </select>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleEditMarkerForPlant}
+                className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-semibold text-[#006c49]"
+              >
+                Edit marker
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsEditPlantOpen(false)}
+                className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-medium text-[#3c4a42]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSavePlantEdits}
+                className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
+              >
+                Save
               </button>
             </div>
           </div>
