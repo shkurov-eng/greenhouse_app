@@ -11,19 +11,9 @@ type TelegramWebAppUser = {
 
 type TelegramWebApp = {
   ready?: () => void;
-  initData?: string;
   initDataUnsafe?: {
     user?: TelegramWebAppUser;
   };
-  platform?: string;
-};
-
-type DebugInfo = {
-  telegram: unknown | null;
-  tg: unknown | null;
-  initData: string | null;
-  initDataUnsafe: unknown | null;
-  platform: string | null;
 };
 
 type Room = {
@@ -48,17 +38,8 @@ export default function Home() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [roomFiles, setRoomFiles] = useState<Record<string, File | null>>({});
   const [roomUploadStatus, setRoomUploadStatus] = useState<Record<string, string>>({});
-  const [debugInfo, setDebugInfo] = useState<DebugInfo>({
-    telegram: null,
-    tg: null,
-    initData: null,
-    initDataUnsafe: null,
-    platform: null,
-  });
 
   async function fetchRoomsForHousehold(currentHouseholdId: string) {
-    console.log("Step: fetching rooms for household:", currentHouseholdId);
-
     const { data, error } = await supabase
       .from("rooms")
       .select("id, name, background_url")
@@ -70,7 +51,6 @@ export default function Home() {
       return;
     }
 
-    console.log("Rooms fetched:", data);
     setRooms((data ?? []) as Room[]);
   }
 
@@ -102,7 +82,6 @@ export default function Home() {
       const isDevelopment = process.env.NODE_ENV === "development";
       const debugTelegramFlag =
         new URLSearchParams(window.location.search).get("debugTelegram") === "1";
-      const telegram = window.Telegram;
       const tg = await waitForTelegramWebApp();
       tg?.ready?.();
       const mockUser: TelegramWebAppUser = {
@@ -113,29 +92,11 @@ export default function Home() {
       const telegramUser = tg?.initDataUnsafe?.user;
       const shouldUseMockUser = !telegramUser && (isDevelopment || debugTelegramFlag);
       const effectiveUser = telegramUser ?? (shouldUseMockUser ? mockUser : undefined);
-      const effectiveInitDataUnsafe = tg?.initDataUnsafe ?? (shouldUseMockUser ? fallbackInitDataUnsafe : undefined);
-
-      console.log("window.Telegram:", telegram);
-      console.log("TG:", tg);
-      console.log("tg.initData:", tg?.initData);
-      console.log("INIT DATA:", effectiveInitDataUnsafe);
-      console.log("tg.platform:", tg?.platform);
-      if (shouldUseMockUser) {
-        console.log("Debug mode active: using mock Telegram user", {
-          isDevelopment,
-          debugTelegramFlag,
-        });
-      }
+      const effectiveInitDataUnsafe =
+        tg?.initDataUnsafe ?? (shouldUseMockUser ? fallbackInitDataUnsafe : undefined);
 
       if (isMounted) {
         setIsDebugMock(shouldUseMockUser);
-        setDebugInfo({
-          telegram: telegram ?? null,
-          tg: tg ?? null,
-          initData: tg?.initData ?? null,
-          initDataUnsafe: effectiveInitDataUnsafe ?? null,
-          platform: tg?.platform ?? null,
-        });
       }
 
       const user = effectiveUser;
@@ -163,9 +124,6 @@ export default function Home() {
         return;
       }
 
-      console.log("Telegram user upsert result:", data);
-      console.log("Step: fetching profile by telegram_id...");
-
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("id, telegram_id, username")
@@ -177,14 +135,10 @@ export default function Home() {
         return;
       }
 
-      console.log("Profile by telegram_id:", profile);
-
       if (!profile) {
         console.error("Profile not found after save.");
         return;
       }
-
-      console.log("Step: checking household membership...");
 
       const { data: membership, error: membershipError } = await supabase
         .from("household_members")
@@ -197,18 +151,13 @@ export default function Home() {
         return;
       }
 
-      console.log("Existing household membership:", membership);
-
       let currentHouseholdId = membership?.household_id ?? null;
 
       if (membership) {
-        console.log("User already in household. No action needed.");
         if (isMounted) {
           setMessage("User already in household");
         }
       } else {
-        console.log("Step: creating household 'My Home'...");
-
         const { data: household, error: householdError } = await supabase
           .from("households")
           .insert({ name: "My Home" })
@@ -219,9 +168,6 @@ export default function Home() {
           console.error("Error creating household:", householdError);
           return;
         }
-
-        console.log("Created household:", household);
-        console.log("Step: linking user to household...");
 
         const { data: memberRow, error: memberInsertError } = await supabase
           .from("household_members")
@@ -236,9 +182,7 @@ export default function Home() {
           console.error("Error inserting household member:", memberInsertError);
           return;
         }
-
-        console.log("Inserted household_members row:", memberRow);
-        console.log("Household flow completed.");
+        void memberRow;
         currentHouseholdId = household.id;
 
         if (isMounted) {
@@ -252,6 +196,9 @@ export default function Home() {
         }
         await fetchRoomsForHousehold(currentHouseholdId);
       }
+
+      void effectiveInitDataUnsafe;
+      void data;
     }
 
     saveTelegramUser().catch((error) => {
@@ -265,20 +212,15 @@ export default function Home() {
 
   async function handleCreateRoom() {
     if (!householdId) {
-      console.log("Cannot create room: household_id is missing.");
+      setMessage("Household is not ready");
       return;
     }
 
     const newRoomName = roomName.trim();
     if (!newRoomName) {
-      console.log("Cannot create room: empty room name.");
+      setMessage("Enter room name");
       return;
     }
-
-    console.log("Step: creating room...", {
-      household_id: householdId,
-      name: newRoomName,
-    });
 
     const { data, error } = await supabase
       .from("rooms")
@@ -294,13 +236,12 @@ export default function Home() {
       return;
     }
 
-    console.log("Room created:", data);
+    void data;
     setRoomName("");
     await fetchRoomsForHousehold(householdId);
   }
 
   function handleRoomFileChange(roomId: string, file: File | null) {
-    console.log("Room file selected:", { roomId, fileName: file?.name ?? null });
     setRoomFiles((prev) => ({
       ...prev,
       [roomId]: file,
@@ -314,7 +255,6 @@ export default function Home() {
   async function handleUploadImage(roomId: string) {
     if (!householdId) {
       const text = "Cannot upload: household_id is missing.";
-      console.log(text);
       setRoomUploadStatus((prev) => ({
         ...prev,
         [roomId]: text,
@@ -325,7 +265,6 @@ export default function Home() {
     const file = roomFiles[roomId];
     if (!file) {
       const text = "No file selected";
-      console.log("No file selected for room:", roomId);
       setRoomUploadStatus((prev) => ({
         ...prev,
         [roomId]: text,
@@ -334,7 +273,6 @@ export default function Home() {
     }
 
     const filePath = `${householdId}/${roomId}/${Date.now()}-${file.name}`;
-    console.log("Uploading room image...", { roomId, filePath });
     setRoomUploadStatus((prev) => ({
       ...prev,
       [roomId]: "Uploading...",
@@ -355,7 +293,6 @@ export default function Home() {
 
     const { data: publicUrlData } = supabase.storage.from("rooms").getPublicUrl(filePath);
     const publicUrl = publicUrlData.publicUrl;
-    console.log("Room image public URL:", publicUrl);
 
     const { error: updateError } = await supabase
       .from("rooms")
@@ -383,44 +320,77 @@ export default function Home() {
   }
 
   return (
-    <main>
-      {isDebugMock ? <p>Debug mode: mock Telegram user</p> : null}
-      <p>{message}</p>
-      <p>Current household: {householdId ?? "not set"}</p>
-      <input
-        value={roomName}
-        onChange={(event) => setRoomName(event.target.value)}
-        placeholder="Room name"
-      />
-      <button type="button" onClick={handleCreateRoom}>
-        Create Room
-      </button>
-      <ul>
+    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-6 bg-zinc-50 px-4 py-6">
+      <section className="rounded-xl bg-white p-4 shadow-sm">
+        <h1 className="text-xl font-semibold">My Home</h1>
+        <p className="mt-1 text-sm text-zinc-500">Manage rooms and backgrounds</p>
+        {isDebugMock ? (
+          <p className="mt-2 text-xs text-amber-600">Debug mode: mock Telegram user</p>
+        ) : null}
+        <p className="mt-2 text-sm text-zinc-600">{message}</p>
+      </section>
+
+      <section className="rounded-xl bg-white p-4 shadow-sm">
+        <h2 className="mb-3 text-sm font-medium text-zinc-600">Create Room</h2>
+        <div className="flex items-center gap-2">
+          <input
+            value={roomName}
+            onChange={(event) => setRoomName(event.target.value)}
+            placeholder="Room name"
+            className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500"
+          />
+          <button
+            type="button"
+            onClick={handleCreateRoom}
+            className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
+          >
+            Create Room
+          </button>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <h2 className="px-1 text-sm font-medium text-zinc-600">Rooms</h2>
         {rooms.length === 0 ? (
-          <li>No rooms yet</li>
+          <div className="rounded-xl bg-white p-4 text-sm text-zinc-500 shadow-sm">No rooms yet</div>
         ) : (
           rooms.map((room) => (
-            <li key={room.id}>
-              <p>{room.name}</p>
+            <article
+              key={room.id}
+              className="mb-2 rounded-xl bg-white p-4 shadow-sm"
+            >
+              <p className="font-semibold">{room.name}</p>
               {room.background_url ? (
-                <img src={room.background_url} alt={room.name} width={180} />
+                <img
+                  src={room.background_url}
+                  alt={room.name}
+                  className="mt-3 h-40 w-full rounded-lg object-cover"
+                />
               ) : null}
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(event) =>
-                  handleRoomFileChange(room.id, event.target.files?.[0] ?? null)
-                }
-              />
-              <button type="button" onClick={() => handleUploadImage(room.id)}>
-                Upload Image
-              </button>
-              <p>{roomUploadStatus[room.id] ?? ""}</p>
-            </li>
+              <div className="mt-3 flex items-center gap-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) =>
+                    handleRoomFileChange(room.id, event.target.files?.[0] ?? null)
+                  }
+                  className="w-full text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleUploadImage(room.id)}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                >
+                  Upload Image
+                </button>
+              </div>
+              {roomUploadStatus[room.id] ? (
+                <p className="mt-2 text-xs text-zinc-500">{roomUploadStatus[room.id]}</p>
+              ) : null}
+            </article>
           ))
         )}
-      </ul>
-      <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+      </section>
     </main>
   );
 }
