@@ -43,8 +43,8 @@ declare global {
 export default function Home() {
   const [message, setMessage] = useState("No Telegram user detected");
   const [householdId, setHouseholdId] = useState<string | null>(null);
-  const [rooms, setRooms] = useState<Room[]>([]);
   const [roomName, setRoomName] = useState("");
+  const [rooms, setRooms] = useState<Room[]>([]);
   const [debugInfo, setDebugInfo] = useState<DebugInfo>({
     telegram: null,
     tg: null,
@@ -241,9 +241,7 @@ export default function Home() {
     };
   }, []);
 
-  async function handleCreateRoom(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
+  async function handleCreateRoom() {
     if (!householdId) {
       console.log("Cannot create room: household_id is missing.");
       return;
@@ -283,18 +281,18 @@ export default function Home() {
     <main>
       <p>{message}</p>
       <p>Current household: {householdId ?? "not set"}</p>
-      <form onSubmit={handleCreateRoom}>
-        <input
-          value={roomName}
-          onChange={(event) => setRoomName(event.target.value)}
-          placeholder="Room name"
-        />
-        <button type="submit">Create Room</button>
-      </form>
+      <input
+        value={roomName}
+        onChange={(event) => setRoomName(event.target.value)}
+        placeholder="Room name"
+      />
+      <button onClick={handleCreateRoom}>Create Room</button>
       <ul>
-        {rooms.map((room) => (
-          <li key={room.id}>{room.name}</li>
-        ))}
+        {rooms.length === 0 ? (
+          <li>No rooms yet</li>
+        ) : (
+          rooms.map((room) => <li key={room.id}>{room.name}</li>)
+        )}
       </ul>
       <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
     </main>
