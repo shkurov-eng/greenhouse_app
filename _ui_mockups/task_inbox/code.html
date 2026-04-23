@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #fff8f5;
+        }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed": "#ffdbcc",
+                    "on-secondary": "#ffffff",
+                    "on-tertiary-container": "#523200",
+                    "error-container": "#ffdad6",
+                    "surface-tint": "#006c49",
+                    "on-tertiary-fixed": "#2a1700",
+                    "surface-container-highest": "#eae1da",
+                    "on-secondary-container": "#76340e",
+                    "outline-variant": "#bbcabf",
+                    "on-surface": "#1f1b17",
+                    "on-error": "#ffffff",
+                    "inverse-surface": "#342f2b",
+                    "inverse-on-surface": "#f9efe8",
+                    "secondary-container": "#fd9e70",
+                    "primary-fixed": "#6ffbbe",
+                    "surface-container-lowest": "#ffffff",
+                    "surface-container-high": "#f0e6e0",
+                    "surface-variant": "#eae1da",
+                    "on-primary": "#ffffff",
+                    "inverse-primary": "#4edea3",
+                    "on-background": "#1f1b17",
+                    "secondary-fixed-dim": "#ffb693",
+                    "on-primary-fixed": "#002113",
+                    "tertiary-fixed": "#ffddb8",
+                    "on-primary-container": "#00422b",
+                    "surface-container-low": "#fcf2eb",
+                    "surface-dim": "#e2d8d2",
+                    "surface": "#fff8f5",
+                    "primary-container": "#10b981",
+                    "background": "#fff8f5",
+                    "on-primary-fixed-variant": "#005236",
+                    "secondary": "#944a23",
+                    "primary": "#006c49",
+                    "tertiary-fixed-dim": "#ffb95f",
+                    "tertiary": "#855300",
+                    "on-secondary-fixed": "#351000",
+                    "outline": "#6c7a71",
+                    "on-tertiary": "#ffffff",
+                    "error": "#ba1a1a",
+                    "on-error-container": "#93000a",
+                    "surface-bright": "#fff8f5",
+                    "on-tertiary-fixed-variant": "#653e00",
+                    "on-surface-variant": "#3c4a42",
+                    "primary-fixed-dim": "#4edea3",
+                    "surface-container": "#f6ece6",
+                    "tertiary-container": "#e29100",
+                    "on-secondary-fixed-variant": "#76330d"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "xs": "4px",
+                    "xl": "32px",
+                    "base": "4px",
+                    "sm": "8px",
+                    "gutter": "16px",
+                    "margin-desktop": "40px",
+                    "md": "16px",
+                    "margin-mobile": "20px",
+                    "lg": "24px"
+            },
+            "fontFamily": {
+                    "label-sm": ["Plus Jakarta Sans"],
+                    "caption": ["Plus Jakarta Sans"],
+                    "body-md": ["Plus Jakarta Sans"],
+                    "h2": ["Plus Jakarta Sans"],
+                    "h3": ["Plus Jakarta Sans"],
+                    "h1": ["Plus Jakarta Sans"],
+                    "body-lg": ["Plus Jakarta Sans"]
+            },
+            "fontSize": {
+                    "label-sm": ["14px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "caption": ["12px", {"lineHeight": "1.4", "letterSpacing": "0", "fontWeight": "500"}],
+                    "body-md": ["16px", {"lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "400"}],
+                    "h2": ["24px", {"lineHeight": "1.3", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "h3": ["20px", {"lineHeight": "1.4", "letterSpacing": "0", "fontWeight": "600"}],
+                    "h1": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "body-lg": ["18px", {"lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen pb-24">
+<!-- TopAppBar -->
+<header class="bg-stone-50/80 dark:bg-stone-950/80 backdrop-blur-md border-b border-stone-200/50 dark:border-stone-800/50 shadow-sm shadow-stone-200/20 dark:shadow-none docked full-width top-0 z-50 flex justify-between items-center w-full px-5 h-16 fixed">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-emerald-700 dark:text-emerald-400" data-icon="potted_plant">potted_plant</span>
+<h1 class="font-['Plus_Jakarta_Sans'] font-bold text-lg tracking-tight text-emerald-700 dark:text-emerald-400 font-black tracking-tighter">GreenHouse</h1>
+</div>
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-stone-500 hover:bg-emerald-50 p-2 rounded-full transition-colors" data-icon="search">search</button>
+<div class="w-8 h-8 rounded-full overflow-hidden border-2 border-emerald-100">
+<img alt="User profile photo" class="w-full h-full object-cover" data-alt="Close-up portrait of a woman with a warm smile in soft natural lighting against a blurred green foliage background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB1jLSIL0-weMIV714XpsAaZIk3LoGx6JQ_U6tSMJjhljnd-YDfPu0Mwdixon_LNU8Tv3ebDOl6HtHcaexLCfg0jcpalT6lPZmRvR9EawmqMo_XidYCXclyoIu_amqkqZkp5VB3zGYIVjyLUQK2KtrGj7HrMRDSIdsSrnUGSrg0lFKmqTBCpuO1i2I2TgI7WY_QYXSYrC_j33eBkgDCHSpSu5sed1KnSx4-LOApHd85I9a-Kz-3ipUbgwS4C1RU_3TgKcoC5kHDYsiw"/>
+</div>
+</div>
+</header>
+<main class="pt-24 px-margin-mobile md:px-margin-desktop max-w-4xl mx-auto">
+<!-- Section Header -->
+<div class="flex flex-col gap-sm mb-xl">
+<h2 class="font-h1 text-h1 text-on-surface">Inbox</h2>
+<p class="font-body-md text-body-md text-outline">Manage your nurturing routines and shared garden duties.</p>
+</div>
+<!-- Custom Tab Component -->
+<div class="flex gap-gutter mb-lg border-b border-surface-container pb-xs">
+<button class="font-label-sm text-label-sm py-2 px-4 border-b-2 border-primary text-primary transition-all">
+                Personal
+            </button>
+<button class="font-label-sm text-label-sm py-2 px-4 text-outline hover:text-on-surface transition-all">
+                Shared
+            </button>
+</div>
+<!-- Task List Container -->
+<div class="flex flex-col gap-md">
+<!-- Daily Summary / Bot Header -->
+<div class="bg-surface-container-low p-lg rounded-xl border border-outline-variant/30 flex items-start gap-md mb-sm">
+<div class="w-10 h-10 bg-primary-container rounded-full flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-on-primary-container" data-icon="smart_toy">smart_toy</span>
+</div>
+<div>
+<h3 class="font-h3 text-h3 text-on-surface mb-xs">Sprout Assistant</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">I've analyzed your garden's moisture levels. Here are 4 tasks that need your attention today.</p>
+</div>
+</div>
+<!-- Task Items -->
+<!-- Task 1 -->
+<div class="bg-surface-container-lowest p-md rounded-xl shadow-[0_4px_20px_rgba(148,74,35,0.05)] border border-white hover:shadow-[0_8px_24px_rgba(148,74,35,0.08)] transition-all group flex items-center gap-gutter">
+<label class="relative flex items-center cursor-pointer">
+<input class="peer hidden" type="checkbox"/>
+<div class="w-6 h-6 border-2 border-outline-variant rounded-full peer-checked:bg-primary peer-checked:border-primary transition-all flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-[16px] hidden peer-checked:block" data-icon="check">check</span>
+</div>
+</label>
+<div class="flex-1">
+<div class="flex items-center justify-between">
+<h4 class="font-body-lg text-body-lg font-semibold text-secondary peer-checked:text-outline-variant peer-checked:line-through transition-colors">Water the Fiddle Leaf Fig</h4>
+<span class="bg-error-container/15 text-error text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest">Urgent</span>
+</div>
+<p class="font-caption text-caption text-on-surface-variant mt-1">Bot reported: Soil moisture at 12% in North Corner.</p>
+<div class="flex items-center gap-xs mt-2 text-primary font-medium">
+<span class="material-symbols-outlined text-[14px]" data-icon="schedule">schedule</span>
+<span class="font-caption text-caption">Today, 09:00 AM</span>
+</div>
+</div>
+</div>
+<!-- Task 2 -->
+<div class="bg-surface-container-lowest p-md rounded-xl shadow-[0_4px_20px_rgba(148,74,35,0.05)] border border-white hover:shadow-[0_8px_24px_rgba(148,74,35,0.08)] transition-all group flex items-center gap-gutter">
+<label class="relative flex items-center cursor-pointer">
+<input class="peer hidden" type="checkbox"/>
+<div class="w-6 h-6 border-2 border-outline-variant rounded-full peer-checked:bg-primary peer-checked:border-primary transition-all flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-[16px] hidden peer-checked:block" data-icon="check">check</span>
+</div>
+</label>
+<div class="flex-1">
+<div class="flex items-center justify-between">
+<h4 class="font-body-lg text-body-lg font-semibold text-secondary transition-colors">Prune the Monstera Adansonii</h4>
+<div class="flex gap-2">
+<span class="bg-primary-container/15 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest">Growth</span>
+</div>
+</div>
+<p class="font-caption text-caption text-on-surface-variant mt-1">Suggested after 3 weeks of vigorous growth cycle.</p>
+</div>
+</div>
+<!-- Task 3 -->
+<div class="bg-surface-container-lowest p-md rounded-xl shadow-[0_4px_20px_rgba(148,74,35,0.05)] border border-white hover:shadow-[0_8px_24px_rgba(148,74,35,0.08)] transition-all group flex items-center gap-gutter">
+<label class="relative flex items-center cursor-pointer">
+<input class="peer hidden" type="checkbox"/>
+<div class="w-6 h-6 border-2 border-outline-variant rounded-full peer-checked:bg-primary peer-checked:border-primary transition-all flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-[16px] hidden peer-checked:block" data-icon="check">check</span>
+</div>
+</label>
+<div class="flex-1">
+<div class="flex items-center justify-between">
+<h4 class="font-body-lg text-body-lg font-semibold text-secondary transition-colors">Apply organic fertilizer</h4>
+<span class="bg-tertiary-container/15 text-tertiary text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest">Maintenance</span>
+</div>
+<p class="font-caption text-caption text-on-surface-variant mt-1">Scheduled for the beginning of the spring season.</p>
+<div class="flex items-center gap-xs mt-2 text-outline font-medium">
+<span class="material-symbols-outlined text-[14px]" data-icon="event">event</span>
+<span class="font-caption text-caption">Mar 21, 2024</span>
+</div>
+</div>
+</div>
+<!-- Task 4 (Completed State Example) -->
+<div class="bg-surface-container-low/50 p-md rounded-xl border border-transparent opacity-60 flex items-center gap-gutter">
+<div class="w-6 h-6 bg-primary border-2 border-primary rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-[16px]" data-icon="check">check</span>
+</div>
+<div class="flex-1">
+<h4 class="font-body-lg text-body-lg font-semibold text-outline-variant line-through">Clean Calathea leaves</h4>
+<p class="font-caption text-caption text-outline-variant">Completed by you at 07:15 AM</p>
+</div>
+</div>
+</div>
+<!-- Asymmetric Promotional Bento Component -->
+<div class="mt-xl grid grid-cols-1 md:grid-cols-3 gap-gutter">
+<div class="md:col-span-2 bg-secondary-fixed rounded-2xl p-lg flex flex-col justify-between overflow-hidden relative min-h-[180px]">
+<div class="relative z-10">
+<h3 class="font-h2 text-h2 text-on-secondary-fixed mb-sm">Upgrade to Premium Care</h3>
+<p class="font-body-md text-body-md text-on-secondary-fixed-variant max-w-[280px]">Get real-time leaf health analysis and expert florist support.</p>
+</div>
+<button class="bg-primary text-white font-label-sm text-label-sm px-lg py-sm rounded-full w-fit relative z-10 shadow-md active:translate-y-0.5 transition-all">
+                    Learn More
+                </button>
+<div class="absolute right-[-20px] bottom-[-20px] opacity-20 transform rotate-12">
+<span class="material-symbols-outlined text-[160px]" data-icon="local_florist">local_florist</span>
+</div>
+</div>
+<div class="bg-tertiary-fixed rounded-2xl p-lg flex flex-col items-center justify-center text-center">
+<span class="material-symbols-outlined text-tertiary text-h1 mb-sm" data-icon="stars">stars</span>
+<p class="font-label-sm text-label-sm text-on-tertiary-fixed mb-xs">STREAK</p>
+<p class="font-h1 text-h1 text-tertiary">14 Days</p>
+</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-6 pt-3 bg-white/90 dark:bg-stone-900/90 backdrop-blur-lg rounded-t-2xl shadow-[0_-4px_20px_rgba(27,67,50,0.05)] dark:shadow-none border-t border-stone-100 dark:border-stone-800">
+<a class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-4 py-1 hover:text-emerald-500 transition-transform active:translate-y-0.5" href="#">
+<span class="material-symbols-outlined" data-icon="grid_view">grid_view</span>
+<span class="font-['Plus_Jakarta_Sans'] text-[11px] font-semibold uppercase tracking-wider mt-1">Rooms</span>
+</a>
+<a class="flex flex-col items-center justify-center text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/20 rounded-xl px-4 py-1 active:translate-y-0.5 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="all_inbox" style="font-variation-settings: 'FILL' 1;">all_inbox</span>
+<span class="font-['Plus_Jakarta_Sans'] text-[11px] font-semibold uppercase tracking-wider mt-1">Inbox</span>
+</a>
+<a class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-4 py-1 hover:text-emerald-500 transition-transform active:translate-y-0.5" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-['Plus_Jakarta_Sans'] text-[11px] font-semibold uppercase tracking-wider mt-1">Settings</span>
+</a>
+</nav>
+<!-- Contextual FAB -->
+<button class="fixed bottom-24 right-6 w-14 h-14 bg-primary text-white rounded-full shadow-lg shadow-primary/30 flex items-center justify-center active:scale-95 transition-transform z-40 border-b-2 border-emerald-900">
+<span class="material-symbols-outlined text-h2" data-icon="add_task">add_task</span>
+</button>
+</body></html>

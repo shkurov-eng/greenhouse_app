@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed": "#ffdbcc",
+                    "on-secondary": "#ffffff",
+                    "on-tertiary-container": "#523200",
+                    "error-container": "#ffdad6",
+                    "surface-tint": "#006c49",
+                    "on-tertiary-fixed": "#2a1700",
+                    "surface-container-highest": "#eae1da",
+                    "on-secondary-container": "#76340e",
+                    "outline-variant": "#bbcabf",
+                    "on-surface": "#1f1b17",
+                    "on-error": "#ffffff",
+                    "inverse-surface": "#342f2b",
+                    "inverse-on-surface": "#f9efe8",
+                    "secondary-container": "#fd9e70",
+                    "primary-fixed": "#6ffbbe",
+                    "surface-container-lowest": "#ffffff",
+                    "surface-container-high": "#f0e6e0",
+                    "surface-variant": "#eae1da",
+                    "on-primary": "#ffffff",
+                    "inverse-primary": "#4edea3",
+                    "on-background": "#1f1b17",
+                    "secondary-fixed-dim": "#ffb693",
+                    "on-primary-fixed": "#002113",
+                    "tertiary-fixed": "#ffddb8",
+                    "on-primary-container": "#00422b",
+                    "surface-container-low": "#fcf2eb",
+                    "surface-dim": "#e2d8d2",
+                    "surface": "#fff8f5",
+                    "primary-container": "#10b981",
+                    "background": "#fff8f5",
+                    "on-primary-fixed-variant": "#005236",
+                    "secondary": "#944a23",
+                    "primary": "#006c49",
+                    "tertiary-fixed-dim": "#ffb95f",
+                    "tertiary": "#855300",
+                    "on-secondary-fixed": "#351000",
+                    "outline": "#6c7a71",
+                    "on-tertiary": "#ffffff",
+                    "error": "#ba1a1a",
+                    "on-error-container": "#93000a",
+                    "surface-bright": "#fff8f5",
+                    "on-tertiary-fixed-variant": "#653e00",
+                    "on-surface-variant": "#3c4a42",
+                    "primary-fixed-dim": "#4edea3",
+                    "surface-container": "#f6ece6",
+                    "tertiary-container": "#e29100",
+                    "on-secondary-fixed-variant": "#76330d"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "xs": "4px",
+                    "xl": "32px",
+                    "base": "4px",
+                    "sm": "8px",
+                    "gutter": "16px",
+                    "margin-desktop": "40px",
+                    "md": "16px",
+                    "margin-mobile": "20px",
+                    "lg": "24px"
+            },
+            "fontFamily": {
+                    "label-sm": ["Plus Jakarta Sans"],
+                    "caption": ["Plus Jakarta Sans"],
+                    "body-md": ["Plus Jakarta Sans"],
+                    "h2": ["Plus Jakarta Sans"],
+                    "h3": ["Plus Jakarta Sans"],
+                    "h1": ["Plus Jakarta Sans"],
+                    "body-lg": ["Plus Jakarta Sans"]
+            },
+            "fontSize": {
+                    "label-sm": ["14px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "caption": ["12px", {"lineHeight": "1.4", "letterSpacing": "0", "fontWeight": "500"}],
+                    "body-md": ["16px", {"lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "400"}],
+                    "h2": ["24px", {"lineHeight": "1.3", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "h3": ["20px", {"lineHeight": "1.4", "letterSpacing": "0", "fontWeight": "600"}],
+                    "h1": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "body-lg": ["18px", {"lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .tonal-shift {
+            background: linear-gradient(180deg, rgba(255, 248, 245, 0) 0%, rgba(246, 236, 230, 0.5) 100%);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md antialiased min-h-screen pb-32">
+<!-- TopAppBar -->
+<header class="bg-stone-50/80 dark:bg-stone-950/80 backdrop-blur-md border-b border-stone-200/50 dark:border-stone-800/50 shadow-sm shadow-stone-200/20 dark:shadow-none docked full-width top-0 z-50 sticky">
+<div class="flex justify-between items-center w-full px-5 h-16 max-w-7xl mx-auto">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-emerald-700 dark:text-emerald-400" data-icon="potted_plant">potted_plant</span>
+<h1 class="font-['Plus_Jakarta_Sans'] font-bold text-lg tracking-tight text-emerald-700 dark:text-emerald-400 font-black tracking-tighter">GreenHouse</h1>
+</div>
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-stone-500 hover:bg-emerald-50 p-2 rounded-full transition-colors" data-icon="search">search</button>
+<div class="w-8 h-8 rounded-full bg-surface-container overflow-hidden border-2 border-primary/20">
+<img alt="User profile photo" class="w-full h-full object-cover" data-alt="Close-up portrait of a friendly man with a warm smile in natural sunlight with soft bokeh background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCstCuyDrKQjrGE9dOG35CL2zxtL3f4CrfoyZA-PY7SkPQgBnL_MaRzkxQs9j9sJV91fQbIb07J285tXS3UH2Njy5okoEp5Pdwcpkd4EnLOZufQ-kz9ljJB1p5qKY_UZk2yr4xj9dtizsmwHZyWGOyixyDqTL0FDsw6FgwvQq22dTQfynWZou2j7Mux-IsnggpPqNpn0UteQ_6Sk6mw9WgWmDwcmIbn91H2LPoOtdHn3NPW7472CWe2mh_RLOMIpHd6nXeHDHdnlXSF"/>
+</div>
+</div>
+</div>
+</header>
+<main class="px-margin-mobile md:px-margin-desktop py-lg max-w-7xl mx-auto">
+<!-- Header Section -->
+<div class="flex justify-between items-end mb-xl">
+<div class="space-y-xs">
+<p class="font-label-sm text-label-sm text-primary uppercase tracking-widest">My Sanctuary</p>
+<h2 class="font-h1 text-h1 text-on-surface">Rooms Overview</h2>
+</div>
+<button class="hidden md:flex items-center gap-2 bg-primary text-on-primary px-lg py-sm rounded-xl font-label-sm border-b-2 border-emerald-800 active:scale-95 transition-all">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+                Add Room
+            </button>
+</div>
+<!-- Rooms Bento Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
+<!-- Room Card 1: Living Room -->
+<div class="group bg-surface-container-lowest rounded-[24px] overflow-hidden shadow-[0_4px_20px_rgba(148,74,35,0.05)] hover:shadow-[0_8px_30px_rgba(148,74,35,0.1)] transition-all duration-300 flex flex-col">
+<div class="relative h-48 overflow-hidden">
+<img alt="Living Room" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Lush minimalist living room with several large monstera plants and a fiddle leaf fig in terracotta pots under soft afternoon sun" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD4I9-A8PAJcFcXm5itMhGC55PLe_pBb_tbL5e_TInjEQgM3ELsUfq-Xq6YVWsWtj7m75LagBxWk1nq5s2orjgX6BPJgIhr2juGt-oRjPNVCXaOMJ01PSftQoTnAlTAUCC3JQ6inlI4HI8eA6xrsC0-yR-5Z7tavQXSzV8hUBYHdXW7s-WKzUH-_fXSV919nic3ORqmmb4pUWzQLnuOeI_dVmg4obWdXgphWwk7Wa1yZrkM47IAh2Q9TCre1uo3V2Pvzpt12K3bVWAt"/>
+<div class="absolute top-md right-md">
+<span class="bg-primary/15 text-primary px-sm py-xs rounded-full font-label-sm flex items-center gap-1 backdrop-blur-md">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+                            Healthy
+                        </span>
+</div>
+</div>
+<div class="p-lg flex flex-col flex-grow">
+<h3 class="font-h3 text-h3 text-secondary mb-xs">Living Room</h3>
+<p class="font-body-md text-on-surface-variant mb-gutter">8 Plants thriving</p>
+<div class="mt-auto flex items-center justify-between border-t border-surface-variant pt-md">
+<div class="flex -space-x-2">
+<div class="w-8 h-8 rounded-full border-2 border-white bg-emerald-100 flex items-center justify-center">
+<span class="material-symbols-outlined text-[16px] text-emerald-700" data-icon="water_drop">water_drop</span>
+</div>
+<div class="w-8 h-8 rounded-full border-2 border-white bg-emerald-100 flex items-center justify-center">
+<span class="material-symbols-outlined text-[16px] text-emerald-700" data-icon="light_mode">light_mode</span>
+</div>
+</div>
+<span class="text-caption font-caption text-stone-400">View Details</span>
+</div>
+</div>
+</div>
+<!-- Room Card 2: Kitchen (Needs Attention) -->
+<div class="group bg-surface-container-lowest rounded-[24px] overflow-hidden shadow-[0_4px_20px_rgba(148,74,35,0.05)] hover:shadow-[0_8px_30px_rgba(148,74,35,0.1)] transition-all duration-300 flex flex-col">
+<div class="relative h-48 overflow-hidden">
+<img alt="Kitchen" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Bright modern kitchen window sill filled with herb pots including basil and mint, airy feel with white marble accents" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJnvS4nsbKXR9Ecm-j0j3DNTE0oOBiFgCZ-_2XvQGrX5EqIx2yvRWQYhUKWyZXfQXTX7QsJrt3K_Oltdpp_syaJPRBA_Hyb8NyzPO3JWYKR9Z3m8uTbGMFPP_51eDV-QTKHgEvDU-RsmmSXyLCT8pwDEvER3_Y6YFyT2jxbxEZV6Z_5schv72mdFgEizfAg7UG-juc3zQpu2XbDrDiT1rZZ2dUfXx8mg9f_7FajbSqQKBjDzOAG7ULvM6MjzfsH4AkWDQeLIw5UkCa"/>
+<div class="absolute top-md right-md">
+<span class="bg-error/15 text-error px-sm py-xs rounded-full font-label-sm flex items-center gap-1 backdrop-blur-md">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+                            Needs Water
+                        </span>
+</div>
+</div>
+<div class="p-lg flex flex-col flex-grow">
+<h3 class="font-h3 text-h3 text-secondary mb-xs">Kitchen Garden</h3>
+<p class="font-body-md text-error font-semibold mb-gutter">3 plants need water</p>
+<div class="mt-auto flex items-center justify-between border-t border-surface-variant pt-md">
+<div class="flex items-center gap-2">
+<div class="w-10 h-1 rounded-full bg-surface-variant overflow-hidden">
+<div class="h-full bg-error w-1/3"></div>
+</div>
+<span class="text-caption font-caption text-error">33% moisture</span>
+</div>
+<span class="material-symbols-outlined text-stone-400" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+</div>
+<!-- Room Card 3: Balcony -->
+<div class="group bg-surface-container-lowest rounded-[24px] overflow-hidden shadow-[0_4px_20px_rgba(148,74,35,0.05)] hover:shadow-[0_8px_30px_rgba(148,74,35,0.1)] transition-all duration-300 flex flex-col">
+<div class="relative h-48 overflow-hidden">
+<img alt="Balcony" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Cozy apartment balcony at dusk with string lights, several hanging plants and wooden furniture, warm and inviting atmosphere" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAfzhuyg7pKz84DYCHnMq9XCp16TJLBlaePLSB1Ot65i3HLM9iAOUrgLMd0mzxNM4afqN3SjEzw5RoicN9-kljVNjawVR1r1MowSH-OfYpg7cLp8-yoPSDTTmd_Ci8mDyZ1T7bHJdelADWueoJ4T7sl5fIkGV9PHiknJsrW9vWsvca2I5cGEN7XZMOAqsqVk2vwktPbBKxJTUcuXaH_vPX5ax-BH8YPBrM4aS8xCghRA0KefdAj2ocfozz0aKS42TnU4_X0fOP3_oVm"/>
+<div class="absolute top-md right-md">
+<span class="bg-tertiary/15 text-tertiary px-sm py-xs rounded-full font-label-sm flex items-center gap-1 backdrop-blur-md">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+                            Monitoring
+                        </span>
+</div>
+</div>
+<div class="p-lg flex flex-col flex-grow">
+<h3 class="font-h3 text-h3 text-secondary mb-xs">Sunset Balcony</h3>
+<p class="font-body-md text-on-surface-variant mb-gutter">12 Outdoor species</p>
+<div class="mt-auto flex items-center justify-between border-t border-surface-variant pt-md">
+<div class="flex items-center gap-3">
+<div class="flex items-center text-primary">
+<span class="material-symbols-outlined text-[18px]" data-icon="thermometer">thermometer</span>
+<span class="text-caption font-caption">24°C</span>
+</div>
+<div class="flex items-center text-primary">
+<span class="material-symbols-outlined text-[18px]" data-icon="humidity_mid">humidity_mid</span>
+<span class="text-caption font-caption">65%</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-stone-400" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+</div>
+<!-- Add Room Placeholder -->
+<button class="group border-2 border-dashed border-outline-variant bg-transparent rounded-[24px] p-lg flex flex-col items-center justify-center gap-sm hover:border-primary/50 hover:bg-emerald-50/30 transition-all min-h-[350px]">
+<div class="w-14 h-14 rounded-full bg-surface-container-high flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-[32px]" data-icon="add_home">add_home</span>
+</div>
+<span class="font-h3 text-h3 text-on-surface-variant">Add New Room</span>
+<p class="font-caption text-caption text-stone-500">Expand your digital garden</p>
+</button>
+</div>
+<!-- Quick Summary / Insights Section -->
+<section class="mt-xl grid grid-cols-1 md:grid-cols-2 gap-gutter">
+<div class="bg-emerald-900 text-white rounded-[24px] p-lg flex items-center justify-between overflow-hidden relative">
+<div class="relative z-10">
+<h4 class="font-h3 text-h3 mb-xs">Today's Wisdom</h4>
+<p class="font-body-md opacity-80 max-w-[240px]">Morning sunlight is best for your Pothos in the Living Room today.</p>
+</div>
+<span class="material-symbols-outlined text-[80px] opacity-10 absolute -right-4 -bottom-4" data-icon="auto_awesome">auto_awesome</span>
+</div>
+<div class="bg-secondary-fixed text-on-secondary-fixed-variant rounded-[24px] p-lg flex items-center gap-gutter">
+<div class="bg-on-secondary-container/10 p-md rounded-xl">
+<span class="material-symbols-outlined text-[32px]" data-icon="notifications_active">notifications_active</span>
+</div>
+<div>
+<h4 class="font-h3 text-h3">3 Alerts</h4>
+<p class="font-body-md">Low water levels detected in Kitchen</p>
+</div>
+</div>
+</section>
+</main>
+<!-- Floating Action Button (Mobile Only) -->
+<button class="md:hidden fixed bottom-28 right-6 w-14 h-14 bg-primary text-on-primary rounded-2xl shadow-xl flex items-center justify-center active:scale-90 transition-transform z-40 border-b-2 border-emerald-800">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-6 pt-3 bg-white/90 dark:bg-stone-900/90 backdrop-blur-lg rounded-t-2xl shadow-[0_-4px_20px_rgba(27,67,50,0.05)] dark:shadow-none tonal-shift">
+<a class="flex flex-col items-center justify-center text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/20 rounded-xl px-4 py-1 active:translate-y-0.5 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="grid_view" style="font-variation-settings: 'FILL' 1;">grid_view</span>
+<span class="font-['Plus_Jakarta_Sans'] text-[11px] font-semibold uppercase tracking-wider mt-1">Rooms</span>
+</a>
+<a class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-4 py-1 hover:text-emerald-500 dark:hover:text-emerald-300 active:translate-y-0.5 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="all_inbox">all_inbox</span>
+<span class="font-['Plus_Jakarta_Sans'] text-[11px] font-semibold uppercase tracking-wider mt-1">Inbox</span>
+</a>
+<a class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-4 py-1 hover:text-emerald-500 dark:hover:text-emerald-300 active:translate-y-0.5 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-['Plus_Jakarta_Sans'] text-[11px] font-semibold uppercase tracking-wider mt-1">Settings</span>
+</a>
+</nav>
+</body></html>

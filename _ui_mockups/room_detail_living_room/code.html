@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Living Room - GreenHouse</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed": "#ffdbcc",
+                        "on-secondary": "#ffffff",
+                        "on-tertiary-container": "#523200",
+                        "error-container": "#ffdad6",
+                        "surface-tint": "#006c49",
+                        "on-tertiary-fixed": "#2a1700",
+                        "surface-container-highest": "#eae1da",
+                        "on-secondary-container": "#76340e",
+                        "outline-variant": "#bbcabf",
+                        "on-surface": "#1f1b17",
+                        "on-error": "#ffffff",
+                        "inverse-surface": "#342f2b",
+                        "inverse-on-surface": "#f9efe8",
+                        "secondary-container": "#fd9e70",
+                        "primary-fixed": "#6ffbbe",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-high": "#f0e6e0",
+                        "surface-variant": "#eae1da",
+                        "on-primary": "#ffffff",
+                        "inverse-primary": "#4edea3",
+                        "on-background": "#1f1b17",
+                        "secondary-fixed-dim": "#ffb693",
+                        "on-primary-fixed": "#002113",
+                        "tertiary-fixed": "#ffddb8",
+                        "on-primary-container": "#00422b",
+                        "surface-container-low": "#fcf2eb",
+                        "surface-dim": "#e2d8d2",
+                        "surface": "#fff8f5",
+                        "primary-container": "#10b981",
+                        "background": "#fff8f5",
+                        "on-primary-fixed-variant": "#005236",
+                        "secondary": "#944a23",
+                        "primary": "#006c49",
+                        "tertiary-fixed-dim": "#ffb95f",
+                        "tertiary": "#855300",
+                        "on-secondary-fixed": "#351000",
+                        "outline": "#6c7a71",
+                        "on-tertiary": "#ffffff",
+                        "error": "#ba1a1a",
+                        "on-error-container": "#93000a",
+                        "surface-bright": "#fff8f5",
+                        "on-tertiary-fixed-variant": "#653e00",
+                        "on-surface-variant": "#3c4a42",
+                        "primary-fixed-dim": "#4edea3",
+                        "surface-container": "#f6ece6",
+                        "tertiary-container": "#e29100",
+                        "on-secondary-fixed-variant": "#76330d"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xs": "4px",
+                        "xl": "32px",
+                        "base": "4px",
+                        "sm": "8px",
+                        "gutter": "16px",
+                        "margin-desktop": "40px",
+                        "md": "16px",
+                        "margin-mobile": "20px",
+                        "lg": "24px"
+                    },
+                    "fontFamily": {
+                        "label-sm": ["Plus Jakarta Sans"],
+                        "caption": ["Plus Jakarta Sans"],
+                        "body-md": ["Plus Jakarta Sans"],
+                        "h2": ["Plus Jakarta Sans"],
+                        "h3": ["Plus Jakarta Sans"],
+                        "h1": ["Plus Jakarta Sans"],
+                        "body-lg": ["Plus Jakarta Sans"]
+                    },
+                    "fontSize": {
+                        "label-sm": ["14px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "caption": ["12px", {"lineHeight": "1.4", "letterSpacing": "0", "fontWeight": "500"}],
+                        "body-md": ["16px", {"lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "400"}],
+                        "h2": ["24px", {"lineHeight": "1.3", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "h3": ["20px", {"lineHeight": "1.4", "letterSpacing": "0", "fontWeight": "600"}],
+                        "h1": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .marker-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: .7; transform: scale(1.1); }
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md min-h-screen pb-32">
+<!-- TopAppBar -->
+<header class="bg-stone-50/80 backdrop-blur-md border-b border-stone-200/50 shadow-sm shadow-stone-200/20 docked full-width top-0 z-50 fixed">
+<div class="flex justify-between items-center w-full px-5 h-16">
+<div class="flex items-center gap-3">
+<button class="active:scale-95 duration-200 text-stone-500">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-emerald-700 font-black tracking-tighter" data-icon="potted_plant">potted_plant</span>
+<h1 class="font-['Plus_Jakarta_Sans'] font-bold text-lg tracking-tight text-emerald-700">GreenHouse</h1>
+</div>
+</div>
+<div class="w-8 h-8 rounded-full overflow-hidden border-2 border-primary-container">
+<img alt="User profile photo" data-alt="Close-up portrait of a friendly man with a warm smile, soft natural lighting, professional photography style" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCSnVXmF-jX8sZIt2JHlk8T5oRE2k3bUaQV8OWEjz38rvejFum_MFgiY_YbbkvyM8_nY43EGEVqIimoOFFdKV2eQuwjLeESL0Xb_y-y-3Iw3_bIMp2ox-8ioZb-47sms9a5sidwbPRmjtNFy6EoMXdr3Q0kMRsRsxjmFO1F9zz8V75SViBI-o2xE65bZGfEjqoKZOLoEbthgx_vJ66O8QR_C0mVT9YNeoJBX2LOWcl8mNEgE8OrjVNhtldfnILeXCp5BcSARPU7vK-w"/>
+</div>
+</div>
+</header>
+<main class="pt-16 max-w-5xl mx-auto">
+<!-- Room Hero Section -->
+<section class="relative px-margin-mobile md:px-0 md:mt-gutter">
+<div class="relative w-full aspect-[4/3] md:aspect-[21/9] rounded-3xl overflow-hidden shadow-xl">
+<img alt="Living Room" class="w-full h-full object-cover" data-alt="Sun-drenched modern living room with large windows, minimalist furniture, wood accents, and several lush green houseplants placed strategically around the space." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC3dy2T6bXM8muyFoLYN2j7JYiaFRtcAC_7s1hJkd5GJgCYXfHJj0YvDM0bqpf_OvK29zC452nXb6OTKUrrIUw8pGhtv5D0dTcYg-hKvenjNPkALPjAAAN9jYl8tZCHN9_vDoiTfnuJ_hzW_yFIoRuL5TgrAHrtDA_OMOQ2WKkOKIz-ANKxYo_XhwtnDcsvXliIkkGg0tTIKugs1rPbvPzIzkxlVs-cMsKMoQI58zJq9O8a4LYgQLupKt1DAWPhr6HnOti6T-3N34UC"/>
+<!-- Interactive Markers -->
+<!-- Monstera (Green) -->
+<button class="absolute top-[40%] left-[25%] group">
+<div class="w-6 h-6 bg-primary-container rounded-full border-4 border-white shadow-lg marker-pulse"></div>
+<div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-white px-3 py-1 rounded-lg shadow-md whitespace-nowrap">
+<p class="text-caption font-caption text-primary">Monstera Deliciosa</p>
+</div>
+</button>
+<!-- Fiddle Leaf Fig (Yellow) -->
+<button class="absolute top-[30%] right-[30%] group">
+<div class="w-6 h-6 bg-tertiary-container rounded-full border-4 border-white shadow-lg marker-pulse"></div>
+<div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-white px-3 py-1 rounded-lg shadow-md whitespace-nowrap">
+<p class="text-caption font-caption text-tertiary">Fiddle Leaf Fig</p>
+</div>
+</button>
+<!-- Snake Plant (Green) -->
+<button class="absolute bottom-[20%] right-[15%] group">
+<div class="w-6 h-6 bg-primary-container rounded-full border-4 border-white shadow-lg marker-pulse"></div>
+<div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-white px-3 py-1 rounded-lg shadow-md whitespace-nowrap">
+<p class="text-caption font-caption text-primary">Snake Plant</p>
+</div>
+</button>
+<div class="absolute bottom-6 left-6 right-6 flex justify-between items-end">
+<div class="bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-lg border border-white/20">
+<h2 class="font-h2 text-h2 text-secondary">Living Room</h2>
+<p class="font-caption text-caption text-outline">8 plants • 2 need attention</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Actions Bar -->
+<section class="mt-xl px-margin-mobile flex justify-between items-center">
+<h3 class="font-h3 text-h3 text-on-surface">Plant Inventory</h3>
+<div class="flex gap-sm">
+<button class="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary rounded-full font-label-sm text-label-sm shadow-md hover:brightness-110 active:scale-95 transition-all border-b-2 border-primary-container">
+<span class="material-symbols-outlined text-[20px]">water_drop</span>
+                    Water All
+                </button>
+<button class="flex items-center justify-center w-10 h-10 bg-secondary-fixed text-on-secondary-fixed rounded-full hover:bg-secondary-container transition-colors shadow-sm">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+</section>
+<!-- Plant Cards Grid -->
+<section class="mt-gutter px-margin-mobile grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
+<!-- Plant Card 1: Monstera -->
+<div class="bg-white rounded-[24px] p-4 shadow-[0_4px_20px_rgba(27,67,50,0.05)] border border-surface-container hover:shadow-lg transition-all group">
+<div class="relative h-48 mb-4 rounded-[20px] overflow-hidden">
+<img alt="Monstera Deliciosa" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Close-up of a vibrant Swiss cheese plant (Monstera) with large characteristic holes, soft daylight, minimalist aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAIFSBWFMQNXDK2g3Giv0_3-KjXBzHN3kO6_9WIFYC6bvbs14MEduy9KEBncZrCuzXH9ftXOGdrsDY08sIBaPfiNquW8uwqPzk1ubMRTGuBNZngQl4jUS9dHp_Tu9JQSrZIugJo3D4Yu6csXaGDemQrX6ugvpoPgIO5GerrLawkxvfh0xbIYmIpi3MZJRo5cnAAUus2GrJ5pc5D7CGFUwM-JtsOMvEnV79bLUzm4cCrOkXqYR-UEXb60-8CekSRk0FK5NhJZoW1RPss"/>
+<div class="absolute top-3 right-3 bg-primary-container/15 text-primary-container px-3 py-1 rounded-full font-label-sm text-[10px] backdrop-blur-sm">
+                        HEALTHY
+                    </div>
+</div>
+<div class="flex justify-between items-start mb-2">
+<div>
+<h4 class="font-h3 text-h3 text-secondary">Monstera Deliciosa</h4>
+<p class="font-caption text-caption text-outline">Swiss Cheese Plant</p>
+</div>
+<div class="w-10 h-10 rounded-full bg-surface-container-low flex items-center justify-center">
+<span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">water_drop</span>
+</div>
+</div>
+<div class="mt-4 pt-4 border-t border-surface-container flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-12 h-1.5 bg-surface-container rounded-full overflow-hidden">
+<div class="w-[85%] h-full bg-primary-container"></div>
+</div>
+<span class="text-[10px] font-bold text-primary-container uppercase">85% Moisture</span>
+</div>
+<span class="text-caption text-outline">2 days ago</span>
+</div>
+</div>
+<!-- Plant Card 2: Fiddle Leaf Fig -->
+<div class="bg-white rounded-[24px] p-4 shadow-[0_4px_20px_rgba(27,67,50,0.05)] border border-surface-container hover:shadow-lg transition-all group">
+<div class="relative h-48 mb-4 rounded-[20px] overflow-hidden">
+<img alt="Fiddle Leaf Fig" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Elegant Fiddle Leaf Fig tree in a ceramic pot, large waxy leaves, bright airy room setting, soft focus background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCf1nK0EAfTKJU1xb0BpKOwI3sDQRE5NGC-GldoTa5xbNlp3wVpiZSCdqUT-wioZp1dC5QN4y0GkfKBhdzTtndXuJ8NlG1C4XaU_X5ZL3xpO-DSd4rdC0PqJy1Q1ZVTv4MedRAQjiCffe9oSHM9MfnPygeCtznor0Z2igkhBcSLvXXDQvWyLRjq0U-Kc8y9s_ApIftm9DQye-NC4yZx6aQiUsDp20akFIzS5LmHbwvshgkwwxEBbQovWJ6-fVBKZTIn9mSmClew8-XA"/>
+<div class="absolute top-3 right-3 bg-tertiary-container/15 text-tertiary px-3 py-1 rounded-full font-label-sm text-[10px] backdrop-blur-sm">
+                        THIRSTY
+                    </div>
+</div>
+<div class="flex justify-between items-start mb-2">
+<div>
+<h4 class="font-h3 text-h3 text-secondary">Fiddle Leaf Fig</h4>
+<p class="font-caption text-caption text-outline">Ficus Lyrata</p>
+</div>
+<div class="w-10 h-10 rounded-full bg-tertiary-container/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-tertiary-container" style="font-variation-settings: 'FILL' 1;">warning</span>
+</div>
+</div>
+<div class="mt-4 pt-4 border-t border-surface-container flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-12 h-1.5 bg-surface-container rounded-full overflow-hidden">
+<div class="w-[32%] h-full bg-tertiary-container"></div>
+</div>
+<span class="text-[10px] font-bold text-tertiary uppercase">32% Moisture</span>
+</div>
+<span class="text-caption text-outline">7 days ago</span>
+</div>
+</div>
+<!-- Plant Card 3: Snake Plant -->
+<div class="bg-white rounded-[24px] p-4 shadow-[0_4px_20px_rgba(27,67,50,0.05)] border border-surface-container hover:shadow-lg transition-all group">
+<div class="relative h-48 mb-4 rounded-[20px] overflow-hidden">
+<img alt="Snake Plant" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Tall, sturdy Snake Plant with yellow-edged leaves, modern aesthetic, clean lines, bright indirect light" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDh9a9wjKKKgVVELveShSJFd1ZYsrP6l_5K6_97SoeNUPgLq56YPUAQ5lIhWIaHTKrnZySzdGy2G_ukEVHzNnJr3vMOOUn3inuj3Irdt_wKXiuGLbRvI15E38rVj5vQUcecKhKm-Q8C59dyUnwM1lPHFaIMJiaH-LmR-xgqRunN88mfYoCneSaFrVxx4xqzTWuhlN8CgQK57FWb_0UL5a1hTlapHZnaKz5XMLHx0XC-cJ-ZaAfPGAlgkEeVnchBvhSzBNBeGgIK0NC_"/>
+<div class="absolute top-3 right-3 bg-primary-container/15 text-primary-container px-3 py-1 rounded-full font-label-sm text-[10px] backdrop-blur-sm">
+                        HEALTHY
+                    </div>
+</div>
+<div class="flex justify-between items-start mb-2">
+<div>
+<h4 class="font-h3 text-h3 text-secondary">Snake Plant</h4>
+<p class="font-caption text-caption text-outline">Sansevieria</p>
+</div>
+<div class="w-10 h-10 rounded-full bg-surface-container-low flex items-center justify-center">
+<span class="material-symbols-outlined text-primary-container">eco</span>
+</div>
+</div>
+<div class="mt-4 pt-4 border-t border-surface-container flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-12 h-1.5 bg-surface-container rounded-full overflow-hidden">
+<div class="w-[60%] h-full bg-primary-container"></div>
+</div>
+<span class="text-[10px] font-bold text-primary-container uppercase">60% Moisture</span>
+</div>
+<span class="text-caption text-outline">12 days ago</span>
+</div>
+</div>
+</section>
+<!-- Stats Bento Section -->
+<section class="mt-xl px-margin-mobile grid grid-cols-2 md:grid-cols-4 gap-gutter">
+<div class="bg-surface-container-low p-gutter rounded-2xl flex flex-col justify-between aspect-square md:aspect-auto">
+<span class="material-symbols-outlined text-primary text-3xl">thermometer</span>
+<div>
+<p class="text-h2 font-h2 text-on-surface">22°C</p>
+<p class="text-caption font-caption text-outline">Temperature</p>
+</div>
+</div>
+<div class="bg-surface-container-low p-gutter rounded-2xl flex flex-col justify-between aspect-square md:aspect-auto">
+<span class="material-symbols-outlined text-emerald-600 text-3xl">humidity_mid</span>
+<div>
+<p class="text-h2 font-h2 text-on-surface">65%</p>
+<p class="text-caption font-caption text-outline">Humidity</p>
+</div>
+</div>
+<div class="bg-surface-container-low p-gutter rounded-2xl flex flex-col justify-between aspect-square md:aspect-auto">
+<span class="material-symbols-outlined text-amber-500 text-3xl">wb_sunny</span>
+<div>
+<p class="text-h2 font-h2 text-on-surface">High</p>
+<p class="text-caption font-caption text-outline">Light Levels</p>
+</div>
+</div>
+<div class="bg-surface-container-low p-gutter rounded-2xl flex flex-col justify-between aspect-square md:aspect-auto">
+<span class="material-symbols-outlined text-secondary text-3xl">calendar_today</span>
+<div>
+<p class="text-h2 font-h2 text-on-surface">Sat</p>
+<p class="text-caption font-caption text-outline">Next Fertilize</p>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-6 pt-3 bg-white/90 backdrop-blur-lg rounded-t-2xl shadow-[0_-4px_20px_rgba(27,67,50,0.05)]">
+<button class="flex flex-col items-center justify-center text-emerald-600 bg-emerald-50/50 rounded-xl px-4 py-1 active:translate-y-0.5 transition-transform duration-150">
+<span class="material-symbols-outlined" data-icon="grid_view" style="font-variation-settings: 'FILL' 1;">grid_view</span>
+<span class="font-['Plus_Jakarta_Sans'] text-[11px] font-semibold uppercase tracking-wider">Rooms</span>
+</button>
+<button class="flex flex-col items-center justify-center text-stone-400 px-4 py-1 hover:text-emerald-500 active:translate-y-0.5 transition-transform duration-150">
+<span class="material-symbols-outlined" data-icon="all_inbox">all_inbox</span>
+<span class="font-['Plus_Jakarta_Sans'] text-[11px] font-semibold uppercase tracking-wider">Inbox</span>
+</button>
+<button class="flex flex-col items-center justify-center text-stone-400 px-4 py-1 hover:text-emerald-500 active:translate-y-0.5 transition-transform duration-150">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-['Plus_Jakarta_Sans'] text-[11px] font-semibold uppercase tracking-wider">Settings</span>
+</button>
+</nav>
+<!-- FAB (Suppressed on Details according to rules, but room view is a top-level destination dashboard in this context) -->
+<button class="fixed right-6 bottom-24 w-14 h-14 bg-primary text-on-primary rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-all z-40 border-b-2 border-emerald-900">
+<span class="material-symbols-outlined text-3xl">add_photo_alternate</span>
+</button>
+</body></html>
