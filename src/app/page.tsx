@@ -10,6 +10,7 @@ type TelegramWebAppUser = {
 };
 
 type TelegramWebApp = {
+  ready?: () => void;
   initDataUnsafe?: {
     user?: TelegramWebAppUser;
   };
@@ -24,15 +25,45 @@ declare global {
 }
 
 export default function Home() {
-  const [message, setMessage] = useState("Open inside Telegram");
+  const [message, setMessage] = useState("No Telegram user detected");
 
   useEffect(() => {
+    let isMounted = true;
+
+    const wait = (ms: number) =>
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, ms);
+      });
+
+    async function waitForTelegramWebApp() {
+      // Small startup delay before first read, then retry briefly.
+      await wait(300);
+
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const tg = window.Telegram?.WebApp;
+        if (tg) {
+          return tg;
+        }
+
+        await wait(300);
+      }
+
+      return undefined;
+    }
+
     async function saveTelegramUser() {
-      const tg = window.Telegram?.WebApp;
+      const tg = await waitForTelegramWebApp();
+      tg?.ready?.();
+
+      console.log("TG:", tg);
+      console.log("INIT DATA:", tg?.initDataUnsafe);
+
       const user = tg?.initDataUnsafe?.user;
 
       if (!user) {
-        setMessage("Open inside Telegram");
+        if (isMounted) {
+          setMessage("No Telegram user detected");
+        }
         return;
       }
 
@@ -53,12 +84,18 @@ export default function Home() {
       }
 
       console.log("Telegram user upsert result:", data);
-      setMessage("User saved");
+      if (isMounted) {
+        setMessage("User saved");
+      }
     }
 
     saveTelegramUser().catch((error) => {
       console.error("Unexpected Telegram/Supabase error:", error);
     });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   return <main>{message}</main>;
