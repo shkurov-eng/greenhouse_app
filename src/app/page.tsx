@@ -26,6 +26,12 @@ type DebugInfo = {
   platform: string | null;
 };
 
+type Room = {
+  id: string;
+  name: string;
+  background_url: string | null;
+};
+
 declare global {
   interface Window {
     Telegram?: {
@@ -36,6 +42,9 @@ declare global {
 
 export default function Home() {
   const [message, setMessage] = useState("No Telegram user detected");
+  const [householdId, setHouseholdId] = useState<string | null>(null);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [roomName, setRoomName] = useState("");
   const [debugInfo, setDebugInfo] = useState<DebugInfo>({
     telegram: null,
     tg: null,
@@ -43,6 +52,24 @@ export default function Home() {
     initDataUnsafe: null,
     platform: null,
   });
+
+  async function fetchRoomsForHousehold(currentHouseholdId: string) {
+    console.log("Step: fetching rooms for household:", currentHouseholdId);
+
+    const { data, error } = await supabase
+      .from("rooms")
+      .select("id, name, background_url")
+      .eq("household_id", currentHouseholdId)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching rooms:", error);
+      return;
+    }
+
+    console.log("Rooms fetched:", data);
+    setRooms((data ?? []) as Room[]);
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -150,49 +177,58 @@ export default function Home() {
 
       console.log("Existing household membership:", membership);
 
+      let currentHouseholdId = membership?.household_id ?? null;
+
       if (membership) {
         console.log("User already in household. No action needed.");
         if (isMounted) {
           setMessage("User already in household");
         }
-        return;
+      } else {
+        console.log("Step: creating household 'My Home'...");
+
+        const { data: household, error: householdError } = await supabase
+          .from("households")
+          .insert({ name: "My Home" })
+          .select("id, name")
+          .single();
+
+        if (householdError) {
+          console.error("Error creating household:", householdError);
+          return;
+        }
+
+        console.log("Created household:", household);
+        console.log("Step: linking user to household...");
+
+        const { data: memberRow, error: memberInsertError } = await supabase
+          .from("household_members")
+          .insert({
+            household_id: household.id,
+            user_id: profile.id,
+          })
+          .select("id, household_id, user_id")
+          .single();
+
+        if (memberInsertError) {
+          console.error("Error inserting household member:", memberInsertError);
+          return;
+        }
+
+        console.log("Inserted household_members row:", memberRow);
+        console.log("Household flow completed.");
+        currentHouseholdId = household.id;
+
+        if (isMounted) {
+          setMessage("Household created");
+        }
       }
 
-      console.log("Step: creating household 'My Home'...");
-
-      const { data: household, error: householdError } = await supabase
-        .from("households")
-        .insert({ name: "My Home" })
-        .select("id, name")
-        .single();
-
-      if (householdError) {
-        console.error("Error creating household:", householdError);
-        return;
-      }
-
-      console.log("Created household:", household);
-      console.log("Step: linking user to household...");
-
-      const { data: memberRow, error: memberInsertError } = await supabase
-        .from("household_members")
-        .insert({
-          household_id: household.id,
-          user_id: profile.id,
-        })
-        .select("id, household_id, user_id")
-        .single();
-
-      if (memberInsertError) {
-        console.error("Error inserting household member:", memberInsertError);
-        return;
-      }
-
-      console.log("Inserted household_members row:", memberRow);
-      console.log("Household flow completed.");
-
-      if (isMounted) {
-        setMessage("Household created");
+      if (currentHouseholdId) {
+        if (isMounted) {
+          setHouseholdId(currentHouseholdId);
+        }
+        await fetchRoomsForHousehold(currentHouseholdId);
       }
     }
 
@@ -205,9 +241,61 @@ export default function Home() {
     };
   }, []);
 
+  async function handleCreateRoom(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!householdId) {
+      console.log("Cannot create room: household_id is missing.");
+      return;
+    }
+
+    const newRoomName = roomName.trim();
+    if (!newRoomName) {
+      console.log("Cannot create room: empty room name.");
+      return;
+    }
+
+    console.log("Step: creating room...", {
+      household_id: householdId,
+      name: newRoomName,
+    });
+
+    const { data, error } = await supabase
+      .from("rooms")
+      .insert({
+        household_id: householdId,
+        name: newRoomName,
+      })
+      .select("id, name, background_url")
+      .single();
+
+    if (error) {
+      console.error("Error creating room:", error);
+      return;
+    }
+
+    console.log("Room created:", data);
+    setRoomName("");
+    await fetchRoomsForHousehold(householdId);
+  }
+
   return (
     <main>
       <p>{message}</p>
+      <p>Current household: {householdId ?? "not set"}</p>
+      <form onSubmit={handleCreateRoom}>
+        <input
+          value={roomName}
+          onChange={(event) => setRoomName(event.target.value)}
+          placeholder="Room name"
+        />
+        <button type="submit">Create Room</button>
+      </form>
+      <ul>
+        {rooms.map((room) => (
+          <li key={room.id}>{room.name}</li>
+        ))}
+      </ul>
       <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
     </main>
   );
