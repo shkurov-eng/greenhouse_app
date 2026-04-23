@@ -58,17 +58,18 @@ function asPlantStatus(value: unknown) {
   throw new Error("Invalid plant status");
 }
 
-async function rpc(fn: string, params: Record<string, unknown>): Promise<any> {
+async function rpc(fn: string, params: Record<string, unknown>): Promise<unknown> {
   const supabaseAdmin = getSupabaseAdmin();
-  const rpcAny = supabaseAdmin.rpc as unknown as (
+  type RpcResponse = { data: unknown; error: { message: string } | null };
+  const rpcAny = supabaseAdmin.rpc.bind(supabaseAdmin) as unknown as (
     rpcName: string,
     rpcParams?: Record<string, unknown>,
-  ) => any;
+  ) => Promise<RpcResponse>;
   const { data, error } = await rpcAny(fn, params);
   if (error) {
     throw new Error(error.message);
   }
-  return data;
+  return data as unknown;
 }
 
 async function enrichRoomsWithSignedUrls(rows: Array<Record<string, unknown>>) {

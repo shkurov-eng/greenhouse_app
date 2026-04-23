@@ -24,10 +24,11 @@ function unwrapSingleRow<T>(data: T | T[] | null | undefined): T {
 export async function POST(request: NextRequest) {
   try {
     const supabaseAdmin = getSupabaseAdmin();
-    const rpcAny = supabaseAdmin.rpc as unknown as (
+    type RpcResponse = { data: unknown; error: { message: string } | null };
+    const rpcAny = supabaseAdmin.rpc.bind(supabaseAdmin) as unknown as (
       fn: string,
       args?: Record<string, unknown>,
-    ) => any;
+    ) => Promise<RpcResponse>;
     const telegramId = getRequestTelegramId(request);
     const formData = await request.formData();
     const roomIdValue = formData.get("roomId");
