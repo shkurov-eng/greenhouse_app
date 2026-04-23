@@ -58,13 +58,17 @@ function asPlantStatus(value: unknown) {
   throw new Error("Invalid plant status");
 }
 
-async function rpc<T>(fn: string, params: Record<string, unknown>) {
+async function rpc(fn: string, params: Record<string, unknown>): Promise<any> {
   const supabaseAdmin = getSupabaseAdmin();
-  const { data, error } = await supabaseAdmin.rpc(fn, params);
+  const rpcAny = supabaseAdmin.rpc as unknown as (
+    rpcName: string,
+    rpcParams?: Record<string, unknown>,
+  ) => any;
+  const { data, error } = await rpcAny(fn, params);
   if (error) {
     throw new Error(error.message);
   }
-  return data as T;
+  return data;
 }
 
 async function enrichRoomsWithSignedUrls(rows: Array<Record<string, unknown>>) {
@@ -134,16 +138,16 @@ export async function POST(request: NextRequest) {
       }
 
       case "listRooms": {
-        const rooms = await rpc<Array<Record<string, unknown>>>("api_list_rooms", {
+        const rooms = (await rpc("api_list_rooms", {
           p_telegram_id: telegramId,
-        });
+        })) as Array<Record<string, unknown>> | null;
         const data = await enrichRoomsWithSignedUrls(rooms ?? []);
         return NextResponse.json({ data });
       }
 
       case "createRoom": {
         const name = asString(payload.name, "name");
-        const result = await rpc<Record<string, unknown> | Record<string, unknown>[]>("api_create_room", {
+        const result = await rpc("api_create_room", {
           p_telegram_id: telegramId,
           p_name: name,
         });

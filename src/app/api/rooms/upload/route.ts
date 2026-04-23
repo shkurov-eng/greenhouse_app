@@ -24,6 +24,10 @@ function unwrapSingleRow<T>(data: T | T[] | null | undefined): T {
 export async function POST(request: NextRequest) {
   try {
     const supabaseAdmin = getSupabaseAdmin();
+    const rpcAny = supabaseAdmin.rpc as unknown as (
+      fn: string,
+      args?: Record<string, unknown>,
+    ) => any;
     const telegramId = getRequestTelegramId(request);
     const formData = await request.formData();
     const roomIdValue = formData.get("roomId");
@@ -39,7 +43,7 @@ export async function POST(request: NextRequest) {
     const fileName = fileValue.name || "room-image.jpg";
     const roomId = roomIdValue.trim();
 
-    const { data: preparation, error: prepError } = await supabaseAdmin.rpc("api_prepare_room_image_upload", {
+    const { data: preparation, error: prepError } = await rpcAny("api_prepare_room_image_upload", {
       p_telegram_id: telegramId,
       p_room_id: roomId,
       p_file_name: fileName,
@@ -68,7 +72,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: uploadError.message }, { status: 400 });
     }
 
-    const { data: roomData, error: attachError } = await supabaseAdmin.rpc("api_attach_room_image", {
+    const { data: roomData, error: attachError } = await rpcAny("api_attach_room_image", {
       p_telegram_id: telegramId,
       p_room_id: prepared.room_id,
       p_file_path: prepared.file_path,

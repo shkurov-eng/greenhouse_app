@@ -3,6 +3,13 @@
 :root {
   --background: #fff8f5;
   --foreground: #1f1b17;
+  --font-plus-jakarta:
+    "Inter",
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
 }
 
 @theme inline {
