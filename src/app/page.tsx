@@ -42,6 +42,7 @@ declare global {
 
 export default function Home() {
   const [message, setMessage] = useState("No Telegram user detected");
+  const [isDebugMock, setIsDebugMock] = useState(false);
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [roomName, setRoomName] = useState("");
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -98,27 +99,46 @@ export default function Home() {
     }
 
     async function saveTelegramUser() {
+      const isDevelopment = process.env.NODE_ENV === "development";
+      const debugTelegramFlag =
+        new URLSearchParams(window.location.search).get("debugTelegram") === "1";
       const telegram = window.Telegram;
       const tg = await waitForTelegramWebApp();
       tg?.ready?.();
+      const mockUser: TelegramWebAppUser = {
+        id: 999999001,
+        username: "dev_user",
+      };
+      const fallbackInitDataUnsafe = { user: mockUser };
+      const telegramUser = tg?.initDataUnsafe?.user;
+      const shouldUseMockUser = !telegramUser && (isDevelopment || debugTelegramFlag);
+      const effectiveUser = telegramUser ?? (shouldUseMockUser ? mockUser : undefined);
+      const effectiveInitDataUnsafe = tg?.initDataUnsafe ?? (shouldUseMockUser ? fallbackInitDataUnsafe : undefined);
 
       console.log("window.Telegram:", telegram);
       console.log("TG:", tg);
       console.log("tg.initData:", tg?.initData);
-      console.log("INIT DATA:", tg?.initDataUnsafe);
+      console.log("INIT DATA:", effectiveInitDataUnsafe);
       console.log("tg.platform:", tg?.platform);
+      if (shouldUseMockUser) {
+        console.log("Debug mode active: using mock Telegram user", {
+          isDevelopment,
+          debugTelegramFlag,
+        });
+      }
 
       if (isMounted) {
+        setIsDebugMock(shouldUseMockUser);
         setDebugInfo({
           telegram: telegram ?? null,
           tg: tg ?? null,
           initData: tg?.initData ?? null,
-          initDataUnsafe: tg?.initDataUnsafe ?? null,
+          initDataUnsafe: effectiveInitDataUnsafe ?? null,
           platform: tg?.platform ?? null,
         });
       }
 
-      const user = tg?.initDataUnsafe?.user;
+      const user = effectiveUser;
 
       if (!user) {
         if (isMounted) {
@@ -364,6 +384,7 @@ export default function Home() {
 
   return (
     <main>
+      {isDebugMock ? <p>Debug mode: mock Telegram user</p> : null}
       <p>{message}</p>
       <p>Current household: {householdId ?? "not set"}</p>
       <input

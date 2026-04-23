@@ -12,3 +12,25 @@ create index if not exists rooms_household_id_idx
 insert into storage.buckets (id, name, public)
 values ('rooms', 'rooms', true)
 on conflict (id) do nothing;
+
+drop policy if exists "Rooms bucket public read" on storage.objects;
+create policy "Rooms bucket public read"
+on storage.objects
+for select
+to public
+using (bucket_id = 'rooms');
+
+drop policy if exists "Rooms bucket public upload" on storage.objects;
+create policy "Rooms bucket public upload"
+on storage.objects
+for insert
+to public
+with check (bucket_id = 'rooms');
+
+drop policy if exists "Rooms bucket public update" on storage.objects;
+create policy "Rooms bucket public update"
+on storage.objects
+for update
+to public
+using (bucket_id = 'rooms')
+with check (bucket_id = 'rooms');
