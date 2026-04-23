@@ -18,6 +18,14 @@ type TelegramWebApp = {
   platform?: string;
 };
 
+type DebugInfo = {
+  telegram: unknown | null;
+  tg: unknown | null;
+  initData: string | null;
+  initDataUnsafe: unknown | null;
+  platform: string | null;
+};
+
 declare global {
   interface Window {
     Telegram?: {
@@ -28,12 +36,12 @@ declare global {
 
 export default function Home() {
   const [message, setMessage] = useState("No Telegram user detected");
-  const [debugInfo, setDebugInfo] = useState({
-    telegram: null as unknown,
-    tg: null as unknown,
-    initData: null as string | undefined,
-    initDataUnsafe: null as unknown,
-    platform: null as string | undefined,
+  const [debugInfo, setDebugInfo] = useState<DebugInfo>({
+    telegram: null,
+    tg: null,
+    initData: null,
+    initDataUnsafe: null,
+    platform: null,
   });
 
   useEffect(() => {
@@ -75,9 +83,9 @@ export default function Home() {
         setDebugInfo({
           telegram: telegram ?? null,
           tg: tg ?? null,
-          initData: tg?.initData,
+          initData: tg?.initData ?? null,
           initDataUnsafe: tg?.initDataUnsafe ?? null,
-          platform: tg?.platform,
+          platform: tg?.platform ?? null,
         });
       }
 
