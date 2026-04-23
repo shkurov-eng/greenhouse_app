@@ -348,12 +348,12 @@ export default function Home() {
           </header>
 
           <section className="px-5 pt-20">
-            <div className="relative overflow-hidden rounded-[24px] bg-white shadow-[0_4px_20px_rgba(148,74,35,0.08)]">
+            <div className="relative overflow-hidden rounded-[24px] bg-[#f6ece6] shadow-[0_4px_20px_rgba(148,74,35,0.08)]">
               {selectedRoom.background_url ? (
                 <img
                   src={selectedRoom.background_url}
                   alt={selectedRoom.name}
-                  className="h-[72vh] w-full object-cover"
+                  className="h-[72vh] w-full object-contain"
                 />
               ) : (
                 <div className="flex h-[72vh] items-center justify-center text-sm text-[#6c7a71]">
