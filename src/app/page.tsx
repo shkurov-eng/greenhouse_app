@@ -11,9 +11,11 @@ type TelegramWebAppUser = {
 
 type TelegramWebApp = {
   ready?: () => void;
+  initData?: string;
   initDataUnsafe?: {
     user?: TelegramWebAppUser;
   };
+  platform?: string;
 };
 
 declare global {
@@ -26,6 +28,13 @@ declare global {
 
 export default function Home() {
   const [message, setMessage] = useState("No Telegram user detected");
+  const [debugInfo, setDebugInfo] = useState({
+    telegram: null as unknown,
+    tg: null as unknown,
+    initData: null as string | undefined,
+    initDataUnsafe: null as unknown,
+    platform: null as string | undefined,
+  });
 
   useEffect(() => {
     let isMounted = true;
@@ -52,11 +61,25 @@ export default function Home() {
     }
 
     async function saveTelegramUser() {
+      const telegram = window.Telegram;
       const tg = await waitForTelegramWebApp();
       tg?.ready?.();
 
+      console.log("window.Telegram:", telegram);
       console.log("TG:", tg);
+      console.log("tg.initData:", tg?.initData);
       console.log("INIT DATA:", tg?.initDataUnsafe);
+      console.log("tg.platform:", tg?.platform);
+
+      if (isMounted) {
+        setDebugInfo({
+          telegram: telegram ?? null,
+          tg: tg ?? null,
+          initData: tg?.initData,
+          initDataUnsafe: tg?.initDataUnsafe ?? null,
+          platform: tg?.platform,
+        });
+      }
 
       const user = tg?.initDataUnsafe?.user;
 
@@ -98,5 +121,10 @@ export default function Home() {
     };
   }, []);
 
-  return <main>{message}</main>;
+  return (
+    <main>
+      <p>{message}</p>
+      <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+    </main>
+  );
 }
