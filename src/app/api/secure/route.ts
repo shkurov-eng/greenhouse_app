@@ -72,20 +72,48 @@ async function rpc(fn: string, params: Record<string, unknown>): Promise<unknown
   return data as unknown;
 }
 
+function roomsStoragePathFromLegacyPublicUrl(url: string): string | null {
+  const marker = "/storage/v1/object/public/rooms/";
+  const i = url.indexOf(marker);
+  if (i === -1) {
+    return null;
+  }
+  const tail = url.slice(i + marker.length).split("?")[0];
+  if (!tail) {
+    return null;
+  }
+  try {
+    return decodeURIComponent(tail);
+  } catch {
+    return tail;
+  }
+}
+
+function resolveRoomsStoragePath(room: Record<string, unknown>): string | null {
+  const direct = room.background_path;
+  if (typeof direct === "string" && direct.trim().length > 0) {
+    return direct.trim();
+  }
+  const legacyUrl = room.background_url;
+  if (typeof legacyUrl === "string" && legacyUrl.length > 0) {
+    return roomsStoragePathFromLegacyPublicUrl(legacyUrl);
+  }
+  return null;
+}
+
 async function enrichRoomsWithSignedUrls(rows: Array<Record<string, unknown>>) {
   const supabaseAdmin = getSupabaseAdmin();
-  const paths = rows
-    .map((room) => room.background_path)
-    .filter((value): value is string => typeof value === "string" && value.length > 0);
+  const pathPerRow = rows.map((room) => resolveRoomsStoragePath(room));
+  const uniquePaths = [...new Set(pathPerRow.filter((p): p is string => Boolean(p)))];
 
-  if (paths.length === 0) {
+  if (uniquePaths.length === 0) {
     return rows.map((room) => ({
       ...room,
       signed_background_url: null,
     }));
   }
 
-  const { data, error } = await supabaseAdmin.storage.from("rooms").createSignedUrls(paths, 60 * 15);
+  const { data, error } = await supabaseAdmin.storage.from("rooms").createSignedUrls(uniquePaths, 60 * 15);
   if (error) {
     throw new Error(error.message);
   }
@@ -97,11 +125,31 @@ async function enrichRoomsWithSignedUrls(rows: Array<Record<string, unknown>>) {
     }
   }
 
-  return rows.map((room) => {
-    const path = typeof room.background_path === "string" ? room.background_path : null;
+  return rows.map((room, index) => {
+    const path = pathPerRow[index];
+    if (!path) {
+      return { ...room, signed_background_url: null };
+    }
+    let signed = signedByPath.get(path) ?? null;
+    if (!signed) {
+      for (const [key, url] of signedByPath) {
+        if (key === path) {
+          signed = url;
+          break;
+        }
+        try {
+          if (decodeURIComponent(key) === path || key === decodeURIComponent(path)) {
+            signed = url;
+            break;
+          }
+        } catch {
+          // ignore decode errors
+        }
+      }
+    }
     return {
       ...room,
-      signed_background_url: path ? signedByPath.get(path) ?? null : null,
+      signed_background_url: signed,
     };
   });
 }
