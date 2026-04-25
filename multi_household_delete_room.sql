@@ -406,7 +406,7 @@ grant execute on function public.api_delete_room(text, uuid) to anon, authentica
 grant execute on function public.api_rename_household(text, uuid, text) to anon, authenticated, service_role;
 grant execute on function public.api_rename_room(text, uuid, text) to anon, authenticated, service_role;
 
--- Delete a household the caller belongs to (all members lose access; rooms/plants cascade).
+-- Delete a household only if caller is its owner (all members lose access; rooms/plants cascade).
 create or replace function public.api_delete_household(
   p_telegram_id text,
   p_household_id uuid
@@ -422,10 +422,12 @@ begin
   v_profile_id := public.api_profile_id_by_telegram(p_telegram_id);
 
   if not exists (
-    select 1 from public.household_members hm
-    where hm.user_id = v_profile_id and hm.household_id = p_household_id
+    select 1
+    from public.households h
+    where h.id = p_household_id
+      and h.created_by_profile_id = v_profile_id
   ) then
-    raise exception 'not a member of this household';
+    raise exception 'only household owner can delete household';
   end if;
 
   begin

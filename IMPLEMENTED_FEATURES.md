@@ -73,7 +73,7 @@ This document summarizes what has already been implemented in the project.
     - `api_list_households`, `api_create_household`, `api_set_active_household`; `api_join_household` **adds** membership and sets the joined home active (user can belong to several homes).
     - Legacy unique-on-`user_id` alone on `household_members` must be dropped in favor of `UNIQUE (household_id, user_id)` (script attempts common constraint/index names, including `household_members_user_id_unique`).
     - `INSERT ... ON CONFLICT` in PL/pgSQL uses **dynamic `EXECUTE ... USING`** where needed so `RETURNS TABLE (household_id, ...)` output names do not shadow column names.
-    - UI: card-style **home picker** (horizontal scroll when multiple homes), **Create new home** modal, **rename home** (pencil → modal; `api_rename_household`), **delete home** (trash on each card; custom warning modal with **Continue/Cancel**; removes the household for all members), same secure API patterns. If the user deletes their last home, `loadHouseholds` runs `bootstrapUser` again so a default home is recreated.
+    - UI: card-style **home picker** (horizontal scroll when multiple homes), **Create new home** modal, **rename home** (pencil → modal; `api_rename_household`), **delete home** (trash on each card; custom warning modal with **Continue/Cancel**; owner-only in RPC and removes the household for all members), same secure API patterns. If the user deletes their last home, `loadHouseholds` runs `bootstrapUser` again so a default home is recreated.
 
 ## Stage 3 - Rooms
 
@@ -209,6 +209,8 @@ This document summarizes what has already been implemented in the project.
 - **Room image upload affordance:** room cards now use a dedicated “Room photo” subpanel with `Choose photo` + `Upload` actions (instead of raw file input presentation), improving clarity and tap ergonomics.
 - **Empty states refresh:** both overview (no rooms) and room detail (no plants) now include guided copy and immediate primary actions to reduce first-use friction.
 - **Room detail visual refresh:** selected-room header/back button/add-plant CTA and plant list cards were updated with larger hit areas, improved spacing, and stronger contrast hierarchy.
+- **Home screen bootstrap cleanup:** initial success toast/message (`User initialized`) was removed from `src/app/page.tsx` so the main screen starts cleaner after auth bootstrap.
+- **Settings invite-code UX update:** `Active home invite code` standalone block was removed; each home card in `src/app/settings/page.tsx` now shows its own invite code with an inline `Copy` button.
 
 ## Known Technical Debt
 
@@ -269,7 +271,7 @@ Scope and plan:
 - **Production:** open only from Telegram Mini App (menu / `web_app` button). Server requires valid `initData` + `TELEGRAM_BOT_TOKEN`.
 - **Local browser debug:** `npm run dev` + `DEV_BROWSER_MODE=true` + `DEV_TELEGRAM_ID` + `SUPABASE_SERVICE_ROLE_KEY` (not available on deployed Vercel preview/prod by design).
 - All data access: `POST /api/secure`, `POST /api/rooms/upload`, `POST /api/plants/upload`, `POST /api/plants/analyze`; RLS + RPC enforce household scope (active household from `profiles.active_household_id` when migration applied).
-- **Households:** members can **rename** (`api_rename_household`) or **delete** (`api_delete_household`) a home they belong to; delete removes shared data for everyone; empty membership after deletes is healed by **`bootstrapUser`** inside `loadHouseholds` (default home again).
+- **Households:** members can **rename** (`api_rename_household`) a home they belong to, but only the owner can **delete** (`api_delete_household`) it; delete removes shared data for everyone; empty membership after deletes is healed by **`bootstrapUser`** inside `loadHouseholds` (default home again).
 - Room thumbnails and detail images use **signed URLs**; legacy public URLs are supported via path extraction when needed.
 - **Opening a room** scrolls the page to the **top** before paint (`useLayoutEffect` in `src/app/page.tsx`) so watering markers on the image are usable without scrolling up from the list position.
 - Deletions (home, room, plant) use an in-app warning modal with explicit **Continue** / **Cancel** actions instead of browser `confirm()`.
