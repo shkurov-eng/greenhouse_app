@@ -44,7 +44,7 @@ This document summarizes what has already been implemented in the project.
   - Join attempts create pending requests instead of instant membership.
   - Owner sees pending requests in Settings (`Telegram ID`, `username`, home name, invite code) and can approve/reject.
   - Bot notifies owner about each pending request and provides inline `Approve` / `Reject` buttons in Telegram.
-  - Owner can list current household members and remove participants from the selected home in Settings.
+  - Owner sees household members grouped by each owned home in Settings and can remove participants.
 - Join home in UI:
   - Homes section shows invite code with **copy to clipboard** action.
   - User can join another home via invite code modal (`Join with code`).
@@ -237,8 +237,7 @@ Scope and plan:
 - `tasks_bot_reminders.sql` — adds `tasks` + `task_reminders_log`, task RPCs, and grants used by secure API and reminder worker.
 - `tasks_scope_and_bot_choice.sql` — adds personal/shared task scope, bot drafts, and task visibility logic for multi-home users.
 - `task_message_mode_settings.sql` — adds per-profile bot task ingestion mode (`single`/`combine`).
-- `household_join_approval.sql` — adds owner-approval flow for invite joins, pending join requests, and settings/review RPCs.
-- `household_join_approval.sql` — also adds owner-only members management RPCs (`api_list_household_members`, `api_remove_household_member`).
+- `household_join_approval.sql` — adds owner-approval flow for invite joins (enabled by default), pending join requests, bot approval callbacks, and owner-only members management RPCs (`api_list_household_members`, `api_remove_household_member`).
 
 ## Current Behavior Summary
 
