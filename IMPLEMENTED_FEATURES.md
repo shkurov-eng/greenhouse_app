@@ -6,14 +6,14 @@ This document summarizes what has already been implemented in the project.
 
 - Next.js app (App Router) with TypeScript.
 - Supabase (PostgreSQL + Storage); **browser no longer queries tables directly**.
-- Typed client API wrapper: `src/lib/api.ts` (calls `POST /api/secure`, `POST /api/rooms/upload`, `POST /api/plants/upload`, and `POST /api/plants/analyze`). Secure actions include household list/create/set-active/`deleteHousehold`/`renameHousehold`, room create/`renameRoom`/`deleteRoom`, and existing room/plant flows (see `SecureAction` in `src/app/api/secure/route.ts`).
+- Typed client API wrapper: `src/lib/api.ts` (calls `POST /api/secure`, `POST /api/rooms/upload`, `POST /api/rooms/analyze`, `POST /api/plants/upload`, and `POST /api/plants/analyze`). Secure actions include household list/create/set-active/`deleteHousehold`/`renameHousehold`, room create/`renameRoom`/`deleteRoom`, and existing room/plant flows (see `SecureAction` in `src/app/api/secure/route.ts`).
 - Server-side Supabase admin client: `src/lib/server/supabaseAdmin.ts` (service role, lazy init).
 - Telegram auth helper: `src/lib/server/telegramAuth.ts` (`initData` HMAC verification; optional local dev mode).
 - Environment variables (see also `.env.example`):
   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
   - `SUPABASE_SERVICE_ROLE_KEY` (server only)
   - `TELEGRAM_BOT_TOKEN` (production / real Mini App)
-  - `GEMINI_API_KEY` (Google AI Studio, optional; enables AI plant detection on photo upload)
+  - `GEMINI_API_KEY` (Google AI Studio, optional; enables AI detection for plant and room photos)
   - Optional local browser debug: `DEV_BROWSER_MODE=true`, `DEV_TELEGRAM_ID` (only with `npm run dev`)
 - `src/lib/supabase.ts` remains for potential non-UI use; **main UI does not use it for data access**.
 - Current lint baseline is clean (`npm run lint` passes).
@@ -53,7 +53,7 @@ This document summarizes what has already been implemented in the project.
 - AI photo requests are protected with DB-backed rate limits via `api_register_ai_photo_request` and `ai_photo_request_events`:
   - max 30 AI photo requests per 1 hour
   - max 150 AI photo requests per 24 hours
-  - applied for both `POST /api/plants/upload` (AI mode) and `POST /api/plants/analyze`
+  - applied for `POST /api/plants/upload` (AI mode), `POST /api/plants/analyze`, and `POST /api/rooms/analyze`
 - Bot task ingestion is protected with DB-backed rate limits via `api_register_bot_task_ingest` and `bot_task_ingest_events`:
   - max 40 bot-task ingests per 1 hour
   - max 200 bot-task ingests per 24 hours
@@ -106,6 +106,7 @@ This document summarizes what has already been implemented in the project.
 - **Add Plant partial-success behavior:** if plant row is created but photo upload fails, plant creation is kept (no full rollback), and user gets explicit status that plant was added without photo.
 - **AI auto-detection on plant photo upload:** when `GEMINI_API_KEY` is configured, `POST /api/plants/upload` sends the photo to Google AI Studio (Gemini) and auto-updates plant name + per-plant watering thresholds from model output.
 - **Dedicated AI analyze endpoint:** `POST /api/plants/analyze` analyzes the photo before save and returns `ai_status`, `ai_error`, and optional `ai_profile` for controlled autofill UX.
+- **Room-level AI plant detection:** room header includes `AI Detect Plants` (next to `Add Plant`) that calls `POST /api/rooms/analyze`, shows a preview list of detected plants (with per-item selection), then creates selected plant rows and auto-places markers.
 - **AI model updated:** moved from `gemini-2.0-flash` to `gemini-2.5-flash` for new-key compatibility.
 - AI watering amount recommendation: photo analysis stores suggested watering amount (`light` / `moderate` / `abundant`) and shows it in plant info; legacy values are mapped (`little`→`light`, `a_lot`→`abundant`).
 - AI watering summary: photo analysis stores `watering_summary` (2-3 short sentences with watering guidance + care tips like light/drainage/humidity/temperature) and shows it in plant card/edit info.
@@ -272,7 +273,7 @@ Scope and plan:
 
 - **Production:** open only from Telegram Mini App (menu / `web_app` button). Server requires valid `initData` + `TELEGRAM_BOT_TOKEN`.
 - **Local browser debug:** `npm run dev` + `DEV_BROWSER_MODE=true` + `DEV_TELEGRAM_ID` + `SUPABASE_SERVICE_ROLE_KEY` (not available on deployed Vercel preview/prod by design).
-- All data access: `POST /api/secure`, `POST /api/rooms/upload`, `POST /api/plants/upload`, `POST /api/plants/analyze`; RLS + RPC enforce household scope (active household from `profiles.active_household_id` when migration applied).
+- All data access: `POST /api/secure`, `POST /api/rooms/upload`, `POST /api/rooms/analyze`, `POST /api/plants/upload`, `POST /api/plants/analyze`; RLS + RPC enforce household scope (active household from `profiles.active_household_id` when migration applied).
 - **Households:** members can **rename** (`api_rename_household`) a home they belong to; owner can **delete** (`api_delete_household`) it, while non-owner can only **leave** (`leaveHousehold` secure action). Delete removes shared data for everyone; leave removes only current member access. Empty membership after delete/leave is healed by **`bootstrapUser`** inside `loadHouseholds` (default home again).
 - Room thumbnails and detail images use **signed URLs**; legacy public URLs are supported via path extraction when needed.
 - **Opening a room** scrolls the page to the **top** before paint (`useLayoutEffect` in `src/app/page.tsx`) so watering markers on the image are usable without scrolling up from the list position.

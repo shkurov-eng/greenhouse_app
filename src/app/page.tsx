@@ -18,6 +18,7 @@ import { MobileShell } from "@/components/MobileShell";
 import {
   bootstrapUser,
   createHousehold,
+  createRoomPlantsFromDetections,
   createPlant,
   deletePlant,
   createRoom,
@@ -34,6 +35,7 @@ import {
   setActiveHousehold,
   updatePlant,
   analyzePlantImage,
+  analyzeRoomPlantsPreview,
   uploadPlantImage,
   uploadRoomImage,
   upsertMarker,
@@ -43,6 +45,7 @@ import {
   type Plant,
   type PlantMarker,
   type PlantStatus,
+  type RoomPlantDetectionDraft,
   type Room,
 } from "@/lib/api";
 
@@ -238,6 +241,11 @@ export default function Home() {
   const [isAnalyzingEditPlantPhoto, setIsAnalyzingEditPlantPhoto] = useState(false);
   const [roomFiles, setRoomFiles] = useState<Record<string, File | null>>({});
   const [roomUploadStatus, setRoomUploadStatus] = useState<Record<string, string>>({});
+  const [isDetectingRoomPlants, setIsDetectingRoomPlants] = useState(false);
+  const [isRoomDetectionPreviewOpen, setIsRoomDetectionPreviewOpen] = useState(false);
+  const [roomDetectionPreview, setRoomDetectionPreview] = useState<RoomPlantDetectionDraft[]>([]);
+  const [selectedRoomDetectionIndexes, setSelectedRoomDetectionIndexes] = useState<number[]>([]);
+  const [isApplyingRoomDetections, setIsApplyingRoomDetections] = useState(false);
   const [roomPhotoPickerRoomId, setRoomPhotoPickerRoomId] = useState<string | null>(null);
   const [pendingDeleteTarget, setPendingDeleteTarget] = useState<PendingDeleteTarget | null>(null);
   const [isConfirmDeletePending, setIsConfirmDeletePending] = useState(false);
@@ -272,6 +280,7 @@ export default function Home() {
   const editPlantPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const cameraPreviewVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraCaptureCounterRef = useRef(0);
   const markerPlacementFeedbackTimerRef = useRef<number | null>(null);
 
   /** Opening a room reuses the same document scroll as the overview; reset so the photo + markers are in view. */
@@ -393,6 +402,7 @@ export default function Home() {
     setSelectedPlantIdForMarker("");
     setIsMarkerEditMode(false);
     setIsAddPlantOpen(false);
+    setIsRoomDetectionPreviewOpen(false);
     setIsEditPlantOpen(false);
     setEditingPlantId(null);
     if (newPlantPhotoPreviewUrl) {
@@ -400,6 +410,8 @@ export default function Home() {
     }
     setNewPlantPhotoFile(null);
     setNewPlantPhotoPreviewUrl(null);
+    setRoomDetectionPreview([]);
+    setSelectedRoomDetectionIndexes([]);
   }
 
   function clearNewPlantPhotoSelection() {
@@ -672,9 +684,10 @@ export default function Home() {
       return;
     }
     const nextTarget = cameraCaptureTarget;
+    cameraCaptureCounterRef.current += 1;
     const capturedFile = new File(
       [blob],
-      `${nextTarget === "room" ? "room" : "plant"}-${Date.now()}.jpg`,
+      `${nextTarget === "room" ? "room" : "plant"}-capture-${cameraCaptureCounterRef.current}.jpg`,
       { type: "image/jpeg" },
     );
     if (nextTarget === "room") {
@@ -1556,6 +1569,80 @@ export default function Home() {
     await uploadRoomImageFile(roomId, file);
   }
 
+  async function handleAutoDetectPlantsInRoom() {
+    if (!selectedRoom) {
+      return;
+    }
+    if (isDetectingRoomPlants) {
+      return;
+    }
+
+    setIsDetectingRoomPlants(true);
+    setMessage("Analyzing room photo with AI...");
+    try {
+      const result = await analyzeRoomPlantsPreview(getCurrentInitData(), { roomId: selectedRoom.id });
+      if (result.ai_status === "ok") {
+        setRoomDetectionPreview(result.detections);
+        setSelectedRoomDetectionIndexes(result.detections.map((_, index) => index));
+        setIsRoomDetectionPreviewOpen(true);
+        setMessage(`AI found ${result.detections.length} plant${result.detections.length === 1 ? "" : "s"}.`);
+        return;
+      }
+      if (result.ai_status === "no_plants") {
+        setMessage("AI could not find plants on this room photo.");
+        return;
+      }
+      if (result.ai_status === "disabled_missing_api_key") {
+        setMessage("AI is disabled on server (missing GEMINI_API_KEY).");
+        return;
+      }
+      const fallbackError = result.ai_error?.trim() || "AI room analysis failed.";
+      setMessage(fallbackError);
+    } finally {
+      setIsDetectingRoomPlants(false);
+    }
+  }
+
+  async function handleApplyRoomDetections() {
+    if (!selectedRoom) {
+      return;
+    }
+    if (isApplyingRoomDetections) {
+      return;
+    }
+    const detectionsToCreate = roomDetectionPreview.filter((_, index) =>
+      selectedRoomDetectionIndexes.includes(index),
+    );
+    if (detectionsToCreate.length === 0) {
+      setMessage("Select at least one plant to create.");
+      return;
+    }
+
+    setIsApplyingRoomDetections(true);
+    setMessage("Creating plants and markers...");
+    try {
+      const result = await createRoomPlantsFromDetections(getCurrentInitData(), {
+        roomId: selectedRoom.id,
+        detections: detectionsToCreate,
+      });
+      await fetchRoomDetails(selectedRoom.id);
+      setIsRoomDetectionPreviewOpen(false);
+      setRoomDetectionPreview([]);
+      setSelectedRoomDetectionIndexes([]);
+      setMessage(
+        `${result.created_count} plant${result.created_count === 1 ? "" : "s"} added with markers automatically.`,
+      );
+    } finally {
+      setIsApplyingRoomDetections(false);
+    }
+  }
+
+  function toggleRoomDetectionSelection(index: number) {
+    setSelectedRoomDetectionIndexes((prev) =>
+      prev.includes(index) ? prev.filter((value) => value !== index) : [...prev, index],
+    );
+  }
+
   async function runSafely(action: () => Promise<void>) {
     try {
       await action();
@@ -1688,6 +1775,16 @@ export default function Home() {
                 className="shrink-0 rounded-full border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-xs font-bold text-white shadow-[0_6px_16px_rgba(0,108,73,0.28)]"
               >
                 Add Plant
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void runSafely(handleAutoDetectPlantsInRoom);
+                }}
+                disabled={isDetectingRoomPlants}
+                className="shrink-0 rounded-full border border-[#0f766e]/45 bg-white/95 px-4 py-2 text-xs font-semibold text-[#0f766e] shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isDetectingRoomPlants ? "Detecting..." : "AI Detect Plants"}
               </button>
             </div>
           </header>
@@ -2634,6 +2731,70 @@ export default function Home() {
                 ) : (
                   "Add Plant"
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedRoom && isRoomDetectionPreviewOpen ? (
+        <div className="fixed inset-0 z-[65] flex items-end justify-center overflow-y-auto bg-black/40 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
+          <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
+            <h3 className="text-base font-semibold text-[#1f1b17]">AI detected plants</h3>
+            <p className="mt-1 text-sm text-[#6c7a71]">
+              Select items to create in <span className="font-semibold">{selectedRoom.name}</span>.
+            </p>
+            <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
+              {roomDetectionPreview.map((detection, index) => {
+                const isSelected = selectedRoomDetectionIndexes.includes(index);
+                return (
+                  <label
+                    key={`${detection.plant_name}-${index}`}
+                    className={`flex cursor-pointer items-start gap-2 rounded-xl border p-2 ${
+                      isSelected ? "border-[#006c49] bg-[#e6f5ef]/60" : "border-[#e8ddd6] bg-white"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleRoomDetectionSelection(index)}
+                      className="mt-1 h-4 w-4 accent-[#006c49]"
+                    />
+                    <div className="min-w-0 text-xs text-[#3c4a42]">
+                      <p className="truncate text-sm font-semibold text-[#1f1b17]">{detection.plant_name}</p>
+                      <p className="mt-0.5 text-[#6c7a71]">
+                        {detection.species ? `Species: ${detection.species}` : "Species: not specified"}
+                      </p>
+                      <p className="mt-0.5 text-[#6c7a71]">
+                        Marker: x={detection.marker_x.toFixed(2)}, y={detection.marker_y.toFixed(2)}
+                      </p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRoomDetectionPreviewOpen(false);
+                  setRoomDetectionPreview([]);
+                  setSelectedRoomDetectionIndexes([]);
+                }}
+                disabled={isApplyingRoomDetections}
+                className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-medium text-[#3c4a42]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void runSafely(handleApplyRoomDetections);
+                }}
+                disabled={isApplyingRoomDetections}
+                className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white disabled:opacity-70"
+              >
+                {isApplyingRoomDetections ? "Creating..." : "Create selected"}
               </button>
             </div>
           </div>

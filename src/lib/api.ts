@@ -426,6 +426,70 @@ export async function uploadRoomImage(
   return readApiPayload<Room>(response);
 }
 
+export type RoomPlantDetectionDraft = {
+  plant_name: string;
+  species: string | null;
+  marker_x: number;
+  marker_y: number;
+  thirsty_after_minutes: number;
+  overdue_after_minutes: number;
+};
+
+type AnalyzeRoomPlantsResponse = {
+  ai_status:
+    | "ok"
+    | "no_plants"
+    | "disabled_missing_api_key"
+    | "request_failed"
+    | "invalid_response";
+  ai_error: string | null;
+  detections: RoomPlantDetectionDraft[];
+  created: Array<{
+    plant_id: string;
+    plant_name: string;
+    species: string | null;
+    marker_x: number;
+    marker_y: number;
+  }>;
+  created_count: number;
+};
+
+export async function analyzeRoomPlantsPreview(initData: string | null, payload: { roomId: string }) {
+  const response = await fetch("/api/rooms/analyze", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(initData ? { "x-telegram-init-data": initData } : {}),
+    },
+    body: JSON.stringify({
+      roomId: payload.roomId,
+      mode: "preview",
+    }),
+  });
+
+  return readApiPayload<AnalyzeRoomPlantsResponse>(response);
+}
+
+export async function createRoomPlantsFromDetections(
+  initData: string | null,
+  payload: { roomId: string; detections: RoomPlantDetectionDraft[] },
+) {
+  const response = await fetch("/api/rooms/analyze", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(initData ? { "x-telegram-init-data": initData } : {}),
+    },
+    body: JSON.stringify({
+      roomId: payload.roomId,
+      mode: "create",
+      detections: payload.detections,
+    }),
+  });
+
+  return readApiPayload<AnalyzeRoomPlantsResponse>(response);
+}
+
 export async function uploadPlantImage(
   initData: string | null,
   payload: { plantId: string; file: File; aiMode?: "auto" | "manual" },
