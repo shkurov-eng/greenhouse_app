@@ -293,11 +293,12 @@ export async function uploadRoomImage(
 
 export async function uploadPlantImage(
   initData: string | null,
-  payload: { plantId: string; file: File },
+  payload: { plantId: string; file: File; aiMode?: "auto" | "manual" },
 ) {
   const formData = new FormData();
   formData.set("plantId", payload.plantId);
   formData.set("file", payload.file);
+  formData.set("aiMode", payload.aiMode ?? "auto");
 
   const response = await fetch("/api/plants/upload", {
     method: "POST",
@@ -307,7 +308,25 @@ export async function uploadPlantImage(
     body: formData,
   });
 
-  return readApiPayload<{ id: string; photo_path: string | null; signed_photo_url: string | null }>(response);
+  return readApiPayload<{
+    id: string;
+    photo_path: string | null;
+    signed_photo_url: string | null;
+    ai_inferred: boolean;
+    ai_status:
+      | "ok"
+      | "disabled_missing_api_key"
+      | "request_failed"
+      | "invalid_response"
+      | "skipped_manual";
+    ai_profile: {
+      plant_name: string;
+      thirsty_after_minutes: number;
+      overdue_after_minutes: number;
+      watering_amount_recommendation: "light" | "moderate" | "abundant";
+      watering_summary: string;
+    } | null;
+  }>(response);
 }
 
 export async function removePlantPhoto(initData: string | null, plantId: string) {

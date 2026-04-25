@@ -13,6 +13,12 @@ type PlantAiProfile = {
   wateringAmountRecommendation: "light" | "moderate" | "abundant";
   wateringSummary: string;
 };
+type PlantAiStatus =
+  | "ok"
+  | "skipped_manual"
+  | "disabled_missing_api_key"
+  | "request_failed"
+  | "invalid_response";
 
 type DbError = { message: string } | null;
 type DbWriteResult = Promise<{ error: DbError }>;
@@ -36,10 +42,10 @@ function extractJsonObject(raw: string): string | null {
 async function detectPlantProfileWithAiStudio(
   imageBytes: ArrayBuffer,
   mimeType: string,
-): Promise<PlantAiProfile | null> {
+): Promise<{ profile: PlantAiProfile | null; status: PlantAiStatus }> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return null;
+    return { profile: null, status: "disabled_missing_api_key" };
   }
 
   const base64Image = Buffer.from(imageBytes).toString("base64");
@@ -86,8 +92,7 @@ async function detectPlantProfileWithAiStudio(
   );
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`AI Studio request failed (${response.status}): ${body.slice(0, 220)}`);
+    return { profile: null, status: "request_failed" };
   }
 
   const data = (await response.json()) as {
@@ -101,7 +106,7 @@ async function detectPlantProfileWithAiStudio(
   try {
     parsed = JSON.parse(jsonText);
   } catch {
-    return null;
+    return { profile: null, status: "invalid_response" };
   }
 
   const row = parsed as {
@@ -112,8 +117,8 @@ async function detectPlantProfileWithAiStudio(
     watering_summary?: unknown;
   };
   const plantName = typeof row.plant_name === "string" ? row.plant_name.trim() : "";
-  const thirsty = Number(row.thirsty_after_minutes);
-  const overdue = Number(row.overdue_after_minutes);
+  const thirstyRaw = Number(row.thirsty_after_minutes);
+  const overdueRaw = Number(row.overdue_after_minutes);
   const rawWateringAmount =
     typeof row.watering_amount_recommendation === "string"
       ? row.watering_amount_recommendation.trim().toLowerCase()
@@ -136,30 +141,32 @@ async function detectPlantProfileWithAiStudio(
             rawWateringAmount === "large"
           ? "abundant"
           : null;
-  const wateringSummary =
+  const wateringSummaryRaw =
     typeof row.watering_summary === "string" ? row.watering_summary.trim() : "";
   if (!plantName) {
-    return null;
+    return { profile: null, status: "invalid_response" };
   }
-  if (!Number.isInteger(thirsty) || thirsty <= 0) {
-    return null;
-  }
-  if (!Number.isInteger(overdue) || overdue <= 0 || overdue < thirsty) {
-    return null;
-  }
-  if (!wateringAmountRecommendation) {
-    return null;
-  }
-  if (!wateringSummary) {
-    return null;
-  }
+  const thirsty = Number.isFinite(thirstyRaw) && thirstyRaw > 0
+    ? Math.round(thirstyRaw)
+    : DEFAULT_THIRSTY_AFTER_MINUTES;
+  const overdueCandidate = Number.isFinite(overdueRaw) && overdueRaw > 0
+    ? Math.round(overdueRaw)
+    : DEFAULT_OVERDUE_AFTER_MINUTES;
+  const overdue = Math.max(overdueCandidate, thirsty);
+  const wateringAmount = wateringAmountRecommendation ?? "moderate";
+  const wateringSummary =
+    wateringSummaryRaw ||
+    `Water when topsoil feels dry. Prefer ${wateringAmount} watering and avoid stagnant water. Recheck moisture before the next cycle.`;
 
   return {
-    plantName,
-    thirstyAfterMinutes: thirsty,
-    overdueAfterMinutes: overdue,
-    wateringAmountRecommendation,
-    wateringSummary,
+    profile: {
+      plantName,
+      thirstyAfterMinutes: thirsty,
+      overdueAfterMinutes: overdue,
+      wateringAmountRecommendation: wateringAmount,
+      wateringSummary,
+    },
+    status: "ok",
   };
 }
 
@@ -170,6 +177,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const plantIdValue = formData.get("plantId");
     const fileValue = formData.get("file");
+    const aiModeValue = formData.get("aiMode");
 
     if (typeof plantIdValue !== "string" || !plantIdValue.trim()) {
       return NextResponse.json({ error: "Missing plantId" }, { status: 400 });
@@ -226,15 +234,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: uploadError.message }, { status: 400 });
     }
 
-    let aiProfile: PlantAiProfile | null = null;
-    try {
-      aiProfile = await detectPlantProfileWithAiStudio(arrayBuffer, fileValue.type || "image/jpeg");
-    } catch (aiError) {
-      console.warn("[plants-upload] AI detection failed", {
-        plantId: plant.id,
-        message: aiError instanceof Error ? aiError.message : "Unknown AI error",
-      });
-    }
+    const shouldRunAi = aiModeValue !== "manual";
+    const { profile: aiProfile, status: aiStatus } = shouldRunAi
+      ? await detectPlantProfileWithAiStudio(arrayBuffer, fileValue.type || "image/jpeg")
+      : { profile: null, status: "skipped_manual" as const };
 
     const updatePayload: {
       photo_path: string;
@@ -288,6 +291,7 @@ export async function POST(request: NextRequest) {
         photo_path: filePath,
         signed_photo_url: signedData?.signedUrl ?? null,
         ai_inferred: Boolean(aiProfile),
+        ai_status: aiStatus,
         ai_profile: aiProfile
           ? {
               plant_name: aiProfile.plantName,

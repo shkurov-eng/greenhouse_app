@@ -192,6 +192,7 @@ export default function Home() {
   );
   const [newPlantPhotoFile, setNewPlantPhotoFile] = useState<File | null>(null);
   const [newPlantPhotoPreviewUrl, setNewPlantPhotoPreviewUrl] = useState<string | null>(null);
+  const [newPlantPhotoAiMode, setNewPlantPhotoAiMode] = useState<"manual" | "auto">("manual");
   const [isCameraCaptureOpen, setIsCameraCaptureOpen] = useState(false);
   const [isStartingCamera, setIsStartingCamera] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -374,6 +375,7 @@ export default function Home() {
     }
     setNewPlantPhotoFile(null);
     setNewPlantPhotoPreviewUrl(null);
+    setNewPlantPhotoAiMode("manual");
     if (addPlantCameraInputRef.current) {
       addPlantCameraInputRef.current.value = "";
     }
@@ -822,11 +824,20 @@ export default function Home() {
       overdueAfterMinutes: nextOverdueAfterMinutes,
     });
 
+    let aiStatus:
+      | "ok"
+      | "disabled_missing_api_key"
+      | "request_failed"
+      | "invalid_response"
+      | "skipped_manual"
+      | null = null;
     if (createdPlant?.id && photoToUpload) {
-      await uploadPlantImage(getCurrentInitData(), {
+      const uploadResult = await uploadPlantImage(getCurrentInitData(), {
         plantId: createdPlant.id,
         file: photoToUpload,
+        aiMode: newPlantPhotoAiMode,
       });
+      aiStatus = uploadResult.ai_status;
     }
 
     setPlantName("");
@@ -839,12 +850,24 @@ export default function Home() {
     clearNewPlantPhotoSelection();
     setIsAddPlantOpen(false);
     await fetchRoomDetails(selectedRoom.id);
+    const aiMessage =
+      aiStatus === "ok"
+        ? " AI profile applied."
+        : aiStatus === "disabled_missing_api_key"
+          ? " AI is disabled on server (missing GEMINI_API_KEY)."
+          : aiStatus === "request_failed"
+            ? " AI request failed on server."
+            : aiStatus === "invalid_response"
+              ? " AI response was invalid."
+      : aiStatus === "skipped_manual"
+        ? " AI skipped (manual mode)."
+        : "";
     if (createdPlant?.id) {
       setSelectedPlantIdForMarker(createdPlant.id);
       setIsMarkerEditMode(true);
-      setMessage("Plant added. Tap image to place marker");
+      setMessage(`Plant added. Tap image to place marker.${aiMessage}`);
     } else {
-      setMessage("Plant added");
+      setMessage(`Plant added.${aiMessage}`);
     }
   }
 
@@ -1044,7 +1067,7 @@ export default function Home() {
     }
     setIsReplacingPlantPhoto(true);
     try {
-      await uploadPlantImage(getCurrentInitData(), {
+      const uploadResult = await uploadPlantImage(getCurrentInitData(), {
         plantId: editingPlantId,
         file,
       });
@@ -1052,7 +1075,17 @@ export default function Home() {
         editPlantPhotoInputRef.current.value = "";
       }
       await fetchRoomDetails(selectedRoom.id);
-      setMessage("Plant photo updated");
+      if (uploadResult.ai_status === "ok") {
+        setMessage("Plant photo updated. AI profile applied.");
+      } else if (uploadResult.ai_status === "disabled_missing_api_key") {
+        setMessage("Plant photo updated. AI disabled on server (missing GEMINI_API_KEY).");
+      } else if (uploadResult.ai_status === "request_failed") {
+        setMessage("Plant photo updated. AI request failed on server.");
+      } else if (uploadResult.ai_status === "invalid_response") {
+        setMessage("Plant photo updated. AI returned invalid response.");
+      } else {
+        setMessage("Plant photo updated");
+      }
     } finally {
       setIsReplacingPlantPhoto(false);
     }
@@ -2154,6 +2187,39 @@ export default function Home() {
                   alt="New plant preview"
                   className="mt-3 h-28 w-full rounded-lg border border-[#e8ddd6] object-cover"
                 />
+              ) : null}
+              {newPlantPhotoFile ? (
+                <div className="mt-3 rounded-lg border border-[#e8ddd6] bg-white p-2">
+                  <p className="text-[11px] font-semibold text-[#3c4a42]">After upload</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewPlantPhotoAiMode("auto")}
+                      className={`rounded-lg border px-2 py-1.5 text-[11px] font-semibold ${
+                        newPlantPhotoAiMode === "auto"
+                          ? "border-[#006c49] bg-[#e6f5ef] text-[#006c49]"
+                          : "border-[#bbcabf] text-[#3c4a42]"
+                      }`}
+                    >
+                      Analyze with AI
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewPlantPhotoAiMode("manual")}
+                      className={`rounded-lg border px-2 py-1.5 text-[11px] font-semibold ${
+                        newPlantPhotoAiMode === "manual"
+                          ? "border-[#006c49] bg-[#e6f5ef] text-[#006c49]"
+                          : "border-[#bbcabf] text-[#3c4a42]"
+                      }`}
+                    >
+                      Fill manually
+                    </button>
+                  </div>
+                  <p className="mt-2 text-[11px] leading-relaxed text-[#6c7a71]">
+                    AI mode can auto-fill plant name, watering thresholds, recommended water amount,
+                    and short watering advice.
+                  </p>
+                </div>
               ) : null}
             </div>
             <div className="mt-4 flex justify-end gap-2">
