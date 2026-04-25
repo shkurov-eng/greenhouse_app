@@ -8,10 +8,13 @@ import { MobileShell } from "@/components/MobileShell";
 import {
   getHouseholdJoinSettings,
   getTaskSettings,
+  listHouseholdMembers,
   listHouseholdJoinRequests,
+  removeHouseholdMember,
   reviewHouseholdJoinRequest,
   setHouseholdJoinSetting,
   setTaskSettings,
+  type HouseholdMember,
   type HouseholdJoinRequest,
   type HouseholdJoinSetting,
 } from "@/lib/api";
@@ -32,9 +35,12 @@ export default function SettingsPage() {
   const [joinSettings, setJoinSettings] = useState<HouseholdJoinSetting[]>([]);
   const [selectedHouseholdId, setSelectedHouseholdId] = useState("");
   const [joinRequests, setJoinRequests] = useState<HouseholdJoinRequest[]>([]);
+  const [members, setMembers] = useState<HouseholdMember[]>([]);
   const [joinSettingsSavingHouseholdId, setJoinSettingsSavingHouseholdId] = useState<string | null>(null);
   const [requestsLoading, setRequestsLoading] = useState(false);
+  const [membersLoading, setMembersLoading] = useState(false);
   const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
+  const [removingMemberProfileId, setRemovingMemberProfileId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -66,14 +72,20 @@ export default function SettingsPage() {
 
     const run = async () => {
       setRequestsLoading(true);
+      setMembersLoading(true);
       try {
-        const rows = await listHouseholdJoinRequests(initData, ownerSetting.household_id);
-        setJoinRequests(rows);
+        const [requestRows, memberRows] = await Promise.all([
+          listHouseholdJoinRequests(initData, ownerSetting.household_id),
+          listHouseholdMembers(initData, ownerSetting.household_id),
+        ]);
+        setJoinRequests(requestRows);
+        setMembers(memberRows);
       } catch (error) {
         const text = error instanceof Error ? error.message : "Failed to load join requests";
         setMessage(text);
       } finally {
         setRequestsLoading(false);
+        setMembersLoading(false);
       }
     };
     void run();
@@ -126,6 +138,10 @@ export default function SettingsPage() {
     try {
       const reviewed = await reviewHouseholdJoinRequest(initData, { requestId, decision });
       setJoinRequests((prev) => prev.filter((row) => row.request_id !== requestId));
+      if (selectedHouseholdId) {
+        const memberRows = await listHouseholdMembers(initData, selectedHouseholdId);
+        setMembers(memberRows);
+      }
       setMessage(
         decision === "approve"
           ? `Approved join request for ${reviewed.household_name}`
@@ -136,6 +152,28 @@ export default function SettingsPage() {
       setMessage(text);
     } finally {
       setReviewingRequestId(null);
+    }
+  };
+
+  const onRemoveMember = async (member: HouseholdMember) => {
+    setRemovingMemberProfileId(member.profile_id);
+    setMessage(null);
+    try {
+      const removed = await removeHouseholdMember(initData, {
+        householdId: member.household_id,
+        memberProfileId: member.profile_id,
+      });
+      setMembers((prev) => prev.filter((row) => row.profile_id !== member.profile_id));
+      setMessage(
+        `Removed ${
+          member.username ? `@${member.username}` : `Telegram ID ${member.telegram_id}`
+        } from ${removed.household_name}`,
+      );
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "Failed to remove member";
+      setMessage(text);
+    } finally {
+      setRemovingMemberProfileId(null);
     }
   };
 
@@ -243,6 +281,7 @@ export default function SettingsPage() {
                   onChange={(event) => {
                     setSelectedHouseholdId(event.target.value);
                     setJoinRequests([]);
+                    setMembers([]);
                   }}
                   className="w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
                 >
@@ -293,6 +332,50 @@ export default function SettingsPage() {
                         Reject
                       </button>
                     </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
+          <section className="mt-4 rounded-[24px] bg-white p-6 shadow-[0_4px_20px_rgba(148,74,35,0.06)]">
+            <h2 className="text-sm font-bold text-[#1f1b17]">Household members</h2>
+            <p className="mt-1 text-xs text-[#6c7a71]">
+              As owner, you can remove participants from your selected home.
+            </p>
+
+            {membersLoading ? <p className="mt-4 text-xs text-[#6c7a71]">Loading members...</p> : null}
+
+            {!membersLoading && ownerHomes.length > 0 && members.length === 0 ? (
+              <p className="mt-4 text-xs text-[#6c7a71]">No members found for selected home.</p>
+            ) : null}
+
+            {!membersLoading && members.length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {members.map((member) => (
+                  <div key={member.profile_id} className="rounded-xl border border-[#e7ddd6] p-3">
+                    <p className="text-sm font-semibold text-[#1f1b17]">
+                      {member.username ? `@${member.username}` : "Unknown username"}
+                    </p>
+                    <p className="mt-1 text-xs text-[#3c4a42]">Telegram ID: {member.telegram_id}</p>
+                    <p className="text-xs text-[#3c4a42]">Home: {member.household_name}</p>
+                    {member.is_owner ? (
+                      <p className="mt-2 inline-flex rounded bg-[#e6f5ef] px-2 py-0.5 text-[11px] font-semibold text-[#006c49]">
+                        Owner
+                      </p>
+                    ) : (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void onRemoveMember(member);
+                          }}
+                          disabled={removingMemberProfileId === member.profile_id}
+                          className="rounded-lg border border-[#bbcabf] px-3 py-1.5 text-xs font-semibold text-[#8a3b1c] disabled:opacity-60"
+                        >
+                          Remove member
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

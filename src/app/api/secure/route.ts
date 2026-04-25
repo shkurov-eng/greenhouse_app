@@ -15,6 +15,8 @@ type SecureAction =
   | "setHouseholdJoinSetting"
   | "listHouseholdJoinRequests"
   | "reviewHouseholdJoinRequest"
+  | "listHouseholdMembers"
+  | "removeHouseholdMember"
   | "listRooms"
   | "createRoom"
   | "renameRoom"
@@ -570,6 +572,41 @@ export async function POST(request: NextRequest) {
             row.requester_username == null || row.requester_username === ""
               ? null
               : String(row.requester_username),
+        };
+        return NextResponse.json({ data });
+      }
+
+      case "listHouseholdMembers": {
+        const householdId = asUuid(payload.householdId, "householdId");
+        const raw = (await rpc("api_list_household_members", {
+          p_telegram_id: telegramId,
+          p_household_id: householdId,
+        })) as Array<Record<string, unknown>> | null;
+        const rows = raw ?? [];
+        const data = rows.map((row) => ({
+          household_id: String(row.household_id),
+          household_name: String(row.household_name ?? ""),
+          profile_id: String(row.profile_id ?? ""),
+          telegram_id: Number(row.telegram_id),
+          username: row.username == null || row.username === "" ? null : String(row.username),
+          is_owner: Boolean(row.is_owner),
+        }));
+        return NextResponse.json({ data });
+      }
+
+      case "removeHouseholdMember": {
+        const householdId = asUuid(payload.householdId, "householdId");
+        const memberProfileId = asUuid(payload.memberProfileId, "memberProfileId");
+        const result = await rpc("api_remove_household_member", {
+          p_telegram_id: telegramId,
+          p_household_id: householdId,
+          p_member_profile_id: memberProfileId,
+        });
+        const row = unwrapSingleRow<Record<string, unknown>>(result);
+        const data = {
+          household_id: String(row.household_id ?? ""),
+          household_name: String(row.household_name ?? ""),
+          removed_profile_id: String(row.removed_profile_id ?? ""),
         };
         return NextResponse.json({ data });
       }

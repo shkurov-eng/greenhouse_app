@@ -41,6 +41,15 @@ export type HouseholdJoinRequest = {
   created_at: string;
 };
 
+export type HouseholdMember = {
+  household_id: string;
+  household_name: string;
+  profile_id: string;
+  telegram_id: number;
+  username: string | null;
+  is_owner: boolean;
+};
+
 export type Room = {
   id: string;
   name: string;
@@ -196,6 +205,29 @@ export async function reviewHouseholdJoinRequest(
     requester_username: string | null;
   }>({
     action: "reviewHouseholdJoinRequest",
+    initData,
+    payload,
+  });
+}
+
+export async function listHouseholdMembers(initData: string | null, householdId: string) {
+  return secureRequest<HouseholdMember[]>({
+    action: "listHouseholdMembers",
+    initData,
+    payload: { householdId },
+  });
+}
+
+export async function removeHouseholdMember(
+  initData: string | null,
+  payload: { householdId: string; memberProfileId: string },
+) {
+  return secureRequest<{
+    household_id: string;
+    household_name: string;
+    removed_profile_id: string;
+  }>({
+    action: "removeHouseholdMember",
     initData,
     payload,
   });

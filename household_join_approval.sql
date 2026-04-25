@@ -360,8 +360,111 @@ begin
 end
 $$;
 
+create or replace function public.api_list_household_members(
+  p_telegram_id text,
+  p_household_id uuid
+)
+returns table(
+  household_id uuid,
+  household_name text,
+  profile_id uuid,
+  telegram_id bigint,
+  username text,
+  is_owner boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_profile_id uuid;
+begin
+  v_profile_id := public.api_profile_id_by_telegram(p_telegram_id);
+
+  if not exists (
+    select 1
+    from public.households h
+    where h.id = p_household_id
+      and h.created_by_profile_id = v_profile_id
+  ) then
+    raise exception 'only household owner can view members';
+  end if;
+
+  return query
+  select
+    h.id,
+    h.name,
+    p.id,
+    p.telegram_id,
+    p.username,
+    (p.id = h.created_by_profile_id) as is_owner
+  from public.household_members hm
+  inner join public.households h on h.id = hm.household_id
+  inner join public.profiles p on p.id = hm.user_id
+  where hm.household_id = p_household_id
+  order by
+    case when p.id = h.created_by_profile_id then 0 else 1 end,
+    p.username asc nulls last,
+    p.telegram_id asc;
+end
+$$;
+
+create or replace function public.api_remove_household_member(
+  p_telegram_id text,
+  p_household_id uuid,
+  p_member_profile_id uuid
+)
+returns table(
+  household_id uuid,
+  household_name text,
+  removed_profile_id uuid
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_owner_profile_id uuid;
+  v_household_name text;
+begin
+  v_owner_profile_id := public.api_profile_id_by_telegram(p_telegram_id);
+
+  select h.name
+  into v_household_name
+  from public.households h
+  where h.id = p_household_id
+    and h.created_by_profile_id = v_owner_profile_id;
+
+  if v_household_name is null then
+    raise exception 'only household owner can remove members';
+  end if;
+
+  if p_member_profile_id = v_owner_profile_id then
+    raise exception 'owner cannot remove themselves';
+  end if;
+
+  delete from public.household_members hm
+  where hm.household_id = p_household_id
+    and hm.user_id = p_member_profile_id;
+
+  if not found then
+    raise exception 'member not found in household';
+  end if;
+
+  update public.profiles p
+  set active_household_id = null
+  where p.id = p_member_profile_id
+    and p.active_household_id = p_household_id;
+
+  return query
+  select p_household_id, v_household_name, p_member_profile_id;
+end
+$$;
+
 grant execute on function public.api_join_household(text, text) to anon, authenticated, service_role;
 grant execute on function public.api_get_household_join_settings(text) to anon, authenticated, service_role;
 grant execute on function public.api_set_household_join_setting(text, uuid, boolean) to anon, authenticated, service_role;
 grant execute on function public.api_list_household_join_requests(text, uuid) to anon, authenticated, service_role;
 grant execute on function public.api_review_household_join_request(text, uuid, text) to anon, authenticated, service_role;
+grant execute on function public.api_list_household_members(text, uuid) to anon, authenticated, service_role;
+grant execute on function public.api_remove_household_member(text, uuid, uuid) to anon, authenticated, service_role;
