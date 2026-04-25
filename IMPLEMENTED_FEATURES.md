@@ -127,8 +127,9 @@ This document summarizes what has already been implemented in the project.
   - Lets user toggle task status between `open` and `done`.
   - Shows AI parse badges (`AI parsed`, `needs review`) and due date when available.
 - Added Telegram bot webhook endpoint `POST /api/bot/webhook`:
-  - Accepts Telegram updates, validates optional secret token, creates tasks from incoming text/caption.
-  - Uses idempotent upsert by `(source_platform, source_chat_id, source_message_id)`.
+  - Accepts Telegram updates, validates optional secret token, and asks user to choose task scope via inline buttons.
+  - Scope choice flow: **Personal** (visible only to task owner) or **Shared household** (visible to all household members).
+  - Uses draft table + idempotent source keys to safely process message -> choice -> task creation.
   - Integrates AI task parsing when `GEMINI_API_KEY` is available, with fallback to plain text task creation.
 
 ## Stage 7 - Reminders

@@ -37,10 +37,7 @@ create index if not exists tasks_due_open_idx
   where status = 'open';
 
 create unique index if not exists tasks_telegram_message_uidx
-  on public.tasks (source_platform, source_chat_id, source_message_id)
-  where source_platform is not null
-    and source_chat_id is not null
-    and source_message_id is not null;
+  on public.tasks (source_platform, source_chat_id, source_message_id);
 
 create table if not exists public.task_reminders_log (
   id uuid primary key default gen_random_uuid(),

@@ -61,6 +61,7 @@ export type Task = {
   source_message_id: number | null;
   task_type: string | null;
   assignee_hint: string | null;
+  task_scope: "personal" | "household";
   parse_source: "manual" | "ai";
   ai_parse_status: "not_requested" | "ok" | "low_confidence" | "failed";
   ai_confidence: number | null;
@@ -409,6 +410,7 @@ export async function createTask(
     description?: string | null;
     priority?: TaskPriority;
     dueAt?: string | null;
+    taskScope?: "personal" | "household";
   },
 ) {
   return secureRequest<{ id: string }>({

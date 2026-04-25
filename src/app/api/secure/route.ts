@@ -119,6 +119,13 @@ function asTaskPriority(value: unknown) {
   throw new Error("Invalid task priority");
 }
 
+function asTaskScope(value: unknown) {
+  if (value === "personal" || value === "household") {
+    return value;
+  }
+  throw new Error("Invalid task scope");
+}
+
 function asOptionalIsoDate(value: unknown, fieldName: string) {
   if (value == null) {
     return null;
@@ -715,12 +722,14 @@ export async function POST(request: NextRequest) {
         const description = asOptionalString(payload.description);
         const priority = payload.priority == null ? "normal" : asTaskPriority(payload.priority);
         const dueAt = asOptionalIsoDate(payload.dueAt, "dueAt");
+        const taskScope = payload.taskScope == null ? "personal" : asTaskScope(payload.taskScope);
         const result = await rpc("api_create_task", {
           p_telegram_id: telegramId,
           p_title: title,
           p_description: description,
           p_priority: priority,
           p_due_at: dueAt,
+          p_task_scope: taskScope,
         });
         const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });
