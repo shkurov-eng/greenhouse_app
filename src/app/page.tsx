@@ -192,6 +192,9 @@ export default function Home() {
   );
   const [newPlantPhotoFile, setNewPlantPhotoFile] = useState<File | null>(null);
   const [newPlantPhotoPreviewUrl, setNewPlantPhotoPreviewUrl] = useState<string | null>(null);
+  const [isCameraCaptureOpen, setIsCameraCaptureOpen] = useState(false);
+  const [isStartingCamera, setIsStartingCamera] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [editPlantName, setEditPlantName] = useState("");
   const [editPlantSpecies, setEditPlantSpecies] = useState("");
   const [editPlantStatus, setEditPlantStatus] = useState<PlantStatus>("healthy");
@@ -234,6 +237,8 @@ export default function Home() {
   const addPlantCameraInputRef = useRef<HTMLInputElement | null>(null);
   const addPlantUploadInputRef = useRef<HTMLInputElement | null>(null);
   const editPlantPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraPreviewVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
 
   /** Opening a room reuses the same document scroll as the overview; reset so the photo + markers are in view. */
   useLayoutEffect(() => {
@@ -265,6 +270,24 @@ export default function Home() {
     }, 200);
     return () => window.clearInterval(intervalId);
   }, [pendingWateringMarkerIds.length]);
+
+  const stopCameraStream = useCallback(() => {
+    const stream = cameraStreamRef.current;
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+    }
+    const video = cameraPreviewVideoRef.current;
+    if (video) {
+      video.srcObject = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopCameraStream();
+    };
+  }, [stopCameraStream]);
 
   function getMarkerColorClasses(status: PlantStatus) {
     if (status === "healthy") {
@@ -369,6 +392,75 @@ export default function Home() {
     }
     setNewPlantPhotoFile(file);
     setNewPlantPhotoPreviewUrl(URL.createObjectURL(file));
+  }
+
+  function closeCameraCapture() {
+    stopCameraStream();
+    setIsCameraCaptureOpen(false);
+    setIsStartingCamera(false);
+    setCameraError(null);
+  }
+
+  async function handleOpenCameraCapture() {
+    setCameraError(null);
+    setIsStartingCamera(true);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setIsStartingCamera(false);
+      setCameraError("Camera API is not available in this Telegram WebView.");
+      setMessage("Camera API is unavailable here. Use Upload photo.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+      cameraStreamRef.current = stream;
+      setIsCameraCaptureOpen(true);
+      requestAnimationFrame(() => {
+        const video = cameraPreviewVideoRef.current;
+        if (!video) {
+          return;
+        }
+        video.srcObject = stream;
+        void video.play().catch(() => {
+          // Autoplay may be blocked in some WebViews; user can still tap Capture if first frame loads.
+        });
+      });
+    } catch {
+      setCameraError("Could not start camera. Check Telegram camera permission.");
+      setMessage("Could not start camera");
+    } finally {
+      setIsStartingCamera(false);
+    }
+  }
+
+  async function handleCapturePhotoFromCamera() {
+    const video = cameraPreviewVideoRef.current;
+    if (!video || video.videoWidth <= 0 || video.videoHeight <= 0) {
+      setCameraError("Camera is not ready yet. Please wait a moment.");
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      setCameraError("Unable to capture frame.");
+      return;
+    }
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, "image/jpeg", 0.92);
+    });
+    if (!blob) {
+      setCameraError("Failed to create captured image.");
+      return;
+    }
+    const capturedFile = new File([blob], `plant-${Date.now()}.jpg`, { type: "image/jpeg" });
+    handleNewPlantPhotoSelected(capturedFile);
+    closeCameraCapture();
+    setMessage("Photo captured");
   }
 
   function getRoomImageUrl(room: Room) {
@@ -2010,13 +2102,17 @@ export default function Home() {
                 Take a new photo or pick one from gallery.
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
-                <label
-                  htmlFor="add-plant-camera-input"
-                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#bbcabf] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4a42]"
+                <button
+                  type="button"
+                  onClick={() => {
+                    void runSafely(handleOpenCameraCapture);
+                  }}
+                  disabled={isStartingCamera}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[#bbcabf] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4a42] disabled:opacity-60"
                 >
                   <Camera className="h-4 w-4" />
-                  Take photo
-                </label>
+                  {isStartingCamera ? "Opening camera..." : "Take photo"}
+                </button>
                 <button
                   type="button"
                   onClick={() => addPlantUploadInputRef.current?.click()}
@@ -2064,6 +2160,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => {
+                  closeCameraCapture();
                   clearNewPlantPhotoSelection();
                   setAddPlantNameError(null);
                   setPlantThirstyAfterMinutes(DEFAULT_THIRSTY_AFTER_MINUTES);
@@ -2084,6 +2181,41 @@ export default function Home() {
                 className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
               >
                 Add Plant
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedRoom && isAddPlantOpen && isCameraCaptureOpen ? (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-black/50 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
+          <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
+            <h3 className="text-base font-semibold text-[#1f1b17]">Take photo</h3>
+            <p className="mt-1 text-sm text-[#6c7a71]">Point camera at the plant and tap Capture.</p>
+            <video
+              ref={cameraPreviewVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className="mt-3 h-64 w-full rounded-xl border border-[#e8ddd6] bg-black object-cover"
+            />
+            {cameraError ? <p className="mt-2 text-xs text-[#ba1a1a]">{cameraError}</p> : null}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeCameraCapture}
+                className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-medium text-[#3c4a42]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void runSafely(handleCapturePhotoFromCamera);
+                }}
+                className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
+              >
+                Capture
               </button>
             </div>
           </div>
