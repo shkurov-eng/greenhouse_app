@@ -3,6 +3,17 @@ import { NextResponse, type NextRequest } from "next/server";
 import { parseTaskTextWithAi } from "@/lib/server/taskAiParser";
 import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
 
+type DbError = { message: string } | null;
+type DbWriteResult = Promise<{ error: DbError }>;
+type LooseTableApi = {
+  from: (table: string) => {
+    upsert: (
+      values: Record<string, unknown>,
+      options?: { onConflict?: string; ignoreDuplicates?: boolean },
+    ) => DbWriteResult;
+  };
+};
+
 type TelegramMessage = {
   message_id?: number;
   text?: string;
@@ -58,7 +69,8 @@ export async function POST(request: NextRequest) {
     const aiParsed = ai.parsed;
     const title = (aiParsed?.normalizedTitle || rawText).slice(0, 140);
 
-    const { error: insertError } = await supabaseAdmin.from("tasks").upsert(
+    const db = supabaseAdmin as unknown as LooseTableApi;
+    const { error: insertError } = await db.from("tasks").upsert(
       {
         household_id: profile.active_household_id,
         created_by_profile_id: profile.id,

@@ -2,6 +2,14 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
 
+type DbError = { message: string } | null;
+type DbWriteResult = Promise<{ error: DbError }>;
+type LooseInsertApi = {
+  from: (table: string) => {
+    insert: (values: Record<string, unknown>) => DbWriteResult;
+  };
+};
+
 type ReminderKind = "due_soon" | "overdue";
 
 type CandidateTask = {
@@ -109,7 +117,8 @@ export async function POST(request: NextRequest) {
       await sendTelegramMessage(telegramId, `${prefix}: ${task.title}\nDue: ${dueText}`);
       sent += 1;
 
-      const { error: logError } = await supabaseAdmin.from("task_reminders_log").insert({
+      const db = supabaseAdmin as unknown as LooseInsertApi;
+      const { error: logError } = await db.from("task_reminders_log").insert({
         task_id: task.id,
         reminder_type: kind,
         sent_to_telegram_id: Number.isFinite(Number(telegramId)) ? Number(telegramId) : null,
