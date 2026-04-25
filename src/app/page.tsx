@@ -8,6 +8,7 @@ import {
   bootstrapUser,
   createHousehold,
   createPlant,
+  deletePlant,
   createRoom,
   deleteHousehold,
   deleteRoom,
@@ -17,6 +18,7 @@ import {
   listRooms,
   renameHousehold,
   renameRoom,
+  revertLastWatering,
   setActiveHousehold,
   updatePlant,
   uploadRoomImage,
@@ -33,6 +35,7 @@ import {
 /** UI watering urgency from clock: green under 5 min, yellow 5 min–1 h, red after 1 h (or never watered). */
 const THIRSTY_AFTER_MS = 5 * 60 * 1000;
 const OVERDUE_AFTER_MS = 60 * 60 * 1000;
+const MARKER_WATER_DELAY_MS = 3_000;
 
 function wateringDerivedStatus(lastWateredAt: string | null): PlantStatus {
   if (!lastWateredAt) {
@@ -64,6 +67,11 @@ type TelegramWebApp = {
     user?: TelegramWebAppUser;
   };
 };
+
+type PendingDeleteTarget =
+  | { kind: "room"; id: string; label: string }
+  | { kind: "household"; id: string; label: string }
+  | { kind: "plant"; id: string; label: string };
 
 declare global {
   interface Window {
@@ -99,9 +107,11 @@ export default function Home() {
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+  const selectedRoomIdRef = useRef<string | null>(null);
   const [plants, setPlants] = useState<Plant[]>([]);
   const [markers, setMarkers] = useState<PlantMarker[]>([]);
   const [activeMarkerId, setActiveMarkerId] = useState<string | null>(null);
+  const [pendingWateringMarkerIds, setPendingWateringMarkerIds] = useState<string[]>([]);
   const [justWateredMarkerId, setJustWateredMarkerId] = useState<string | null>(null);
   const [selectedPlantIdForMarker, setSelectedPlantIdForMarker] = useState<string>("");
   const [isMarkerEditMode, setIsMarkerEditMode] = useState(false);
@@ -116,8 +126,15 @@ export default function Home() {
   const [editPlantStatus, setEditPlantStatus] = useState<PlantStatus>("healthy");
   const [roomFiles, setRoomFiles] = useState<Record<string, File | null>>({});
   const [roomUploadStatus, setRoomUploadStatus] = useState<Record<string, string>>({});
+  const [pendingDeleteTarget, setPendingDeleteTarget] = useState<PendingDeleteTarget | null>(null);
   /** Bumps on an interval so marker colors refresh from `last_watered_at` without refetch. */
   const [, setWateringUiTick] = useState(0);
+  const [, setPendingWateringTick] = useState(0);
+  const [showMarkerLongPressHint, setShowMarkerLongPressHint] = useState(false);
+  const markerLongPressTimerRef = useRef<number | null>(null);
+  const pendingWateringTimersRef = useRef<Record<string, number>>({});
+  const pendingWateringStartedAtRef = useRef<Record<string, number>>({});
+  const markerLongPressHandledRef = useRef<string | null>(null);
 
   /** Opening a room reuses the same document scroll as the overview; reset so the photo + markers are in view. */
   useLayoutEffect(() => {
@@ -138,6 +155,20 @@ export default function Home() {
     }, 30_000);
     return () => window.clearInterval(id);
   }, [selectedRoom]);
+
+  useEffect(() => {
+    selectedRoomIdRef.current = selectedRoom?.id ?? null;
+  }, [selectedRoom?.id]);
+
+  useEffect(() => {
+    if (pendingWateringMarkerIds.length === 0) {
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      setPendingWateringTick((n) => n + 1);
+    }, 200);
+    return () => window.clearInterval(intervalId);
+  }, [pendingWateringMarkerIds.length]);
 
   function getMarkerColorClasses(status: PlantStatus) {
     if (status === "healthy") {
@@ -395,10 +426,6 @@ export default function Home() {
   }
 
   async function handleDeleteRoom(roomId: string, roomLabel: string) {
-    const ok = window.confirm(`Delete room "${roomLabel}"? Plants in this room will be removed.`);
-    if (!ok) {
-      return;
-    }
     await deleteRoom(getCurrentInitData(), roomId);
     if (selectedRoom?.id === roomId) {
       setSelectedRoom(null);
@@ -409,12 +436,6 @@ export default function Home() {
   }
 
   async function handleDeleteHousehold(targetHouseholdId: string, homeLabel: string) {
-    const ok = window.confirm(
-      `Delete home "${homeLabel}"? All rooms and plants in this home will be removed for every member.`,
-    );
-    if (!ok) {
-      return;
-    }
     await deleteHousehold(getCurrentInitData(), targetHouseholdId);
     if (householdId === targetHouseholdId) {
       setSelectedRoom(null);
@@ -527,23 +548,106 @@ export default function Home() {
     }
   }
 
-  async function handleWaterPlant(plantId: string) {
-    if (!selectedRoom) {
+  async function handleWaterPlant(plantId: string, roomId: string) {
+    if (!roomId) {
       return;
     }
+    const plantBeforeWatering = plants.find((plant) => plant.id === plantId) ?? null;
+    const hadRecentWatering =
+      plantBeforeWatering?.last_watered_at != null &&
+      !Number.isNaN(new Date(plantBeforeWatering.last_watered_at).getTime());
 
     await waterPlant(getCurrentInitData(), plantId);
-    await fetchRoomDetails(selectedRoom.id);
-    setMessage("Plant marked as watered");
+    if (selectedRoomIdRef.current === roomId) {
+      await fetchRoomDetails(roomId);
+    }
+    setMessage(hadRecentWatering ? "Timer reset" : "Plant marked as watered");
   }
 
-  async function handleMarkerTap(plantId: string, markerId: string) {
-    setJustWateredMarkerId(markerId);
-    setTimeout(() => {
-      setJustWateredMarkerId((prev) => (prev === markerId ? null : prev));
-    }, 700);
-    await handleWaterPlant(plantId);
-    setActiveMarkerId((prev) => (prev === markerId ? null : markerId));
+  async function handleUndoLastWatering() {
+    if (!selectedRoom || !editingPlantId) {
+      return;
+    }
+    const currentEditingPlantId = editingPlantId;
+    await revertLastWatering(getCurrentInitData(), {
+      plantId: currentEditingPlantId,
+    });
+    setIsEditPlantOpen(false);
+    setEditingPlantId(null);
+    await fetchRoomDetails(selectedRoom.id);
+    setMessage("Last watering undone");
+  }
+
+  async function handleMarkerTap(plantId: string, markerId: string, roomId: string) {
+    if (pendingWateringTimersRef.current[markerId]) {
+      return;
+    }
+    setActiveMarkerId(markerId);
+    setPendingWateringMarkerIds((prev) =>
+      prev.includes(markerId) ? prev : [...prev, markerId],
+    );
+    pendingWateringStartedAtRef.current[markerId] = Date.now();
+    pendingWateringTimersRef.current[markerId] = window.setTimeout(() => {
+      delete pendingWateringTimersRef.current[markerId];
+      delete pendingWateringStartedAtRef.current[markerId];
+      setPendingWateringMarkerIds((prev) => prev.filter((id) => id !== markerId));
+      setJustWateredMarkerId(markerId);
+      setTimeout(() => {
+        setJustWateredMarkerId((prev) => (prev === markerId ? null : prev));
+      }, 700);
+      void runSafely(async () => {
+        await handleWaterPlant(plantId, roomId);
+        setActiveMarkerId((prev) => (prev === markerId ? null : prev));
+      });
+    }, MARKER_WATER_DELAY_MS);
+  }
+
+  function handleCancelPendingMarkerWatering(markerId: string) {
+    const timerId = pendingWateringTimersRef.current[markerId];
+    if (!timerId) {
+      return;
+    }
+    window.clearTimeout(timerId);
+    delete pendingWateringTimersRef.current[markerId];
+    delete pendingWateringStartedAtRef.current[markerId];
+    setPendingWateringMarkerIds((prev) => prev.filter((id) => id !== markerId));
+    setActiveMarkerId((prev) => (prev === markerId ? null : prev));
+  }
+
+  function getPendingWateringSecondsLeft(markerId: string) {
+    const startedAt = pendingWateringStartedAtRef.current[markerId];
+    if (!startedAt) {
+      return 0;
+    }
+    const elapsedMs = Date.now() - startedAt;
+    const remainingMs = Math.max(0, MARKER_WATER_DELAY_MS - elapsedMs);
+    return Math.ceil(remainingMs / 1000);
+  }
+
+  function clearMarkerLongPressTimer() {
+    if (markerLongPressTimerRef.current !== null) {
+      window.clearTimeout(markerLongPressTimerRef.current);
+      markerLongPressTimerRef.current = null;
+    }
+  }
+
+  function startMarkerLongPress(markerId: string, plant: Plant | undefined) {
+    clearMarkerLongPressTimer();
+    markerLongPressHandledRef.current = null;
+    if (!plant) {
+      return;
+    }
+    markerLongPressTimerRef.current = window.setTimeout(() => {
+      markerLongPressHandledRef.current = markerId;
+      setShowMarkerLongPressHint(false);
+      window.localStorage.setItem("markerLongPressHintDismissed", "1");
+      setActiveMarkerId(markerId);
+      openEditPlantDialog(plant);
+    }, 550);
+  }
+
+  function stopMarkerLongPress() {
+    clearMarkerLongPressTimer();
   }
 
   function openEditPlantDialog(plant: Plant) {
@@ -576,6 +680,59 @@ export default function Home() {
     setEditingPlantId(null);
     await fetchRoomDetails(selectedRoom.id);
     setMessage("Plant updated");
+  }
+
+  async function handleDeletePlant() {
+    if (!selectedRoom || !editingPlantId) {
+      return;
+    }
+    const plantId = editingPlantId;
+    await deletePlant(getCurrentInitData(), plantId);
+    setIsEditPlantOpen(false);
+    setEditingPlantId(null);
+    await fetchRoomDetails(selectedRoom.id);
+    setMessage("Plant deleted");
+  }
+
+  function requestDeleteRoom(roomId: string, roomLabel: string) {
+    setPendingDeleteTarget({ kind: "room", id: roomId, label: roomLabel });
+  }
+
+  function requestDeleteHousehold(targetHouseholdId: string, homeLabel: string) {
+    setPendingDeleteTarget({ kind: "household", id: targetHouseholdId, label: homeLabel });
+  }
+
+  function requestDeletePlant() {
+    if (!editingPlantId) {
+      return;
+    }
+    const plantToDelete = plants.find((plant) => plant.id === editingPlantId);
+    setPendingDeleteTarget({
+      kind: "plant",
+      id: editingPlantId,
+      label: plantToDelete?.name ?? "this plant",
+    });
+  }
+
+  async function handleConfirmDelete() {
+    const target = pendingDeleteTarget;
+    if (!target) {
+      return;
+    }
+    if (target.kind === "room") {
+      await handleDeleteRoom(target.id, target.label);
+    } else if (target.kind === "household") {
+      await handleDeleteHousehold(target.id, target.label);
+    } else {
+      if (editingPlantId !== target.id) {
+        const plantToEdit = plants.find((plant) => plant.id === target.id);
+        if (plantToEdit) {
+          openEditPlantDialog(plantToEdit);
+        }
+      }
+      await handleDeletePlant();
+    }
+    setPendingDeleteTarget(null);
   }
 
   function handleEditMarkerForPlant() {
@@ -686,6 +843,23 @@ export default function Home() {
           ]
         : [];
 
+  useEffect(() => {
+    return () => {
+      clearMarkerLongPressTimer();
+      const timers = Object.values(pendingWateringTimersRef.current);
+      for (const timerId of timers) {
+        window.clearTimeout(timerId);
+      }
+      pendingWateringTimersRef.current = {};
+      pendingWateringStartedAtRef.current = {};
+    };
+  }, []);
+
+  useEffect(() => {
+    const isDismissed = window.localStorage.getItem("markerLongPressHintDismissed") === "1";
+    setShowMarkerLongPressHint(!isDismissed);
+  }, []);
+
   return (
     <MobileShell>
     <main className="min-h-screen bg-[#fff8f5] pb-32 text-[#1f1b17]">
@@ -741,6 +915,11 @@ export default function Home() {
                 void runSafely(() => handleImageClick(event));
               }}
             >
+              {showMarkerLongPressHint ? (
+                <div className="pointer-events-none absolute right-3 top-3 z-10 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-[#3c4a42] shadow">
+                  Long press marker to edit plant
+                </div>
+              ) : null}
               {getRoomImageUrl(selectedRoom) ? (
                 <img
                   src={getRoomImageUrl(selectedRoom) ?? undefined}
@@ -755,7 +934,10 @@ export default function Home() {
               {markers.map((marker) => {
                 const markerPlant = plants.find((plant) => plant.id === marker.plant_id);
                 const isActive = activeMarkerId === marker.id;
+                const isPendingWatering = pendingWateringMarkerIds.includes(marker.id);
+                const isInfoBubbleVisible = isActive || isPendingWatering;
                 const isJustWatered = justWateredMarkerId === marker.id;
+                const secondsLeft = getPendingWateringSecondsLeft(marker.id);
                 const status = wateringDerivedStatus(markerPlant?.last_watered_at ?? null);
                 const colors = getMarkerColorClasses(status);
                 return (
@@ -772,21 +954,64 @@ export default function Home() {
                       className={`relative h-6 w-6 rounded-full border-2 border-white shadow-md transition-all ${
                         isJustWatered ? "scale-125 ring-4 ring-[#10b981]/35" : ""
                       } ${colors.pin}`}
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        startMarkerLongPress(marker.id, markerPlant);
+                      }}
+                      onPointerUp={(event) => {
+                        event.stopPropagation();
+                        stopMarkerLongPress();
+                      }}
+                      onPointerCancel={(event) => {
+                        event.stopPropagation();
+                        stopMarkerLongPress();
+                      }}
+                      onPointerLeave={(event) => {
+                        event.stopPropagation();
+                        stopMarkerLongPress();
+                      }}
                       onClick={(event) => {
                         event.stopPropagation();
-                        void runSafely(() => handleMarkerTap(marker.plant_id, marker.id));
+                        if (markerLongPressHandledRef.current === marker.id) {
+                          markerLongPressHandledRef.current = null;
+                          return;
+                        }
+                        void runSafely(() =>
+                          handleMarkerTap(marker.plant_id, marker.id, selectedRoom.id),
+                        );
                       }}
                       title={markerPlant?.name ?? "Plant marker"}
                       aria-label={markerPlant?.name ?? "Plant marker"}
                     >
                       <span className={`absolute inset-0 animate-ping rounded-full ${colors.pulse}`} />
                     </button>
-                    {isActive ? (
-                      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-white px-2 py-1 text-[10px] font-semibold text-[#3c4a42] shadow-md">
-                        <span className={`mr-1 rounded-full px-1.5 py-0.5 text-[9px] uppercase ${colors.labelChip} ${colors.labelText}`}>
-                          {status}
-                        </span>
-                        {markerPlant?.name ?? "Plant"}
+                    {isInfoBubbleVisible ? (
+                      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 rounded-lg bg-white px-2 py-1 text-[10px] font-semibold text-[#3c4a42] shadow-md">
+                        <div className="whitespace-nowrap">
+                          <span
+                            className={`mr-1 rounded-full px-1.5 py-0.5 text-[9px] uppercase ${colors.labelChip} ${colors.labelText}`}
+                          >
+                            {status}
+                          </span>
+                          {markerPlant?.name ?? "Plant"}
+                        </div>
+                        {isPendingWatering ? (
+                          <div className="mt-1 flex items-center justify-between gap-2">
+                            <span className="text-[9px] text-[#6c7a71]">
+                              Watering in {secondsLeft}s
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleCancelPendingMarkerWatering(marker.id);
+                              }}
+                              className="rounded-md border border-[#ba1a1a]/30 px-1.5 py-0.5 text-[9px] font-semibold text-[#93000a] hover:bg-[#ffdad6]/40"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : null}
                         <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1 rotate-45 bg-white" />
                       </div>
                     ) : null}
@@ -816,13 +1041,23 @@ export default function Home() {
               ) : (
                 <ul className="mt-2 space-y-2">
                   {plants.map((plant) => (
+                    (() => {
+                      const hasMarker = markers.some((marker) => marker.plant_id === plant.id);
+                      return (
                     <li
                       key={plant.id}
                       className="rounded-xl bg-[#fcf2eb] px-3 py-2 text-sm text-[#1f1b17]"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="font-semibold">{plant.name}</p>
+                          <p className="font-semibold">
+                            {plant.name}
+                            {!hasMarker ? (
+                              <span className="ml-2 rounded-full bg-[#ffedd5] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#9a3412]">
+                                no marker
+                              </span>
+                            ) : null}
+                          </p>
                           {plant.species ? (
                             <p className="text-xs text-[#6c7a71]">{plant.species}</p>
                           ) : null}
@@ -837,7 +1072,7 @@ export default function Home() {
                           <button
                             type="button"
                             onClick={() => {
-                              void runSafely(() => handleWaterPlant(plant.id));
+                              void runSafely(() => handleWaterPlant(plant.id, selectedRoom.id));
                             }}
                             className="rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-2.5 py-1.5 text-[11px] font-semibold text-white"
                           >
@@ -853,6 +1088,8 @@ export default function Home() {
                         </div>
                       </div>
                     </li>
+                      );
+                    })()
                   ))}
                 </ul>
               )}
@@ -1008,7 +1245,7 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={() => {
-                          void runSafely(() => handleDeleteHousehold(h.household_id, h.household_name));
+                          requestDeleteHousehold(h.household_id, h.household_name);
                         }}
                         className="flex shrink-0 items-start justify-center rounded-tr-2xl rounded-br-2xl px-2.5 pb-2 pt-3 text-[#6c7a71] transition hover:bg-[#ffdad6]/50 hover:text-[#93000a] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ba1a1a]/40"
                         aria-label={`Delete home ${h.household_name}`}
@@ -1110,7 +1347,7 @@ export default function Home() {
                       aria-label={`Delete ${room.name}`}
                       onClick={(event) => {
                         event.stopPropagation();
-                        void runSafely(() => handleDeleteRoom(room.id, room.name));
+                        requestDeleteRoom(room.id, room.name);
                       }}
                     >
                       <span className="material-symbols-outlined text-lg">delete</span>
@@ -1417,6 +1654,24 @@ export default function Home() {
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
+                onClick={() => {
+                  requestDeletePlant();
+                }}
+                className="rounded-xl border border-[#ba1a1a]/30 px-4 py-2 text-sm font-semibold text-[#93000a] hover:bg-[#ffdad6]/40"
+              >
+                Delete plant
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void runSafely(handleUndoLastWatering);
+                }}
+                className="rounded-xl border border-[#ba1a1a]/30 px-4 py-2 text-sm font-semibold text-[#93000a] hover:bg-[#ffdad6]/40"
+              >
+                Undo last watering
+              </button>
+              <button
+                type="button"
                 onClick={handleEditMarkerForPlant}
                 className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-semibold text-[#006c49]"
               >
@@ -1437,6 +1692,39 @@ export default function Home() {
                 className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
               >
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {pendingDeleteTarget ? (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-black/35 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
+          <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
+            <h3 className="text-base font-semibold text-[#1f1b17]">Delete confirmation</h3>
+            <p className="mt-2 text-sm text-[#6c7a71]">
+              {pendingDeleteTarget.kind === "household"
+                ? `Delete home "${pendingDeleteTarget.label}"? All rooms and plants in this home will be removed for every member.`
+                : pendingDeleteTarget.kind === "room"
+                  ? `Delete room "${pendingDeleteTarget.label}"? Plants in this room will be removed.`
+                  : `Delete "${pendingDeleteTarget.label}"? This cannot be undone.`}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteTarget(null)}
+                className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-medium text-[#3c4a42]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void runSafely(handleConfirmDelete);
+                }}
+                className="rounded-xl border-b-2 border-[#7a0007] bg-[#ba1a1a] px-4 py-2 text-sm font-semibold text-white"
+              >
+                Continue
               </button>
             </div>
           </div>

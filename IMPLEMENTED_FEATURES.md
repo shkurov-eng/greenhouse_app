@@ -42,7 +42,7 @@ This document summarizes what has already been implemented in the project.
     - `api_list_households`, `api_create_household`, `api_set_active_household`; `api_join_household` **adds** membership and sets the joined home active (user can belong to several homes).
     - Legacy unique-on-`user_id` alone on `household_members` must be dropped in favor of `UNIQUE (household_id, user_id)` (script attempts common constraint/index names, including `household_members_user_id_unique`).
     - `INSERT ... ON CONFLICT` in PL/pgSQL uses **dynamic `EXECUTE ... USING`** where needed so `RETURNS TABLE (household_id, ...)` output names do not shadow column names.
-    - UI: card-style **home picker** (horizontal scroll when multiple homes), **Create new home** modal, **rename home** (pencil → modal; `api_rename_household`), **delete home** (trash on each card; confirm; removes the household for all members), same secure API patterns. If the user deletes their last home, `loadHouseholds` runs `bootstrapUser` again so a default home is recreated.
+    - UI: card-style **home picker** (horizontal scroll when multiple homes), **Create new home** modal, **rename home** (pencil → modal; `api_rename_household`), **delete home** (trash on each card; custom warning modal with **Continue/Cancel**; removes the household for all members), same secure API patterns. If the user deletes their last home, `loadHouseholds` runs `bootstrapUser` again so a default home is recreated.
 
 ## Stage 3 - Rooms
 
@@ -55,10 +55,11 @@ This document summarizes what has already been implemented in the project.
 - Rooms UI:
   - Rooms list, room detail, FAB add room, add room modal
   - **Rename room** from overview card or room header (pencil → modal); RPC `api_rename_room`; response signed like `createRoom`.
-  - **Delete room** from overview card (confirm dialog); RPC `api_delete_room` (cascade removes plants/markers per schema).
+  - **Delete room** from overview card (custom warning modal with **Continue/Cancel**); RPC `api_delete_room` (cascade removes plants/markers per schema).
+  - **Scroll on open:** overview and room detail share the **same document scroll**. A `useLayoutEffect` keyed on `selectedRoom?.id` resets `window` / `document.documentElement` / `document.body` scroll to the top when entering a room so the **room photo and markers** are in view immediately (no extra scroll after opening from a scrolled-down list).
 - Room images:
   - Upload: `POST /api/rooms/upload` (service role uploads file, RPC attaches path to room).
-  - Display: `listRooms` / `createRoom` responses include **`signed_background_url`** (short-lived signed URL from Storage).
+  - Display: `listRooms` / `createRoom` / **`renameRoom`** responses include **`signed_background_url`** (short-lived signed URL from Storage).
   - **Legacy rows** with only `background_url` (old public URL) and empty `background_path`: server tries to derive storage path from the public URL and sign it so images keep working after bucket goes private.
 
 ## Stage 4 - Plants and Markers
@@ -66,12 +67,17 @@ This document summarizes what has already been implemented in the project.
 - Plants: `household_id`, `room_id`, `name`, `species`, `status`, `last_watered_at`, etc.
 - `plant_markers`: normalized `x`, `y` in `0..1`, unique per `plant_id`
 - Plant CRUD, marker placement, edit-from-plant-dialog flows as before (all via `/api/secure` + RPC).
+- Plant deletion is available from **Edit Plant** with a warning modal (**Continue/Cancel**); room markers are removed together with the plant.
+- In **Plants in this room**, plants without a marker display a `no marker` badge next to the plant name.
 - **Marker pin color and active-marker status chip** (in `src/app/page.tsx`) use **watering urgency derived from `last_watered_at`**, not the stored `plants.status` field, so colors track time since last water without waiting for server-side status flips.
 
 ## Stage 5 - Watering
 
 - Watering updates `last_watered_at` and `status` via secure API / RPC.
 - Marker tap still waters plant; flash animation unchanged.
+- Re-watering is allowed: tapping an already watered marker updates `last_watered_at` to the current time again (timer reset/restart).
+- **Marker long-press opens `Edit Plant`** for that exact marker's plant (tap behavior still waters as before).
+- **Edit Plant** includes **Undo last watering** with persistent DB history: restores `last_watered_at` to the value captured before the latest watering action, including after app reloads, and closes the edit modal right after undo.
 - **Client-side urgency** (`wateringDerivedStatus` in `page.tsx`), aligned with marker colors:
   - **Green (`healthy`):** last watered less than **5 minutes** ago.
   - **Yellow (`thirsty`):** **5 minutes** to **1 hour** since last water.
@@ -83,6 +89,7 @@ This document summarizes what has already been implemented in the project.
 ## UI / Design System Work
 
 - Stitch-style layout, Material Symbols, cards, mobile shell (unchanged intent).
+- **Home cards** are a `div` with two side actions (rename / delete) so icon buttons are not nested inside the main “switch home” control (valid HTML, clearer hit targets).
 - **Bottom navigation** (`src/components/MobileShell.tsx`): `Link` routes — **Rooms** `/`, **Inbox** `/tasks`, **Settings** `/settings` (active tab from pathname). Main rooms experience stays on `/`.
 - **Placeholder pages:** `src/app/tasks/page.tsx` (tasks / inbox stub), `src/app/settings/page.tsx` (settings stub), each with back link to `/`.
 - Overview header **settings** icon links to `/settings`.
@@ -95,10 +102,14 @@ This document summarizes what has already been implemented in the project.
 - `households_join.sql` — `invite_code` on `households` + unique index.
 - `security_hardening.sql` — RLS, revoke direct table access from anon/auth, `public.api_*` RPCs, private `rooms` storage, `rooms.background_path`, grants for RPC execution.
 - `multi_household_delete_room.sql` — **run after** `security_hardening.sql`: `active_household_id` on `profiles`, relax single-home `household_members` uniqueness, replace `api_household_id_by_profile` / `api_bootstrap_user` / `api_join_household`, add `api_list_households`, `api_create_household`, `api_set_active_household`, `api_delete_room`, `api_rename_household`, `api_rename_room`, `api_delete_household` (optional tasks cleanup when `public.tasks` exists), and grants. Required for multi-home UI, renames, room/household delete. If the file was applied in parts, see incremental comments at the end of the SQL file for missing RPCs.
+- `watering_undo_history.sql` — persistent `plant_watering_events` history used by secure API to support global undo of the latest watering per plant.
 
 ## Current Behavior Summary
 
 - **Production:** open only from Telegram Mini App (menu / `web_app` button). Server requires valid `initData` + `TELEGRAM_BOT_TOKEN`.
 - **Local browser debug:** `npm run dev` + `DEV_BROWSER_MODE=true` + `DEV_TELEGRAM_ID` + `SUPABASE_SERVICE_ROLE_KEY` (not available on deployed Vercel preview/prod by design).
 - All data access: `POST /api/secure`, `POST /api/rooms/upload`; RLS + RPC enforce household scope (active household from `profiles.active_household_id` when migration applied).
+- **Households:** members can **rename** (`api_rename_household`) or **delete** (`api_delete_household`) a home they belong to; delete removes shared data for everyone; empty membership after deletes is healed by **`bootstrapUser`** inside `loadHouseholds` (default home again).
 - Room thumbnails and detail images use **signed URLs**; legacy public URLs are supported via path extraction when needed.
+- **Opening a room** scrolls the page to the **top** before paint (`useLayoutEffect` in `src/app/page.tsx`) so watering markers on the image are usable without scrolling up from the list position.
+- Deletions (home, room, plant) use an in-app warning modal with explicit **Continue** / **Cancel** actions instead of browser `confirm()`.

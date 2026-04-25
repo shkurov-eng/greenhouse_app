@@ -18,6 +18,8 @@ type SecureAction =
   | "listRoomDetails"
   | "createPlant"
   | "waterPlant"
+  | "revertLastWatering"
+  | "deletePlant"
   | "updatePlant"
   | "upsertMarker"
   | "createRoomImageSignedUrl";
@@ -73,6 +75,39 @@ function asUuid(value: unknown, fieldName: string) {
     throw new Error(`Invalid ${fieldName}`);
   }
   return s;
+}
+
+async function getScopedPlantForActiveHousehold(telegramId: number, plantId: string) {
+  const supabaseAdmin = getSupabaseAdmin();
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from("profiles")
+    .select("active_household_id")
+    .eq("telegram_id", telegramId)
+    .single();
+  if (profileError) {
+    throw new Error(profileError.message);
+  }
+  const activeHouseholdId = profile?.active_household_id;
+  if (!activeHouseholdId) {
+    throw new Error("No active household");
+  }
+  const { data: plantRow, error: plantError } = await supabaseAdmin
+    .from("plants")
+    .select("id,last_watered_at,rooms!inner(household_id)")
+    .eq("id", plantId)
+    .single();
+  if (plantError) {
+    throw new Error(plantError.message);
+  }
+  const plantHouseholdId = (plantRow?.rooms as { household_id?: string } | null)?.household_id;
+  if (!plantHouseholdId || plantHouseholdId !== activeHouseholdId) {
+    throw new Error("Plant not found in active household");
+  }
+  return {
+    supabaseAdmin,
+    lastWateredAt:
+      plantRow?.last_watered_at == null ? null : String(plantRow.last_watered_at),
+  };
 }
 
 async function rpc(fn: string, params: Record<string, unknown>): Promise<unknown> {
@@ -342,13 +377,98 @@ export async function POST(request: NextRequest) {
       }
 
       case "waterPlant": {
-        const plantId = asString(payload.plantId, "plantId");
-        const result = await rpc("api_water_plant", {
-          p_telegram_id: telegramId,
-          p_plant_id: plantId,
+        const plantId = asUuid(payload.plantId, "plantId");
+        const { supabaseAdmin, lastWateredAt } = await getScopedPlantForActiveHousehold(
+          telegramId,
+          plantId,
+        );
+        const nextWateredAt = new Date().toISOString();
+        const { error: waterUpdateError } = await supabaseAdmin
+          .from("plants")
+          .update({
+            last_watered_at: nextWateredAt,
+            status: "healthy",
+          })
+          .eq("id", plantId);
+        if (waterUpdateError) {
+          throw new Error(waterUpdateError.message);
+        }
+        const { error: historyError } = await supabaseAdmin.from("plant_watering_events").insert({
+          plant_id: plantId,
+          previous_last_watered_at: lastWateredAt,
         });
-        const data = unwrapSingleRow<Record<string, unknown>>(result);
-        return NextResponse.json({ data });
+        if (historyError) {
+          throw new Error(
+            `Failed to save watering history: ${historyError.message}. Apply watering_undo_history.sql`,
+          );
+        }
+        return NextResponse.json({
+          data: {
+            id: plantId,
+            last_watered_at: nextWateredAt,
+          },
+        });
+      }
+
+      case "revertLastWatering": {
+        const plantId = asUuid(payload.plantId, "plantId");
+        const { supabaseAdmin } = await getScopedPlantForActiveHousehold(telegramId, plantId);
+        const { data: latestEvent, error: latestEventError } = await supabaseAdmin
+          .from("plant_watering_events")
+          .select("id,previous_last_watered_at")
+          .eq("plant_id", plantId)
+          .is("undone_at", null)
+          .order("watered_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (latestEventError) {
+          throw new Error(latestEventError.message);
+        }
+        if (!latestEvent) {
+          throw new Error("No recent watering to undo");
+        }
+        const previousLastWateredAt =
+          latestEvent.previous_last_watered_at == null
+            ? null
+            : String(latestEvent.previous_last_watered_at);
+        const { error: updateError } = await supabaseAdmin
+          .from("plants")
+          .update({ last_watered_at: previousLastWateredAt })
+          .eq("id", plantId);
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+        const { error: markUndoneError } = await supabaseAdmin
+          .from("plant_watering_events")
+          .update({ undone_at: new Date().toISOString() })
+          .eq("id", String(latestEvent.id))
+          .is("undone_at", null);
+        if (markUndoneError) {
+          throw new Error(markUndoneError.message);
+        }
+        return NextResponse.json({
+          data: {
+            id: plantId,
+            last_watered_at: previousLastWateredAt,
+          },
+        });
+      }
+
+      case "deletePlant": {
+        const plantId = asUuid(payload.plantId, "plantId");
+        const { supabaseAdmin } = await getScopedPlantForActiveHousehold(telegramId, plantId);
+        const { error: deleteMarkersError } = await supabaseAdmin
+          .from("plant_markers")
+          .delete()
+          .eq("plant_id", plantId);
+        if (deleteMarkersError) {
+          throw new Error(deleteMarkersError.message);
+        }
+        const { error: deletePlantError } = await supabaseAdmin.from("plants").delete().eq("id", plantId);
+        if (deletePlantError) {
+          throw new Error(deletePlantError.message);
+        }
+        return NextResponse.json({ data: { ok: true as const } });
       }
 
       case "updatePlant": {

@@ -210,6 +210,25 @@ export async function waterPlant(initData: string | null, plantId: string) {
   });
 }
 
+export async function revertLastWatering(
+  initData: string | null,
+  payload: { plantId: string },
+) {
+  return secureRequest<{ id: string; last_watered_at: string | null }>({
+    action: "revertLastWatering",
+    initData,
+    payload,
+  });
+}
+
+export async function deletePlant(initData: string | null, plantId: string) {
+  return secureRequest<{ ok: true }>({
+    action: "deletePlant",
+    initData,
+    payload: { plantId },
+  });
+}
+
 export async function updatePlant(
   initData: string | null,
   payload: { plantId: string; name: string; species: string | null; status: PlantStatus },
