@@ -91,6 +91,7 @@ This document summarizes what has already been implemented in the project.
   - **Scroll on open:** overview and room detail share the **same document scroll**. A `useLayoutEffect` keyed on `selectedRoom?.id` resets `window` / `document.documentElement` / `document.body` scroll to the top when entering a room so the **room photo and markers** are in view immediately (no extra scroll after opening from a scrolled-down list).
 - Room images:
   - Upload: `POST /api/rooms/upload` (service role uploads file, RPC attaches path to room).
+  - Room photos are compressed client-side before upload (same compression helper used for plant photos), with UI status reflecting size reduction when available.
   - Display: `listRooms` / `createRoom` / **`renameRoom`** responses include **`signed_background_url`** (short-lived signed URL from Storage).
   - **Legacy rows** with only `background_url` (old public URL) and empty `background_path`: server tries to derive storage path from the public URL and sign it so images keep working after bucket goes private.
 
@@ -99,6 +100,7 @@ This document summarizes what has already been implemented in the project.
 - Plants: `household_id`, `room_id`, `name`, `species`, `status`, `last_watered_at`, etc.
 - Plant photos: add flow now supports either **taking a photo** or **uploading from gallery** in `Add Plant`; image is uploaded via `POST /api/plants/upload`, stored in Supabase Storage, and shown on plant cards and edit modal through signed URLs. `Edit Plant` also supports **Replace photo** and **Remove photo**.
 - **Edit Plant photo actions:** in `Edit Plant`, user can also **take a new photo** directly (camera capture) in addition to gallery replacement.
+- **Edit Plant camera parity:** `Take photo` in `Edit Plant` now uses the same in-app camera modal flow (`getUserMedia` preview + `Capture`) as `Add Plant`, instead of opening the system file picker.
 - **Edit Plant AI analyze action:** in `Edit Plant`, user can run **Analyze with AI** on the current plant photo to refresh editable fields (name + watering thresholds) even if the plant was initially filled manually.
 - **Android camera fallback:** `Add Plant` includes in-app camera capture via `getUserMedia` + frame capture, so Telegram Android/WebView `file input` quirks no longer block taking photos.
 - **Photo compression before AI/upload:** client compresses selected/captured images (downscale + JPEG quality) before sending to AI Studio and storage upload; UI shows compression result (`Compressed: X -> Y` or `No compression gain`).
@@ -172,6 +174,9 @@ This document summarizes what has already been implemented in the project.
   - Loads personal tasks for current user and household tasks from member homes.
   - Supports manual task creation in-page (title, deadline, scope; target home only for household tasks).
   - Creation form includes quick deadline presets (`+1h`, `Today 20:00`, `Tomorrow 09:00`).
+  - `New task` and `Filters` sections are collapsible for a compact Inbox view.
+  - `Task type` filter supports `All`, `Personal`, and specific homes.
+  - Last selected `Task type` filter is persisted in local storage and restored on next open.
   - Lets user toggle task status between `open` and `done`.
   - Shows task scope badges (`Личная` / `Дом: <name>`), AI badges, and due date.
   - Supports filtering/sorting by scope and deadline, plus date-range calendar controls and reset.
@@ -186,6 +191,7 @@ This document summarizes what has already been implemented in the project.
     - `single`: one message -> one draft/task flow
     - `combine`: multiple messages merged into one pending draft before finalization
     - `combine` merged draft is capped at `20,000` characters with explicit truncation notice.
+    - combine follow-up confirmation is minimal (`Принял. Обработка уже идет, можно закрывать бота.`).
   - Media without caption is supported with fallback titles (`Задача из фото`, `...из файла`, etc.).
   - Link messages default to title `Задача из ссылки` (URL content parsing postponed to backlog).
 

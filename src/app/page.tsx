@@ -218,7 +218,7 @@ export default function Home() {
     null,
   );
   const [isCameraCaptureOpen, setIsCameraCaptureOpen] = useState(false);
-  const [cameraCaptureTarget, setCameraCaptureTarget] = useState<"plant" | "room" | null>(null);
+  const [cameraCaptureTarget, setCameraCaptureTarget] = useState<"plant" | "room" | "editPlant" | null>(null);
   const [isStartingCamera, setIsStartingCamera] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [editPlantName, setEditPlantName] = useState("");
@@ -276,7 +276,6 @@ export default function Home() {
   const addPlantCameraInputRef = useRef<HTMLInputElement | null>(null);
   const addPlantUploadInputRef = useRef<HTMLInputElement | null>(null);
   const roomPhotoUploadInputRef = useRef<HTMLInputElement | null>(null);
-  const editPlantCameraInputRef = useRef<HTMLInputElement | null>(null);
   const editPlantPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const cameraPreviewVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
@@ -626,7 +625,7 @@ export default function Home() {
     setCameraError(null);
   }
 
-  async function handleOpenCameraCapture(target: "plant" | "room" = "plant") {
+  async function handleOpenCameraCapture(target: "plant" | "room" | "editPlant" = "plant") {
     setCameraError(null);
     setIsStartingCamera(true);
     setCameraCaptureTarget(target);
@@ -703,6 +702,9 @@ export default function Home() {
       closeRoomPhotoPicker();
       setMessage("Room photo uploaded");
       return;
+    }
+    if (nextTarget === "editPlant") {
+      await handleReplacePlantPhoto(capturedFile);
     } else {
       handleNewPlantPhotoSelected(capturedFile);
     }
@@ -1316,9 +1318,6 @@ export default function Home() {
       if (editPlantPhotoInputRef.current) {
         editPlantPhotoInputRef.current.value = "";
       }
-      if (editPlantCameraInputRef.current) {
-        editPlantCameraInputRef.current.value = "";
-      }
       await fetchRoomDetails(selectedRoom.id);
       if (uploadResult.ai_status === "ok") {
         setMessage("Plant photo updated. AI profile applied.");
@@ -1539,10 +1538,18 @@ export default function Home() {
   async function uploadRoomImageFile(roomId: string, file: File) {
     setRoomUploadStatus((prev) => ({
       ...prev,
-      [roomId]: "Uploading...",
+      [roomId]: "Compressing photo...",
     }));
 
-    await uploadRoomImage(getCurrentInitData(), { roomId, file });
+    const compressedResult = await compressImageIfNeeded(file);
+    setRoomUploadStatus((prev) => ({
+      ...prev,
+      [roomId]: compressedResult.compressed
+        ? `Uploading compressed photo (${formatBytes(compressedResult.originalBytes)} -> ${formatBytes(compressedResult.resultBytes)})...`
+        : `Uploading photo (${formatBytes(compressedResult.resultBytes)})...`,
+    }));
+
+    await uploadRoomImage(getCurrentInitData(), { roomId, file: compressedResult.file });
 
     setRoomFiles((prev) => ({
       ...prev,
@@ -2936,7 +2943,9 @@ export default function Home() {
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => editPlantCameraInputRef.current?.click()}
+                  onClick={() => {
+                    void runSafely(() => handleOpenCameraCapture("editPlant"));
+                  }}
                   disabled={isReplacingPlantPhoto || isRemovingPlantPhoto || isAnalyzingEditPlantPhoto}
                   className="inline-flex items-center gap-1 rounded-lg border border-[#bbcabf] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4a42]"
                 >
@@ -2973,16 +2982,6 @@ export default function Home() {
                   {isRemovingPlantPhoto ? "Removing..." : "Remove photo"}
                 </button>
               </div>
-              <input
-                ref={editPlantCameraInputRef}
-                type="file"
-                accept="image/*;capture=camera"
-                capture="environment"
-                onChange={(event) => {
-                  void runSafely(() => handleReplacePlantPhoto(event.target.files?.[0] ?? null));
-                }}
-                className="sr-only"
-              />
               <input
                 ref={editPlantPhotoInputRef}
                 type="file"
