@@ -2039,10 +2039,10 @@ export default function Home() {
               <input
                 ref={addPlantCameraInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*;capture=camera"
                 capture="environment"
                 onChange={(event) => handleNewPlantPhotoSelected(event.target.files?.[0] ?? null)}
-                className="hidden"
+                className="sr-only"
               />
               <input
                 ref={addPlantUploadInputRef}
