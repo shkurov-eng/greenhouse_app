@@ -37,6 +37,7 @@ import {
   revertLastWatering,
   setActiveHousehold,
   updatePlant,
+  analyzePlantImage,
   uploadPlantImage,
   uploadRoomImage,
   upsertMarker,
@@ -177,7 +178,6 @@ export default function Home() {
   const [plantName, setPlantName] = useState("");
   const [addPlantNameError, setAddPlantNameError] = useState<string | null>(null);
   const [plantSpecies, setPlantSpecies] = useState("");
-  const [plantStatus, setPlantStatus] = useState<PlantStatus>("healthy");
   const [, setPlantThirstyAfterMinutes] = useState(
     DEFAULT_THIRSTY_AFTER_MINUTES,
   );
@@ -192,7 +192,12 @@ export default function Home() {
   );
   const [newPlantPhotoFile, setNewPlantPhotoFile] = useState<File | null>(null);
   const [newPlantPhotoPreviewUrl, setNewPlantPhotoPreviewUrl] = useState<string | null>(null);
-  const [newPlantPhotoAiMode, setNewPlantPhotoAiMode] = useState<"manual" | "auto">("manual");
+  const [isAnalyzingPlantPhoto, setIsAnalyzingPlantPhoto] = useState(false);
+  const [newPlantPhotoAiError, setNewPlantPhotoAiError] = useState<string | null>(null);
+  const [didApplyAiAutofill, setDidApplyAiAutofill] = useState(false);
+  const [newPlantPhotoCompressionInfo, setNewPlantPhotoCompressionInfo] = useState<string | null>(
+    null,
+  );
   const [isCameraCaptureOpen, setIsCameraCaptureOpen] = useState(false);
   const [isStartingCamera, setIsStartingCamera] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -375,7 +380,10 @@ export default function Home() {
     }
     setNewPlantPhotoFile(null);
     setNewPlantPhotoPreviewUrl(null);
-    setNewPlantPhotoAiMode("manual");
+    setIsAnalyzingPlantPhoto(false);
+    setNewPlantPhotoAiError(null);
+    setDidApplyAiAutofill(false);
+    setNewPlantPhotoCompressionInfo(null);
     if (addPlantCameraInputRef.current) {
       addPlantCameraInputRef.current.value = "";
     }
@@ -394,6 +402,134 @@ export default function Home() {
     }
     setNewPlantPhotoFile(file);
     setNewPlantPhotoPreviewUrl(URL.createObjectURL(file));
+    setNewPlantPhotoAiError(null);
+    setDidApplyAiAutofill(false);
+    setNewPlantPhotoCompressionInfo(null);
+  }
+
+  function formatBytes(bytes: number) {
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+      return "0 B";
+    }
+    const units = ["B", "KB", "MB", "GB"];
+    let value = bytes;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    const rounded = value >= 10 ? value.toFixed(1) : value.toFixed(2);
+    return `${rounded} ${units[unitIndex]}`;
+  }
+
+  async function compressImageIfNeeded(
+    file: File,
+  ): Promise<{ file: File; originalBytes: number; resultBytes: number; compressed: boolean }> {
+    if (!file.type.startsWith("image/")) {
+      return {
+        file,
+        originalBytes: file.size,
+        resultBytes: file.size,
+        compressed: false,
+      };
+    }
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error("Failed to decode image"));
+        img.src = objectUrl;
+      });
+      const maxSide = 1600;
+      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+      const targetWidth = Math.max(1, Math.round(image.width * scale));
+      const targetHeight = Math.max(1, Math.round(image.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        return {
+          file,
+          originalBytes: file.size,
+          resultBytes: file.size,
+          compressed: false,
+        };
+      }
+      ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+      const compressedBlob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, "image/jpeg", 0.82);
+      });
+      if (!compressedBlob || compressedBlob.size >= file.size) {
+        return {
+          file,
+          originalBytes: file.size,
+          resultBytes: file.size,
+          compressed: false,
+        };
+      }
+      const baseName = file.name.replace(/\.[^.]+$/, "");
+      const compressedFile = new File([compressedBlob], `${baseName || "plant-photo"}.jpg`, {
+        type: "image/jpeg",
+      });
+      return {
+        file: compressedFile,
+        originalBytes: file.size,
+        resultBytes: compressedFile.size,
+        compressed: true,
+      };
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
+  async function handleAnalyzePhotoWithAi() {
+    if (!newPlantPhotoFile) {
+      setNewPlantPhotoAiError("Select or capture a photo first.");
+      return;
+    }
+    setIsAnalyzingPlantPhoto(true);
+    setNewPlantPhotoAiError(null);
+    setDidApplyAiAutofill(false);
+    try {
+      const compressedResult = await compressImageIfNeeded(newPlantPhotoFile);
+      if (compressedResult.compressed) {
+        setNewPlantPhotoCompressionInfo(
+          `Compressed: ${formatBytes(compressedResult.originalBytes)} -> ${formatBytes(compressedResult.resultBytes)}`,
+        );
+      } else {
+        setNewPlantPhotoCompressionInfo(`No compression gain: ${formatBytes(compressedResult.resultBytes)}`);
+      }
+      const result = await analyzePlantImage(getCurrentInitData(), { file: compressedResult.file });
+      if (result.ai_status === "ok" && result.ai_profile) {
+        setPlantName(result.ai_profile.plant_name);
+        setPlantThirstyAfterHours(minutesToHours(result.ai_profile.thirsty_after_minutes));
+        setPlantOverdueAfterHours(minutesToHours(result.ai_profile.overdue_after_minutes));
+        setDidApplyAiAutofill(true);
+        setMessage("AI analysis complete. Fields auto-filled.");
+        return;
+      }
+      if (result.ai_status === "disabled_missing_api_key") {
+        setNewPlantPhotoAiError("AI is disabled on server (missing GEMINI_API_KEY).");
+      } else if (result.ai_status === "request_failed") {
+        const detail = result.ai_error?.trim();
+        setNewPlantPhotoAiError(
+          detail ? `AI request failed: ${detail}` : "AI request failed. Please try again.",
+        );
+      } else {
+        const detail = result.ai_error?.trim();
+        setNewPlantPhotoAiError(
+          detail
+            ? `AI response was invalid: ${detail}`
+            : "AI response was invalid. Try again or fill manually.",
+        );
+      }
+    } catch {
+      setNewPlantPhotoAiError("AI analysis failed. Try again.");
+    } finally {
+      setIsAnalyzingPlantPhoto(false);
+    }
   }
 
   function closeCameraCapture() {
@@ -813,36 +949,34 @@ export default function Home() {
       setMessage("Cannot save plant: invalid watering thresholds");
       return;
     }
-
     const photoToUpload = newPlantPhotoFile;
     const createdPlant = await createPlant(getCurrentInitData(), {
       roomId: selectedRoom.id,
       name: newPlantName,
       species: plantSpecies.trim() || null,
-      status: plantStatus,
+      status: "healthy",
       thirstyAfterMinutes: nextThirstyAfterMinutes,
       overdueAfterMinutes: nextOverdueAfterMinutes,
     });
 
-    let aiStatus:
-      | "ok"
-      | "disabled_missing_api_key"
-      | "request_failed"
-      | "invalid_response"
-      | "skipped_manual"
-      | null = null;
     if (createdPlant?.id && photoToUpload) {
-      const uploadResult = await uploadPlantImage(getCurrentInitData(), {
+      const compressedResult = await compressImageIfNeeded(photoToUpload);
+      if (compressedResult.compressed) {
+        setNewPlantPhotoCompressionInfo(
+          `Compressed: ${formatBytes(compressedResult.originalBytes)} -> ${formatBytes(compressedResult.resultBytes)}`,
+        );
+      } else {
+        setNewPlantPhotoCompressionInfo(`No compression gain: ${formatBytes(compressedResult.resultBytes)}`);
+      }
+      await uploadPlantImage(getCurrentInitData(), {
         plantId: createdPlant.id,
-        file: photoToUpload,
-        aiMode: newPlantPhotoAiMode,
+        file: compressedResult.file,
+        aiMode: "manual",
       });
-      aiStatus = uploadResult.ai_status;
     }
 
     setPlantName("");
     setPlantSpecies("");
-    setPlantStatus("healthy");
     setPlantThirstyAfterMinutes(DEFAULT_THIRSTY_AFTER_MINUTES);
     setPlantOverdueAfterMinutes(DEFAULT_OVERDUE_AFTER_MINUTES);
     setPlantThirstyAfterHours(minutesToHours(DEFAULT_THIRSTY_AFTER_MINUTES));
@@ -850,18 +984,7 @@ export default function Home() {
     clearNewPlantPhotoSelection();
     setIsAddPlantOpen(false);
     await fetchRoomDetails(selectedRoom.id);
-    const aiMessage =
-      aiStatus === "ok"
-        ? " AI profile applied."
-        : aiStatus === "disabled_missing_api_key"
-          ? " AI is disabled on server (missing GEMINI_API_KEY)."
-          : aiStatus === "request_failed"
-            ? " AI request failed on server."
-            : aiStatus === "invalid_response"
-              ? " AI response was invalid."
-      : aiStatus === "skipped_manual"
-        ? " AI skipped (manual mode)."
-        : "";
+    const aiMessage = didApplyAiAutofill ? " AI profile applied." : "";
     if (createdPlant?.id) {
       setSelectedPlantIdForMarker(createdPlant.id);
       setIsMarkerEditMode(true);
@@ -1067,9 +1190,10 @@ export default function Home() {
     }
     setIsReplacingPlantPhoto(true);
     try {
+      const compressedResult = await compressImageIfNeeded(file);
       const uploadResult = await uploadPlantImage(getCurrentInitData(), {
         plantId: editingPlantId,
-        file,
+        file: compressedResult.file,
       });
       if (editPlantPhotoInputRef.current) {
         editPlantPhotoInputRef.current.value = "";
@@ -1083,6 +1207,8 @@ export default function Home() {
         setMessage("Plant photo updated. AI request failed on server.");
       } else if (uploadResult.ai_status === "invalid_response") {
         setMessage("Plant photo updated. AI returned invalid response.");
+      } else if (uploadResult.ai_status === "skipped_manual") {
+        setMessage("Plant photo updated");
       } else {
         setMessage("Plant photo updated");
       }
@@ -1884,7 +2010,7 @@ export default function Home() {
 
       {!selectedRoom && isCreateRoomOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/30 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
-          <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
+          <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[24px] bg-white p-4 shadow-xl">
             <h3 className="text-base font-semibold text-[#1f1b17]">Add Room</h3>
             <p className="mt-1 text-sm text-[#6c7a71]">Create a new room in your household</p>
             <input
@@ -2062,7 +2188,10 @@ export default function Home() {
 
       {selectedRoom && isAddPlantOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/30 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
-          <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
+          <div className="relative max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[24px] bg-white p-4 shadow-xl">
+            <span className="absolute right-4 top-4 rounded-full bg-[#e6f5ef] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#006c49]">
+              healthy
+            </span>
             <h3 className="text-base font-semibold text-[#1f1b17]">Add Plant</h3>
             <p className="mt-1 text-sm text-[#6c7a71]">{selectedRoom.name}</p>
             <input
@@ -2084,21 +2213,6 @@ export default function Home() {
             {addPlantNameError ? (
               <p className="mt-1 text-xs font-medium text-[#ba1a1a]">{addPlantNameError}</p>
             ) : null}
-            <input
-              value={plantSpecies}
-              onChange={(event) => setPlantSpecies(event.target.value)}
-              placeholder="Species (optional)"
-              className="mt-2 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
-            />
-            <select
-              value={plantStatus}
-              onChange={(event) => setPlantStatus(event.target.value as PlantStatus)}
-              className="mt-2 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
-            >
-              <option value="healthy">healthy</option>
-              <option value="thirsty">thirsty</option>
-              <option value="overdue">overdue</option>
-            </select>
             <div className="mt-2 grid grid-cols-2 gap-2">
               <label className="text-xs text-[#6c7a71]">
                 Thirsty after (hours)
@@ -2191,33 +2305,38 @@ export default function Home() {
               {newPlantPhotoFile ? (
                 <div className="mt-3 rounded-lg border border-[#e8ddd6] bg-white p-2">
                   <p className="text-[11px] font-semibold text-[#3c4a42]">After upload</p>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div className="mt-2">
                     <button
                       type="button"
-                      onClick={() => setNewPlantPhotoAiMode("auto")}
-                      className={`rounded-lg border px-2 py-1.5 text-[11px] font-semibold ${
-                        newPlantPhotoAiMode === "auto"
-                          ? "border-[#006c49] bg-[#e6f5ef] text-[#006c49]"
-                          : "border-[#bbcabf] text-[#3c4a42]"
-                      }`}
+                      onClick={() => {
+                        void runSafely(handleAnalyzePhotoWithAi);
+                      }}
+                      disabled={isAnalyzingPlantPhoto}
+                      className="w-full rounded-lg border border-[#006c49] bg-[#e6f5ef] px-3 py-2 text-xs font-semibold text-[#006c49] disabled:opacity-60"
                     >
-                      Analyze with AI
+                      {isAnalyzingPlantPhoto
+                        ? "Analyzing with AI..."
+                        : didApplyAiAutofill
+                          ? "Analyze again"
+                          : "Analyze with AI"}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setNewPlantPhotoAiMode("manual")}
-                      className={`rounded-lg border px-2 py-1.5 text-[11px] font-semibold ${
-                        newPlantPhotoAiMode === "manual"
-                          ? "border-[#006c49] bg-[#e6f5ef] text-[#006c49]"
-                          : "border-[#bbcabf] text-[#3c4a42]"
-                      }`}
-                    >
-                      Fill manually
-                    </button>
+                    {newPlantPhotoAiError ? (
+                      <p className="mt-2 text-[11px] text-[#ba1a1a]">
+                        {newPlantPhotoAiError} You can retry or continue manually.
+                      </p>
+                    ) : null}
+                    {didApplyAiAutofill ? (
+                      <p className="mt-2 text-[11px] text-[#006c49]">
+                        AI filled fields automatically.
+                      </p>
+                    ) : null}
                   </div>
+                  {newPlantPhotoCompressionInfo ? (
+                    <p className="mt-2 text-[11px] text-[#6c7a71]">{newPlantPhotoCompressionInfo}</p>
+                  ) : null}
                   <p className="mt-2 text-[11px] leading-relaxed text-[#6c7a71]">
-                    AI mode can auto-fill plant name, watering thresholds, recommended water amount,
-                    and short watering advice.
+                    AI can auto-fill plant name, watering thresholds, recommended water amount, and
+                    short watering advice.
                   </p>
                 </div>
               ) : null}

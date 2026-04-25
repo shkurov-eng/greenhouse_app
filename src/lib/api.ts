@@ -329,6 +329,31 @@ export async function uploadPlantImage(
   }>(response);
 }
 
+export async function analyzePlantImage(initData: string | null, payload: { file: File }) {
+  const formData = new FormData();
+  formData.set("file", payload.file);
+
+  const response = await fetch("/api/plants/analyze", {
+    method: "POST",
+    headers: {
+      ...(initData ? { "x-telegram-init-data": initData } : {}),
+    },
+    body: formData,
+  });
+
+  return readApiPayload<{
+    ai_status: "ok" | "disabled_missing_api_key" | "request_failed" | "invalid_response";
+    ai_error: string | null;
+    ai_profile: {
+      plant_name: string;
+      thirsty_after_minutes: number;
+      overdue_after_minutes: number;
+      watering_amount_recommendation: "light" | "moderate" | "abundant";
+      watering_summary: string;
+    } | null;
+  }>(response);
+}
+
 export async function removePlantPhoto(initData: string | null, plantId: string) {
   return secureRequest<{ id: string; photo_path: null; signed_photo_url: null }>({
     action: "removePlantPhoto",
