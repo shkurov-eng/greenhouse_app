@@ -54,6 +54,8 @@ const DEFAULT_THIRSTY_AFTER_MINUTES = 5;
 const DEFAULT_OVERDUE_AFTER_MINUTES = 60;
 const MARKER_WATER_DELAY_MS = 3_000;
 const MINUTES_IN_HOUR = 60;
+const MAX_ROOM_UPLOAD_BYTES = 4 * 1024 * 1024;
+const MAX_PLANT_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 function wateringDerivedStatus(
   lastWateredAt: string | null,
@@ -467,6 +469,7 @@ export default function Home() {
 
   async function compressImageIfNeeded(
     file: File,
+    options?: { maxSide?: number; targetMaxBytes?: number },
   ): Promise<{ file: File; originalBytes: number; resultBytes: number; compressed: boolean }> {
     if (!file.type.startsWith("image/")) {
       return {
@@ -484,27 +487,56 @@ export default function Home() {
         img.onerror = () => reject(new Error("Failed to decode image"));
         img.src = objectUrl;
       });
-      const maxSide = 1600;
+      const maxSide = options?.maxSide ?? 1600;
+      const targetMaxBytes = options?.targetMaxBytes ?? null;
       const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
-      const targetWidth = Math.max(1, Math.round(image.width * scale));
-      const targetHeight = Math.max(1, Math.round(image.height * scale));
-      const canvas = document.createElement("canvas");
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        return {
-          file,
-          originalBytes: file.size,
-          resultBytes: file.size,
-          compressed: false,
-        };
+      let targetWidth = Math.max(1, Math.round(image.width * scale));
+      let targetHeight = Math.max(1, Math.round(image.height * scale));
+      const attempts = targetMaxBytes ? 5 : 1;
+      let bestBlob: Blob | null = null;
+      let hitTarget = false;
+
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const canvas = document.createElement("canvas");
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          return {
+            file,
+            originalBytes: file.size,
+            resultBytes: file.size,
+            compressed: false,
+          };
+        }
+        ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+        const qualities = targetMaxBytes ? [0.82, 0.74, 0.66, 0.58] : [0.82];
+        for (const quality of qualities) {
+          const candidateBlob = await new Promise<Blob | null>((resolve) => {
+            canvas.toBlob(resolve, "image/jpeg", quality);
+          });
+          if (!candidateBlob) {
+            continue;
+          }
+          if (!bestBlob || candidateBlob.size < bestBlob.size) {
+            bestBlob = candidateBlob;
+          }
+          if (targetMaxBytes && candidateBlob.size <= targetMaxBytes) {
+            hitTarget = true;
+            break;
+          }
+        }
+        if (!targetMaxBytes || hitTarget) {
+          break;
+        }
+        if (targetWidth <= 640 || targetHeight <= 640) {
+          break;
+        }
+        targetWidth = Math.max(1, Math.round(targetWidth * 0.8));
+        targetHeight = Math.max(1, Math.round(targetHeight * 0.8));
       }
-      ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
-      const compressedBlob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob(resolve, "image/jpeg", 0.82);
-      });
-      if (!compressedBlob || compressedBlob.size >= file.size) {
+
+      if (!bestBlob || bestBlob.size >= file.size) {
         return {
           file,
           originalBytes: file.size,
@@ -513,7 +545,7 @@ export default function Home() {
         };
       }
       const baseName = file.name.replace(/\.[^.]+$/, "");
-      const compressedFile = new File([compressedBlob], `${baseName || "plant-photo"}.jpg`, {
+      const compressedFile = new File([bestBlob], `${baseName || "plant-photo"}.jpg`, {
         type: "image/jpeg",
       });
       return {
@@ -539,6 +571,29 @@ export default function Home() {
     }
   }
 
+  function buildTooLargePhotoMessage(
+    photoLabel: "Photo" | "Plant photo" | "Room photo",
+    bytes: number,
+  ) {
+    return `${photoLabel} is too large after compression (${formatBytes(bytes)}). Please choose a smaller image.`;
+  }
+
+  async function compressPhotoForUpload(
+    file: File,
+    options: {
+      maxBytes: number;
+      photoLabel: "Photo" | "Plant photo" | "Room photo";
+    },
+  ) {
+    const compressedResult = await compressImageIfNeeded(file, {
+      targetMaxBytes: options.maxBytes,
+    });
+    if (compressedResult.resultBytes > options.maxBytes) {
+      throw new Error(buildTooLargePhotoMessage(options.photoLabel, compressedResult.resultBytes));
+    }
+    return compressedResult;
+  }
+
   async function handleAnalyzePhotoWithAi() {
     if (!newPlantPhotoFile) {
       setNewPlantPhotoAiError("Select or capture a photo first.");
@@ -550,7 +605,10 @@ export default function Home() {
     setLatestAiProfile(null);
     setLowConfidenceAiProfile(null);
     try {
-      const compressedResult = await compressImageIfNeeded(newPlantPhotoFile);
+      const compressedResult = await compressPhotoForUpload(newPlantPhotoFile, {
+        maxBytes: MAX_PLANT_UPLOAD_BYTES,
+        photoLabel: "Photo",
+      });
       if (compressedResult.compressed) {
         setNewPlantPhotoCompressionInfo(
           `Compressed: ${formatBytes(compressedResult.originalBytes)} -> ${formatBytes(compressedResult.resultBytes)}`,
@@ -597,8 +655,12 @@ export default function Home() {
             : "AI response was invalid. Try again or fill manually.",
         );
       }
-    } catch {
-      setNewPlantPhotoAiError("AI analysis failed. Try again.");
+    } catch (error) {
+      const text =
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : "AI analysis failed. Try again.";
+      setNewPlantPhotoAiError(text);
     } finally {
       setIsAnalyzingPlantPhoto(false);
     }
@@ -1061,7 +1123,10 @@ export default function Home() {
 
       if (createdPlant?.id && photoToUpload) {
         try {
-          const compressedResult = await compressImageIfNeeded(photoToUpload);
+          const compressedResult = await compressPhotoForUpload(photoToUpload, {
+            maxBytes: MAX_PLANT_UPLOAD_BYTES,
+            photoLabel: "Plant photo",
+          });
           if (compressedResult.compressed) {
             setNewPlantPhotoCompressionInfo(
               `Compressed: ${formatBytes(compressedResult.originalBytes)} -> ${formatBytes(compressedResult.resultBytes)}`,
@@ -1310,7 +1375,10 @@ export default function Home() {
     }
     setIsReplacingPlantPhoto(true);
     try {
-      const compressedResult = await compressImageIfNeeded(file);
+      const compressedResult = await compressPhotoForUpload(file, {
+        maxBytes: MAX_PLANT_UPLOAD_BYTES,
+        photoLabel: "Plant photo",
+      });
       const uploadResult = await uploadPlantImage(getCurrentInitData(), {
         plantId: editingPlantId,
         file: compressedResult.file,
@@ -1541,7 +1609,10 @@ export default function Home() {
       [roomId]: "Compressing photo...",
     }));
 
-    const compressedResult = await compressImageIfNeeded(file);
+    const compressedResult = await compressPhotoForUpload(file, {
+      maxBytes: MAX_ROOM_UPLOAD_BYTES,
+      photoLabel: "Room photo",
+    });
     setRoomUploadStatus((prev) => ({
       ...prev,
       [roomId]: compressedResult.compressed

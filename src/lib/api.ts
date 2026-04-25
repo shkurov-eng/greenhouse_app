@@ -129,6 +129,9 @@ async function readApiPayload<TResponse>(response: Response) {
 
   const text = await response.text();
   const compact = text.replace(/\s+/g, " ").trim().slice(0, 220);
+  if (response.status === 413) {
+    throw new Error("Uploaded file is too large. Please choose a smaller photo.");
+  }
   throw new Error(`Server returned non-JSON response (${response.status}). ${compact}`);
 }
 

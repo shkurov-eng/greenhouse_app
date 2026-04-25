@@ -35,13 +35,21 @@ const TASK_TYPE_FILTER_STORAGE_KEY = "tasks.taskTypeFilter";
 
 export default function TasksPage() {
   type TaskTypeFilter = "all" | "personal" | `household:${string}`;
+  const isValidTaskTypeFilter = (value: string): value is TaskTypeFilter =>
+    value === "all" || value === "personal" || value.startsWith("household:");
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [householdNameById, setHouseholdNameById] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
-  const [taskTypeFilter, setTaskTypeFilter] = useState<TaskTypeFilter>("all");
+  const [taskTypeFilter, setTaskTypeFilter] = useState<TaskTypeFilter>(() => {
+    if (typeof window === "undefined") {
+      return "all";
+    }
+    const savedFilter = window.localStorage.getItem(TASK_TYPE_FILTER_STORAGE_KEY);
+    return savedFilter && isValidTaskTypeFilter(savedFilter) ? savedFilter : "all";
+  });
   const [sortBy, setSortBy] = useState<
     "created_desc" | "created_asc" | "due_asc" | "due_desc" | "scope_personal_first" | "scope_household_first"
   >("created_desc");
@@ -77,6 +85,17 @@ export default function TasksPage() {
         nextMap[household.household_id] = household.household_name;
       }
       setHouseholdNameById(nextMap);
+      setTaskTypeFilter((prev) => {
+        if (!prev.startsWith("household:")) {
+          return prev;
+        }
+        const householdId = prev.slice("household:".length);
+        const hasAccess = households.some((home) => home.household_id === householdId);
+        if (!hasAccess && households.length > 0) {
+          return "all";
+        }
+        return prev;
+      });
       if (!newHouseholdId && households.length > 0) {
         setNewHouseholdId(households[0].household_id);
       }
@@ -101,29 +120,8 @@ export default function TasksPage() {
     if (typeof window === "undefined") {
       return;
     }
-    const savedFilter = window.localStorage.getItem(TASK_TYPE_FILTER_STORAGE_KEY);
-    if (!savedFilter) {
-      return;
-    }
-    if (savedFilter === "all" || savedFilter === "personal" || savedFilter.startsWith("household:")) {
-      setTaskTypeFilter(savedFilter as TaskTypeFilter);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    if (taskTypeFilter.startsWith("household:")) {
-      const householdId = taskTypeFilter.slice("household:".length);
-      const hasAccess = households.some((home) => home.household_id === householdId);
-      if (!hasAccess && households.length > 0) {
-        setTaskTypeFilter("all");
-        return;
-      }
-    }
     window.localStorage.setItem(TASK_TYPE_FILTER_STORAGE_KEY, taskTypeFilter);
-  }, [households, taskTypeFilter]);
+  }, [taskTypeFilter]);
 
   const toggleStatus = useCallback(
     async (task: Task) => {
