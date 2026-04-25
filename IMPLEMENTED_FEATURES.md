@@ -73,6 +73,8 @@ This document summarizes what has already been implemented in the project.
 - **Android camera fallback:** `Add Plant` includes in-app camera capture via `getUserMedia` + frame capture, so Telegram Android/WebView `file input` quirks no longer block taking photos.
 - **Photo compression before AI/upload:** client compresses selected/captured images (downscale + JPEG quality) before sending to AI Studio and storage upload; UI shows compression result (`Compressed: X -> Y` or `No compression gain`).
 - **AI analyze flow in Add Plant:** after photo selection, user can run a single explicit **Analyze with AI** action; UI shows `Analyzing...`, success autofill, precise error messages, retry, and **Apply anyway** for low-confidence suggestions.
+- **Add Plant browser resilience:** if client-side image compression/decode fails for a specific photo format, upload falls back to the original file instead of aborting add flow (`Compression skipped... uploading original`).
+- **Add Plant partial-success behavior:** if plant row is created but photo upload fails, plant creation is kept (no full rollback), and user gets explicit status that plant was added without photo.
 - **AI auto-detection on plant photo upload:** when `GEMINI_API_KEY` is configured, `POST /api/plants/upload` sends the photo to Google AI Studio (Gemini) and auto-updates plant name + per-plant watering thresholds from model output.
 - **Dedicated AI analyze endpoint:** `POST /api/plants/analyze` analyzes the photo before save and returns `ai_status`, `ai_error`, and optional `ai_profile` for controlled autofill UX.
 - **AI model updated:** moved from `gemini-2.0-flash` to `gemini-2.5-flash` for new-key compatibility.
@@ -118,6 +120,7 @@ This document summarizes what has already been implemented in the project.
 - Stitch-style layout, Lucide SVG icons, cards, mobile shell (unchanged intent).
 - **Button interaction clarity:** global button states in `src/app/globals.css` now have stronger hover/active/focus-visible feedback (clearer press depth, contrast, and keyboard focus ring).
 - **Add Plant submit feedback:** `Add Plant` now has explicit pending state (`Adding plant...` + spinner), disables repeat clicks while request/upload is running, and keeps action state visible during network delay.
+- **Room-screen runtime status visibility:** room detail now shows current `message` in-page (compact status card above room photo), so API/validation/upload errors are visible where user is acting.
 - **Home cards** are a `div` with two side actions (rename / delete) so icon buttons are not nested inside the main “switch home” control (valid HTML, clearer hit targets).
 - **Bottom navigation** (`src/components/MobileShell.tsx`): `Link` routes — **Rooms** `/`, **Inbox** `/tasks`, **Settings** `/settings` (active tab from pathname). Main rooms experience stays on `/`.
 - **Placeholder pages:** `src/app/tasks/page.tsx` (tasks / inbox stub), `src/app/settings/page.tsx` (settings stub), each with back link to `/`.

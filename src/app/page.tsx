@@ -515,6 +515,18 @@ export default function Home() {
         resultBytes: compressedFile.size,
         compressed: true,
       };
+    } catch {
+      // Some desktop browsers cannot decode specific image formats (for example HEIC).
+      // In this case we keep original file instead of breaking the whole add-plant flow.
+      setNewPlantPhotoCompressionInfo(
+        `Compression skipped (unsupported image decode). Uploading original: ${formatBytes(file.size)}`,
+      );
+      return {
+        file,
+        originalBytes: file.size,
+        resultBytes: file.size,
+        compressed: false,
+      };
     } finally {
       URL.revokeObjectURL(objectUrl);
     }
@@ -1022,6 +1034,7 @@ export default function Home() {
     setMessage("Adding plant...");
     try {
       const photoToUpload = newPlantPhotoFile;
+      let photoUploadErrorText: string | null = null;
       const createdPlant = await createPlant(getCurrentInitData(), {
         roomId: selectedRoom.id,
         name: newPlantName,
@@ -1032,19 +1045,26 @@ export default function Home() {
       });
 
       if (createdPlant?.id && photoToUpload) {
-        const compressedResult = await compressImageIfNeeded(photoToUpload);
-        if (compressedResult.compressed) {
-          setNewPlantPhotoCompressionInfo(
-            `Compressed: ${formatBytes(compressedResult.originalBytes)} -> ${formatBytes(compressedResult.resultBytes)}`,
-          );
-        } else {
-          setNewPlantPhotoCompressionInfo(`No compression gain: ${formatBytes(compressedResult.resultBytes)}`);
+        try {
+          const compressedResult = await compressImageIfNeeded(photoToUpload);
+          if (compressedResult.compressed) {
+            setNewPlantPhotoCompressionInfo(
+              `Compressed: ${formatBytes(compressedResult.originalBytes)} -> ${formatBytes(compressedResult.resultBytes)}`,
+            );
+          } else {
+            setNewPlantPhotoCompressionInfo(`No compression gain: ${formatBytes(compressedResult.resultBytes)}`);
+          }
+          await uploadPlantImage(getCurrentInitData(), {
+            plantId: createdPlant.id,
+            file: compressedResult.file,
+            aiMode: didApplyAiAutofill && latestAiProfile ? "auto" : "manual",
+          });
+        } catch (error) {
+          photoUploadErrorText =
+            error instanceof Error
+              ? error.message
+              : "Photo upload failed. Plant was added without photo.";
         }
-        await uploadPlantImage(getCurrentInitData(), {
-          plantId: createdPlant.id,
-          file: compressedResult.file,
-          aiMode: didApplyAiAutofill && latestAiProfile ? "auto" : "manual",
-        });
       }
 
       setPlantName("");
@@ -1060,9 +1080,19 @@ export default function Home() {
       if (createdPlant?.id) {
         setSelectedPlantIdForMarker(createdPlant.id);
         setIsMarkerEditMode(true);
-        setMessage(`Plant added. Tap image to place marker.${aiMessage}`);
+        if (photoUploadErrorText) {
+          setMessage(
+            `Plant added. Photo upload failed: ${photoUploadErrorText}. Tap image to place marker.${aiMessage}`,
+          );
+        } else {
+          setMessage(`Plant added. Tap image to place marker.${aiMessage}`);
+        }
       } else {
-        setMessage(`Plant added.${aiMessage}`);
+        if (photoUploadErrorText) {
+          setMessage(`Plant added without photo: ${photoUploadErrorText}${aiMessage}`);
+        } else {
+          setMessage(`Plant added.${aiMessage}`);
+        }
       }
     } finally {
       setIsCreatingPlant(false);
@@ -1628,6 +1658,11 @@ export default function Home() {
           </header>
 
           <section className="px-5 pt-20">
+            {message ? (
+              <div className="mb-3 rounded-xl border border-[#e8ddd6] bg-white/85 px-3 py-2 text-xs text-[#3c4a42] shadow-sm">
+                {message}
+              </div>
+            ) : null}
             <div
               className="relative overflow-hidden rounded-[24px] bg-[#f6ece6] shadow-[0_4px_20px_rgba(148,74,35,0.08)]"
               ref={roomImageContainerRef}
