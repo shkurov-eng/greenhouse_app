@@ -5,7 +5,14 @@ alter table if exists public.households
   add column if not exists created_by_profile_id uuid references public.profiles(id) on delete set null;
 
 alter table if exists public.households
-  add column if not exists require_join_approval boolean not null default false;
+  add column if not exists require_join_approval boolean not null default true;
+
+alter table if exists public.households
+  alter column require_join_approval set default true;
+
+update public.households
+set require_join_approval = true
+where require_join_approval = false;
 
 update public.households h
 set created_by_profile_id = sub.user_id

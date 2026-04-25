@@ -40,6 +40,7 @@ This document summarizes what has already been implemented in the project.
 - Join by invite code is protected from brute-force attempts via persistent DB-backed rate limiting (`api_check_join_invite_rate_limit`, `api_register_join_invite_failure`, `api_clear_join_invite_failures`): 5 failed attempts per 15 minutes -> 15-minute block.
 - Optional owner approval for join-by-invite:
   - Household owner can enable `require_join_approval` in Settings.
+  - Default policy is enabled: homes require owner approval for joins unless owner disables it.
   - Join attempts create pending requests instead of instant membership.
   - Owner sees pending requests in Settings (`Telegram ID`, `username`, home name, invite code) and can approve/reject.
   - Bot notifies owner about each pending request and provides inline `Approve` / `Reject` buttons in Telegram.
