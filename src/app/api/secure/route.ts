@@ -23,7 +23,11 @@ type SecureAction =
   | "removePlantPhoto"
   | "updatePlant"
   | "upsertMarker"
-  | "createRoomImageSignedUrl";
+  | "createRoomImageSignedUrl"
+  | "listTasks"
+  | "createTask"
+  | "updateTaskStatus"
+  | "deleteTask";
 
 type RequestBody = {
   action?: SecureAction;
@@ -99,6 +103,38 @@ function asThresholdMinutes(value: unknown, fieldName: string) {
     throw new Error(`Invalid ${fieldName}`);
   }
   return n;
+}
+
+function asTaskStatus(value: unknown) {
+  if (value === "open" || value === "done") {
+    return value;
+  }
+  throw new Error("Invalid task status");
+}
+
+function asTaskPriority(value: unknown) {
+  if (value === "low" || value === "normal" || value === "high") {
+    return value;
+  }
+  throw new Error("Invalid task priority");
+}
+
+function asOptionalIsoDate(value: unknown, fieldName: string) {
+  if (value == null) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = Date.parse(trimmed);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  return new Date(parsed).toISOString();
 }
 
 function asUuid(value: unknown, fieldName: string) {
@@ -665,6 +701,50 @@ export async function POST(request: NextRequest) {
         });
         const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });
+      }
+
+      case "listTasks": {
+        const raw = (await rpc("api_list_tasks", {
+          p_telegram_id: telegramId,
+        })) as Array<Record<string, unknown>> | null;
+        return NextResponse.json({ data: raw ?? [] });
+      }
+
+      case "createTask": {
+        const title = asString(payload.title, "title");
+        const description = asOptionalString(payload.description);
+        const priority = payload.priority == null ? "normal" : asTaskPriority(payload.priority);
+        const dueAt = asOptionalIsoDate(payload.dueAt, "dueAt");
+        const result = await rpc("api_create_task", {
+          p_telegram_id: telegramId,
+          p_title: title,
+          p_description: description,
+          p_priority: priority,
+          p_due_at: dueAt,
+        });
+        const data = unwrapSingleRow<Record<string, unknown>>(result);
+        return NextResponse.json({ data });
+      }
+
+      case "updateTaskStatus": {
+        const taskId = asUuid(payload.taskId, "taskId");
+        const status = asTaskStatus(payload.status);
+        const result = await rpc("api_update_task_status", {
+          p_telegram_id: telegramId,
+          p_task_id: taskId,
+          p_status: status,
+        });
+        const data = unwrapSingleRow<Record<string, unknown>>(result);
+        return NextResponse.json({ data });
+      }
+
+      case "deleteTask": {
+        const taskId = asUuid(payload.taskId, "taskId");
+        await rpc("api_delete_task", {
+          p_telegram_id: telegramId,
+          p_task_id: taskId,
+        });
+        return NextResponse.json({ data: { ok: true as const } });
       }
 
       default:

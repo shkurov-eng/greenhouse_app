@@ -1,0 +1,16 @@
+name: Send task reminders
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call reminders endpoint
+        run: |
+          curl -sS -X POST "${{ secrets.REMINDER_JOB_URL }}" \
+            -H "x-job-secret: ${{ secrets.TASK_REMINDER_JOB_SECRET }}" \
+            -H "Content-Type: application/json"

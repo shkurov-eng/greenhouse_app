@@ -45,6 +45,31 @@ export type PlantMarker = {
   y: number;
 };
 
+export type TaskStatus = "open" | "done";
+export type TaskPriority = "low" | "normal" | "high";
+
+export type Task = {
+  id: string;
+  household_id: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  due_at: string | null;
+  source_platform: string | null;
+  source_chat_id: number | null;
+  source_message_id: number | null;
+  task_type: string | null;
+  assignee_hint: string | null;
+  parse_source: "manual" | "ai";
+  ai_parse_status: "not_requested" | "ok" | "low_confidence" | "failed";
+  ai_confidence: number | null;
+  ai_parsed_at: string | null;
+  needs_review: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 type SecureRequest = {
   action: string;
   payload?: Record<string, unknown>;
@@ -367,5 +392,47 @@ export async function removePlantPhoto(initData: string | null, plantId: string)
     action: "removePlantPhoto",
     initData,
     payload: { plantId },
+  });
+}
+
+export async function listTasks(initData: string | null) {
+  return secureRequest<Task[]>({
+    action: "listTasks",
+    initData,
+  });
+}
+
+export async function createTask(
+  initData: string | null,
+  payload: {
+    title: string;
+    description?: string | null;
+    priority?: TaskPriority;
+    dueAt?: string | null;
+  },
+) {
+  return secureRequest<{ id: string }>({
+    action: "createTask",
+    initData,
+    payload,
+  });
+}
+
+export async function updateTaskStatus(
+  initData: string | null,
+  payload: { taskId: string; status: TaskStatus },
+) {
+  return secureRequest<{ id: string; status: TaskStatus }>({
+    action: "updateTaskStatus",
+    initData,
+    payload,
+  });
+}
+
+export async function deleteTask(initData: string | null, taskId: string) {
+  return secureRequest<{ ok: true }>({
+    action: "deleteTask",
+    initData,
+    payload: { taskId },
   });
 }

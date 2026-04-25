@@ -115,6 +115,30 @@ This document summarizes what has already been implemented in the project.
 - **Edit Plant** still reads/writes the DB `status` field; the list line and markers intentionally ignore that for display and use time since `last_watered_at` only.
 - While a room is open, a **30s `setInterval`** bumps React state so colors refresh without refetch; **closing the room** clears `selectedRoom`, runs effect cleanup (interval stopped), and **reopening** recomputes from the current clock and loaded `last_watered_at`.
 
+## Stage 6 - Tasks (Bot)
+
+- Added SQL migration `tasks_bot_reminders.sql`:
+  - `tasks` table with household scope, source message metadata, AI parse metadata, and status/priority fields.
+  - `task_reminders_log` table for reminder deduplication history.
+  - RPCs: `api_list_tasks`, `api_create_task`, `api_update_task_status`, `api_delete_task`.
+- `/api/secure` now supports task actions: `listTasks`, `createTask`, `updateTaskStatus`, `deleteTask`.
+- `/tasks` page is now functional (no longer a placeholder):
+  - Loads tasks for current Telegram user / active household.
+  - Lets user toggle task status between `open` and `done`.
+  - Shows AI parse badges (`AI parsed`, `needs review`) and due date when available.
+- Added Telegram bot webhook endpoint `POST /api/bot/webhook`:
+  - Accepts Telegram updates, validates optional secret token, creates tasks from incoming text/caption.
+  - Uses idempotent upsert by `(source_platform, source_chat_id, source_message_id)`.
+  - Integrates AI task parsing when `GEMINI_API_KEY` is available, with fallback to plain text task creation.
+
+## Stage 7 - Reminders
+
+- Added scheduled reminders endpoint `POST /api/jobs/send-reminders`:
+  - Scans open tasks with `due_at` in reminder window.
+  - Sends `due_soon` / `overdue` notifications through Telegram Bot API.
+  - Uses `task_reminders_log` to avoid duplicate sends within reminder windows.
+  - Supports optional job secret header (`x-job-secret`) via env.
+
 ## UI / Design System Work
 
 - Stitch-style layout, Lucide SVG icons, cards, mobile shell (unchanged intent).
@@ -183,6 +207,7 @@ Scope and plan:
 - `plant_ai_manual_override.sql` — updates `api_update_plant` to clear `ai_inferred_at` on manual save.
 - `plant_ai_watering_amount.sql` — adds `plants.watering_amount_recommendation`, migrates legacy values (`little`/`a_lot`), and extends room details payload.
 - `plant_ai_watering_summary.sql` — adds `plants.watering_summary` and extends room details payload.
+- `tasks_bot_reminders.sql` — adds `tasks` + `task_reminders_log`, task RPCs, and grants used by secure API and reminder worker.
 
 ## Current Behavior Summary
 
