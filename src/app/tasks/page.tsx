@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Circle, Inbox, Pencil, RefreshCw, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronDown, Circle, Inbox, Pencil, RefreshCw, X } from "lucide-react";
 
 import { MobileShell } from "@/components/MobileShell";
 import { createTask, listHouseholds, listTasks, updateTask, updateTaskStatus, type Task } from "@/lib/api";
@@ -31,13 +31,17 @@ function toDatetimeLocalValue(date: Date) {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
+const TASK_TYPE_FILTER_STORAGE_KEY = "tasks.taskTypeFilter";
+
 export default function TasksPage() {
+  type TaskTypeFilter = "all" | "personal" | `household:${string}`;
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [householdNameById, setHouseholdNameById] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
-  const [scopeFilter, setScopeFilter] = useState<"all" | "personal" | "household">("all");
+  const [taskTypeFilter, setTaskTypeFilter] = useState<TaskTypeFilter>("all");
   const [sortBy, setSortBy] = useState<
     "created_desc" | "created_asc" | "due_asc" | "due_desc" | "scope_personal_first" | "scope_household_first"
   >("created_desc");
@@ -56,6 +60,8 @@ export default function TasksPage() {
   const [newTaskScope, setNewTaskScope] = useState<"personal" | "household">("personal");
   const [newHouseholdId, setNewHouseholdId] = useState("");
   const [creatingTask, setCreatingTask] = useState(false);
+  const [isNewTaskCollapsed, setIsNewTaskCollapsed] = useState(true);
+  const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(true);
 
   const initData = useMemo(() => resolveTelegramInitData(), []);
 
@@ -91,6 +97,34 @@ export default function TasksPage() {
     };
   }, [loadTasks]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const savedFilter = window.localStorage.getItem(TASK_TYPE_FILTER_STORAGE_KEY);
+    if (!savedFilter) {
+      return;
+    }
+    if (savedFilter === "all" || savedFilter === "personal" || savedFilter.startsWith("household:")) {
+      setTaskTypeFilter(savedFilter as TaskTypeFilter);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (taskTypeFilter.startsWith("household:")) {
+      const householdId = taskTypeFilter.slice("household:".length);
+      const hasAccess = households.some((home) => home.household_id === householdId);
+      if (!hasAccess && households.length > 0) {
+        setTaskTypeFilter("all");
+        return;
+      }
+    }
+    window.localStorage.setItem(TASK_TYPE_FILTER_STORAGE_KEY, taskTypeFilter);
+  }, [households, taskTypeFilter]);
+
   const toggleStatus = useCallback(
     async (task: Task) => {
       const nextStatus = task.status === "open" ? "done" : "open";
@@ -124,7 +158,7 @@ export default function TasksPage() {
     setEditTitle(task.title);
     setEditDueAt(task.due_at ? new Date(task.due_at).toISOString().slice(0, 16) : "");
     setEditTaskScope(task.task_scope);
-    setEditHouseholdId(task.household_id);
+    setEditHouseholdId(task.household_id ?? "");
   }, []);
 
   const saveEdit = useCallback(async () => {
@@ -136,7 +170,7 @@ export default function TasksPage() {
       setMessage("Task title is required");
       return;
     }
-    if (!editHouseholdId) {
+    if (editTaskScope === "household" && !editHouseholdId) {
       setMessage("Select home");
       return;
     }
@@ -149,7 +183,7 @@ export default function TasksPage() {
         title,
         dueAt,
         taskScope: editTaskScope,
-        householdId: editHouseholdId,
+        householdId: editTaskScope === "household" ? editHouseholdId : null,
       });
       setTasks((prev) =>
         prev.map((item) =>
@@ -159,7 +193,7 @@ export default function TasksPage() {
                 title,
                 due_at: dueAt,
                 task_scope: editTaskScope,
-                household_id: editHouseholdId,
+                household_id: editTaskScope === "household" ? editHouseholdId : null,
                 updated_at: new Date().toISOString(),
               }
             : item,
@@ -180,7 +214,7 @@ export default function TasksPage() {
       setMessage("Task title is required");
       return;
     }
-    if (!newHouseholdId) {
+    if (newTaskScope === "household" && !newHouseholdId) {
       setMessage("Select home");
       return;
     }
@@ -189,17 +223,11 @@ export default function TasksPage() {
     setMessage(null);
     try {
       const dueAt = newDueAt ? new Date(newDueAt).toISOString() : null;
-      const created = await createTask(initData, {
-        title,
-        dueAt,
-      });
-
-      await updateTask(initData, {
-        taskId: created.id,
+      await createTask(initData, {
         title,
         dueAt,
         taskScope: newTaskScope,
-        householdId: newHouseholdId,
+        householdId: newTaskScope === "household" ? newHouseholdId : null,
       });
 
       setNewTitle("");
@@ -242,8 +270,15 @@ export default function TasksPage() {
     const endMs = deadlineTo ? new Date(`${deadlineTo}T23:59:59.999`).getTime() : null;
 
     const filtered = tasks.filter((task) => {
-      if (scopeFilter !== "all" && task.task_scope !== scopeFilter) {
-        return false;
+      if (taskTypeFilter === "personal") {
+        if (task.task_scope !== "personal") {
+          return false;
+        }
+      } else if (taskTypeFilter.startsWith("household:")) {
+        const householdId = taskTypeFilter.slice("household:".length);
+        if (task.task_scope !== "household" || task.household_id !== householdId) {
+          return false;
+        }
       }
       if (startMs == null && endMs == null) {
         return true;
@@ -304,7 +339,7 @@ export default function TasksPage() {
           return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       }
     });
-  }, [tasks, scopeFilter, sortBy, deadlineFrom, deadlineTo]);
+  }, [tasks, taskTypeFilter, sortBy, deadlineFrom, deadlineTo]);
 
   return (
     <MobileShell>
@@ -331,9 +366,20 @@ export default function TasksPage() {
                 Refresh
               </button>
             </div>
-            <div className="mb-4 rounded-2xl border border-[#ece6e1] bg-[#fffaf6] p-4">
-              <h2 className="text-sm font-bold text-[#1f1b17]">New task</h2>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div className="mb-4 rounded-2xl border border-[#ece6e1] bg-[#fffaf6]">
+              <button
+                type="button"
+                onClick={() => setIsNewTaskCollapsed((prev) => !prev)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left"
+              >
+                <span className="text-sm font-bold text-[#1f1b17]">New task</span>
+                <ChevronDown
+                  className={`h-4 w-4 text-[#6c7a71] transition-transform ${isNewTaskCollapsed ? "" : "rotate-180"}`}
+                />
+              </button>
+              {!isNewTaskCollapsed ? (
+                <div className="border-t border-[#efe7e0] px-4 pb-4 pt-3">
+                  <div className="grid gap-2 sm:grid-cols-2">
                 <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71] sm:col-span-2">
                   Task
                   <input
@@ -379,111 +425,141 @@ export default function TasksPage() {
                   Type
                   <select
                     value={newTaskScope}
-                    onChange={(event) => setNewTaskScope(event.target.value as "personal" | "household")}
+                    onChange={(event) => {
+                      const nextScope = event.target.value as "personal" | "household";
+                      setNewTaskScope(nextScope);
+                      if (nextScope === "household" && !newHouseholdId && households.length > 0) {
+                        setNewHouseholdId(households[0].household_id);
+                      }
+                    }}
                     className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
                   >
                     <option value="personal">Личная</option>
                     <option value="household">Общая на дом</option>
                   </select>
                 </label>
-                <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71] sm:col-span-2">
-                  Home
-                  <select
-                    value={newHouseholdId}
-                    onChange={(event) => setNewHouseholdId(event.target.value)}
-                    className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
-                  >
-                    {households.map((home) => (
-                      <option key={home.household_id} value={home.household_id}>
-                        {home.household_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="mt-3 flex justify-end">
-                <button
-                  type="button"
-                  disabled={creatingTask}
-                  onClick={() => void createTaskFromForm()}
-                  className="rounded-full bg-[#006c49] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                >
-                  {creatingTask ? "Creating..." : "Create task"}
-                </button>
-              </div>
+                {newTaskScope === "household" ? (
+                  <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71] sm:col-span-2">
+                    Home
+                    <select
+                      value={newHouseholdId}
+                      onChange={(event) => setNewHouseholdId(event.target.value)}
+                      className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
+                    >
+                      {households.map((home) => (
+                        <option key={home.household_id} value={home.household_id}>
+                          {home.household_name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      disabled={creatingTask}
+                      onClick={() => void createTaskFromForm()}
+                      className="rounded-full bg-[#006c49] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                    >
+                      {creatingTask ? "Creating..." : "Create task"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
-            <div className="mb-4 grid gap-2 sm:grid-cols-2">
-              <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
-                Task type
-                <select
-                  value={scopeFilter}
-                  onChange={(event) => setScopeFilter(event.target.value as "all" | "personal" | "household")}
-                  className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
-                >
-                  <option value="all">All</option>
-                  <option value="personal">Personal only</option>
-                  <option value="household">Home only</option>
-                </select>
-              </label>
-              <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
-                Sort
-                <select
-                  value={sortBy}
-                  onChange={(event) =>
-                    setSortBy(
-                      event.target.value as
-                        | "created_desc"
-                        | "created_asc"
-                        | "due_asc"
-                        | "due_desc"
-                        | "scope_personal_first"
-                        | "scope_household_first",
-                    )
-                  }
-                  className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
-                >
-                  <option value="created_desc">Newest first</option>
-                  <option value="created_asc">Oldest first</option>
-                  <option value="due_asc">Deadline: nearest first</option>
-                  <option value="due_desc">Deadline: latest first</option>
-                  <option value="scope_personal_first">Type: personal first</option>
-                  <option value="scope_household_first">Type: home first</option>
-                </select>
-              </label>
-            </div>
-            <div className="mb-4 grid gap-2 sm:grid-cols-2">
-              <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
-                Deadline from
-                <input
-                  type="date"
-                  value={deadlineFrom}
-                  onChange={(event) => setDeadlineFrom(event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
-                />
-              </label>
-              <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
-                Deadline to
-                <input
-                  type="date"
-                  value={deadlineTo}
-                  onChange={(event) => setDeadlineTo(event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
-                />
-              </label>
-            </div>
-            <div className="mb-4 flex justify-end">
+            <div className="mb-4 rounded-2xl border border-[#ece6e1] bg-white">
               <button
                 type="button"
-                onClick={() => {
-                  setScopeFilter("all");
-                  setSortBy("created_desc");
-                  setDeadlineFrom("");
-                  setDeadlineTo("");
-                }}
-                className="inline-flex items-center rounded-full border border-[#d9cec6] bg-white px-3 py-1.5 text-xs font-semibold text-[#6c7a71] hover:bg-[#faf6f3]"
+                onClick={() => setIsFiltersCollapsed((prev) => !prev)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left"
               >
-                Reset filters
+                <span className="text-sm font-bold text-[#1f1b17]">Filters</span>
+                <ChevronDown
+                  className={`h-4 w-4 text-[#6c7a71] transition-transform ${isFiltersCollapsed ? "" : "rotate-180"}`}
+                />
               </button>
+              {!isFiltersCollapsed ? (
+                <div className="border-t border-[#efe7e0] px-4 pb-4 pt-3">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
+                      Task type
+                      <select
+                        value={taskTypeFilter}
+                        onChange={(event) => setTaskTypeFilter(event.target.value as TaskTypeFilter)}
+                        className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
+                      >
+                        <option value="all">All tasks</option>
+                        <option value="personal">Personal only</option>
+                        {households.map((home) => (
+                          <option key={home.household_id} value={`household:${home.household_id}`}>
+                            Home: {home.household_name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
+                      Sort
+                      <select
+                        value={sortBy}
+                        onChange={(event) =>
+                          setSortBy(
+                            event.target.value as
+                              | "created_desc"
+                              | "created_asc"
+                              | "due_asc"
+                              | "due_desc"
+                              | "scope_personal_first"
+                              | "scope_household_first",
+                          )
+                        }
+                        className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
+                      >
+                        <option value="created_desc">Newest first</option>
+                        <option value="created_asc">Oldest first</option>
+                        <option value="due_asc">Deadline: nearest first</option>
+                        <option value="due_desc">Deadline: latest first</option>
+                        <option value="scope_personal_first">Type: personal first</option>
+                        <option value="scope_household_first">Type: home first</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
+                      Deadline from
+                      <input
+                        type="date"
+                        value={deadlineFrom}
+                        onChange={(event) => setDeadlineFrom(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
+                      Deadline to
+                      <input
+                        type="date"
+                        value={deadlineTo}
+                        onChange={(event) => setDeadlineTo(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTaskTypeFilter("all");
+                        setSortBy("created_desc");
+                        setDeadlineFrom("");
+                        setDeadlineTo("");
+                      }}
+                      className="inline-flex items-center rounded-full border border-[#d9cec6] bg-white px-3 py-1.5 text-xs font-semibold text-[#6c7a71] hover:bg-[#faf6f3]"
+                    >
+                      Reset filters
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
             {message ? (
               <p className="mb-3 rounded-xl bg-[#ffece6] px-3 py-2 text-sm text-[#8a3b1c]">{message}</p>
@@ -497,7 +573,7 @@ export default function TasksPage() {
                 {visibleTasks.map((task) => {
                   const isDone = task.status === "done";
                   const dueText = task.due_at ? new Date(task.due_at).toLocaleString() : null;
-                  const householdName = householdNameById[task.household_id] ?? "Unknown home";
+                  const householdName = task.household_id ? (householdNameById[task.household_id] ?? "Unknown home") : null;
                   const fromLink = hasUrl(task.description);
                   return (
                     <li
@@ -516,7 +592,7 @@ export default function TasksPage() {
                                 : "bg-[#f3eefb] text-[#6a3ea1]"
                             }`}
                           >
-                            {task.task_scope === "household" ? `Дом: ${householdName}` : "Личная"}
+                            {task.task_scope === "household" ? `Дом: ${householdName ?? "Unknown home"}` : "Личная"}
                           </span>
                         </p>
                         {task.description ? (
@@ -581,7 +657,7 @@ export default function TasksPage() {
               <p className="text-sm font-semibold text-[#1f1b17]">{selectedTask.title}</p>
               <p className="mt-2 text-xs text-[#6c7a71]">
                 {selectedTask.task_scope === "household"
-                  ? `Дом: ${householdNameById[selectedTask.household_id] ?? "Unknown home"}`
+                  ? `Дом: ${selectedTask.household_id ? (householdNameById[selectedTask.household_id] ?? "Unknown home") : "Unknown home"}`
                   : "Личная"}
               </p>
               {hasUrl(selectedTask.description) ? (
@@ -638,27 +714,35 @@ export default function TasksPage() {
                 Type
                 <select
                   value={editTaskScope}
-                  onChange={(event) => setEditTaskScope(event.target.value as "personal" | "household")}
+                  onChange={(event) => {
+                    const nextScope = event.target.value as "personal" | "household";
+                    setEditTaskScope(nextScope);
+                    if (nextScope === "household" && !editHouseholdId && households.length > 0) {
+                      setEditHouseholdId(households[0].household_id);
+                    }
+                  }}
                   className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
                 >
                   <option value="personal">Личная</option>
                   <option value="household">Общая на дом</option>
                 </select>
               </label>
-              <label className="mb-4 block text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
-                Home
-                <select
-                  value={editHouseholdId}
-                  onChange={(event) => setEditHouseholdId(event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
-                >
-                  {households.map((home) => (
-                    <option key={home.household_id} value={home.household_id}>
-                      {home.household_name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {editTaskScope === "household" ? (
+                <label className="mb-4 block text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
+                  Home
+                  <select
+                    value={editHouseholdId}
+                    onChange={(event) => setEditHouseholdId(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
+                  >
+                    {households.map((home) => (
+                      <option key={home.household_id} value={home.household_id}>
+                        {home.household_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"

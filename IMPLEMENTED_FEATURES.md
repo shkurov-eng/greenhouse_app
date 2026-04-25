@@ -155,6 +155,12 @@ This document summarizes what has already been implemented in the project.
   - Task visibility fields: `tasks.task_scope` (`personal`/`household`) and `tasks.assignee_profile_id`.
   - `bot_task_drafts` table for two-step bot flow.
   - Updated `api_list_tasks` visibility filter (personal tasks only for assignee, shared tasks for household members).
+- Added SQL migration `tasks_personal_separate_from_households.sql`:
+  - `tasks.household_id` is nullable for personal tasks and required for household tasks via DB check constraint.
+  - Existing personal tasks are detached from homes (`household_id = NULL`).
+  - RPC access rules for `api_list_tasks`, `api_create_task`, `api_update_task_status`, `api_delete_task` now enforce:
+    - personal tasks -> only assignee access;
+    - household tasks -> only members of that household.
 - Added SQL migration `task_message_mode_settings.sql`:
   - `profiles.task_message_mode` (`single`/`combine`) for bot ingestion behavior.
 - `/api/secure` now supports task actions: `listTasks`, `createTask`, `updateTaskStatus`, `deleteTask`.
@@ -162,14 +168,14 @@ This document summarizes what has already been implemented in the project.
   - `updateTask` (edit title, deadline, scope, household)
   - `getTaskSettings` / `setTaskSettings` (task message mode in settings)
 - `/tasks` page is now functional (no longer a placeholder):
-  - Loads tasks for current Telegram user / active household.
-  - Supports manual task creation in-page (title, deadline, scope, target home).
+  - Loads personal tasks for current user and household tasks from member homes.
+  - Supports manual task creation in-page (title, deadline, scope; target home only for household tasks).
   - Creation form includes quick deadline presets (`+1h`, `Today 20:00`, `Tomorrow 09:00`).
   - Lets user toggle task status between `open` and `done`.
   - Shows task scope badges (`Личная` / `Дом: <name>`), AI badges, and due date.
   - Supports filtering/sorting by scope and deadline, plus date-range calendar controls and reset.
   - Supports task details modal (including original forwarded message and source ids for Telegram tasks).
-  - Supports task editing (title, deadline, scope, home).
+  - Supports task editing (title, deadline, scope; home only for household tasks).
 - Added Telegram bot webhook endpoint `POST /api/bot/webhook`:
   - Accepts Telegram updates, validates optional secret token, and asks user to choose task scope via inline buttons.
   - Scope choice flow: **Personal** or **Shared household**; when user has multiple homes, webhook asks for explicit home selection.

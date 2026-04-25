@@ -89,7 +89,7 @@ export type TaskPriority = "low" | "normal" | "high";
 
 export type Task = {
   id: string;
-  household_id: string;
+  household_id: string | null;
   title: string;
   description: string | null;
   status: TaskStatus;
@@ -584,6 +584,7 @@ export async function createTask(
     priority?: TaskPriority;
     dueAt?: string | null;
     taskScope?: "personal" | "household";
+    householdId?: string | null;
   },
 ) {
   return secureRequest<{ id: string }>({
@@ -619,7 +620,7 @@ export async function updateTask(
     title: string;
     dueAt?: string | null;
     taskScope: "personal" | "household";
-    householdId: string;
+    householdId?: string | null;
   },
 ) {
   return secureRequest<{ id: string }>({

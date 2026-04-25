@@ -260,12 +260,21 @@ export async function POST(request: NextRequest) {
       }
 
       let scope: "personal" | "household";
-      let householdId: string;
+      let householdId: string | null;
       if (parsedScope) {
         scope = parsedScope.scope;
         const homes = await listHouseholdsByTelegramId(draftTelegramId);
-        if (homes.length <= 1) {
-          householdId = homes[0]?.household_id || String(draftRow.household_id ?? "");
+        if (scope === "personal") {
+          householdId = null;
+        } else if (homes.length <= 1) {
+          householdId = homes[0]?.household_id || (draftRow.household_id == null ? null : String(draftRow.household_id));
+          if (!householdId) {
+            await telegramApiCall("sendMessage", {
+              chat_id: draftChatId,
+              text: "Для общей задачи сначала вступите хотя бы в один дом.",
+            });
+            return NextResponse.json({ data: { ok: true, skipped: "missing_household_for_household_scope" } });
+          }
         } else {
           const { error: rememberScopeError } = await db
             .from("bot_task_drafts")
@@ -461,8 +470,8 @@ export async function POST(request: NextRequest) {
       active_household_id?: string | null;
       task_message_mode?: string | null;
     };
-    if (!profile.id || !profile.active_household_id) {
-      return NextResponse.json({ data: { ok: true, skipped: "missing_active_household" } });
+    if (!profile.id) {
+      return NextResponse.json({ data: { ok: true, skipped: "profile_id_missing" } });
     }
     const taskMessageMode = profile.task_message_mode === "combine" ? "combine" : "single";
 
@@ -526,8 +535,8 @@ export async function POST(request: NextRequest) {
         await telegramApiCall("sendMessage", {
           chat_id: chatId,
           text: truncated
-            ? "Добавил сообщение в черновик, но общий размер достиг лимита. Часть текста не включена."
-            : "Добавил сообщение в текущий черновик задачи.",
+            ? "Принял. Обработка уже идет, можно закрывать бота. Часть текста не включена из-за лимита."
+            : "Принял. Обработка уже идет, можно закрывать бота.",
         });
         return NextResponse.json({
           data: {
@@ -548,7 +557,7 @@ export async function POST(request: NextRequest) {
         source_message_id: messageId,
         created_by_telegram_id: fromTelegramId,
         created_by_profile_id: profile.id,
-        household_id: profile.active_household_id,
+        household_id: profile.active_household_id ?? null,
         raw_text: initialRawLimited,
         normalized_title: title,
         priority: "normal",

@@ -1050,6 +1050,7 @@ export async function POST(request: NextRequest) {
         const priority = payload.priority == null ? "normal" : asTaskPriority(payload.priority);
         const dueAt = asOptionalIsoDate(payload.dueAt, "dueAt");
         const taskScope = payload.taskScope == null ? "personal" : asTaskScope(payload.taskScope);
+        const householdId = payload.householdId == null ? null : asUuid(payload.householdId, "householdId");
         const result = await rpc("api_create_task", {
           p_telegram_id: telegramId,
           p_title: title,
@@ -1057,6 +1058,7 @@ export async function POST(request: NextRequest) {
           p_priority: priority,
           p_due_at: dueAt,
           p_task_scope: taskScope,
+          p_household_id: householdId,
         });
         const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });
@@ -1067,7 +1069,7 @@ export async function POST(request: NextRequest) {
         const title = asString(payload.title, "title");
         const dueAt = asOptionalIsoDate(payload.dueAt, "dueAt");
         const taskScope = asTaskScope(payload.taskScope);
-        const householdId = asUuid(payload.householdId, "householdId");
+        const householdId = payload.householdId == null ? null : asUuid(payload.householdId, "householdId");
         const supabaseAdmin = getSupabaseAdmin();
         const { data: profile, error: profileError } = await supabaseAdmin
           .from("profiles")
@@ -1094,23 +1096,32 @@ export async function POST(request: NextRequest) {
             .map((row) => String(row.household_id ?? ""))
             .filter(Boolean),
         );
-        if (!memberHouseholds.has(householdId)) {
+        if (taskScope === "household" && (!householdId || !memberHouseholds.has(householdId))) {
           throw new Error("Forbidden household target");
         }
 
         const { data: taskRow, error: taskError } = await supabaseAdmin
           .from("tasks")
-          .select("household_id")
+          .select("household_id,task_scope,assignee_profile_id")
           .eq("id", taskId)
           .single();
         if (taskError) {
           throw new Error(taskError.message);
         }
-        const currentHouseholdId = String(
-          (taskRow as { household_id?: string | null } | null)?.household_id ?? "",
-        );
-        if (!memberHouseholds.has(currentHouseholdId)) {
-          throw new Error("Task not found in your households");
+        const currentTask = (taskRow as {
+          household_id?: string | null;
+          task_scope?: string | null;
+          assignee_profile_id?: string | null;
+        } | null) ?? { household_id: null, task_scope: null, assignee_profile_id: null };
+        if (currentTask.task_scope === "personal") {
+          if (currentTask.assignee_profile_id !== profileId) {
+            throw new Error("Task not found");
+          }
+        } else {
+          const currentHouseholdId = String(currentTask.household_id ?? "");
+          if (!currentHouseholdId || !memberHouseholds.has(currentHouseholdId)) {
+            throw new Error("Task not found in your households");
+          }
         }
 
         const db = supabaseAdmin as unknown as LooseTableApi;
@@ -1120,7 +1131,7 @@ export async function POST(request: NextRequest) {
             title,
             due_at: dueAt,
             task_scope: taskScope,
-            household_id: householdId,
+            household_id: taskScope === "household" ? householdId : null,
             assignee_profile_id: taskScope === "personal" ? profileId : null,
             updated_at: new Date().toISOString(),
           })
