@@ -24,6 +24,118 @@ from (
 where h.id = sub.household_id
   and h.created_by_profile_id is null;
 
+create or replace function public.api_bootstrap_user(
+  p_telegram_id text,
+  p_username text default null
+)
+returns table(profile_id uuid, household_id uuid, household_name text, invite_code text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_profile_id uuid;
+  v_household_id uuid;
+  v_invite_code text;
+begin
+  insert into public.profiles (telegram_id, username)
+  values (p_telegram_id::bigint, nullif(btrim(p_username), ''))
+  on conflict (telegram_id)
+  do update set username = excluded.username;
+
+  select p.id
+  into v_profile_id
+  from public.profiles p
+  where p.telegram_id = p_telegram_id::bigint
+  limit 1;
+
+  select hm.household_id
+  into v_household_id
+  from public.household_members hm
+  where hm.user_id = v_profile_id
+  order by hm.household_id
+  limit 1;
+
+  if v_household_id is null then
+    loop
+      v_invite_code := public.api_generate_invite_code();
+      begin
+        insert into public.households (name, invite_code, created_by_profile_id, require_join_approval)
+        values ('My Home', v_invite_code, v_profile_id, true)
+        returning id into v_household_id;
+        exit;
+      exception
+        when unique_violation then
+          null;
+      end;
+    end loop;
+
+    execute
+      'insert into public.household_members (household_id, user_id) values ($1, $2)
+       on conflict (household_id, user_id) do nothing'
+      using v_household_id, v_profile_id;
+  end if;
+
+  v_household_id := public.api_household_id_by_profile(v_profile_id);
+
+  return query
+  select
+    v_profile_id,
+    h.id,
+    h.name,
+    h.invite_code
+  from public.households h
+  where h.id = v_household_id;
+end
+$$;
+
+create or replace function public.api_create_household(
+  p_telegram_id text,
+  p_name text default null
+)
+returns table(household_id uuid, household_name text, invite_code text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_profile_id uuid;
+  v_household_id uuid;
+  v_invite_code text;
+  v_name text;
+begin
+  v_profile_id := public.api_profile_id_by_telegram(p_telegram_id);
+  v_name := coalesce(nullif(btrim(p_name), ''), 'New Home');
+
+  loop
+    v_invite_code := public.api_generate_invite_code();
+    begin
+      insert into public.households (name, invite_code, created_by_profile_id, require_join_approval)
+      values (v_name, v_invite_code, v_profile_id, true)
+      returning id into v_household_id;
+      exit;
+    exception
+      when unique_violation then
+        null;
+    end;
+  end loop;
+
+  execute
+    'insert into public.household_members (household_id, user_id) values ($1, $2)
+     on conflict (household_id, user_id) do nothing'
+    using v_household_id, v_profile_id;
+
+  update public.profiles
+  set active_household_id = v_household_id
+  where id = v_profile_id;
+
+  return query
+  select h.id, h.name, h.invite_code
+  from public.households h
+  where h.id = v_household_id;
+end
+$$;
+
 create table if not exists public.household_join_requests (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references public.households(id) on delete cascade,
