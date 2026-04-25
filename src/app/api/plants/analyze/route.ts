@@ -67,6 +67,10 @@ async function detectPlantProfileWithAiStudio(
   const prompt = [
     "You are a houseplant assistant.",
     "From the plant photo, identify the likely common plant name and suggest watering urgency thresholds in minutes.",
+    "Assume standard indoor baseline conditions for all recommendations: typical living room, average household humidity, and temperature around 20-22C.",
+    "Do NOT estimate pot size, pot volume, or exact microclimate from the photo.",
+    "Do NOT vary thresholds based on guessed room humidity, heating, draft, or sunlight intensity from this specific image.",
+    "Prioritize species-level guidance under these standard conditions; use the photo mainly to identify the plant type and obvious health state.",
     "First decide whether the main subject is a real plant in a pot/garden.",
     "If the image is not a plant (person, pet, car, text document, landscape, random object), mark it as not plant.",
     "For typical indoor potted plants, use realistic ranges measured in many hours or days, not minutes.",
