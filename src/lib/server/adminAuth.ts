@@ -5,6 +5,16 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
 import { getRequestClientHashes } from "@/lib/server/adminSecurity";
 
+type DbError = { message: string } | null;
+type DbWriteResult = Promise<{ error: DbError }>;
+
+/** Custom tables not in generated Database types */
+type LooseInsertTableApi = {
+  from: (table: string) => {
+    insert: (values: Record<string, unknown>) => DbWriteResult;
+  };
+};
+
 export type AdminRole = "owner" | "security" | "support" | "readonly";
 
 type AdminSessionPayload = {
@@ -155,7 +165,8 @@ export async function logAdminAudit(input: {
 }) {
   const { ipHash, userAgentHash } = getRequestClientHashes(input.request);
   const supabaseAdmin = getSupabaseAdmin();
-  const { error } = await supabaseAdmin.from("admin_audit_log").insert({
+  const db = supabaseAdmin as unknown as LooseInsertTableApi;
+  const { error } = await db.from("admin_audit_log").insert({
     admin_user_id: input.adminUserId,
     action: input.action,
     target_type: input.targetType,

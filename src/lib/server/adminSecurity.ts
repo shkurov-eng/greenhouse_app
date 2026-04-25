@@ -5,6 +5,15 @@ import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
 
 type RpcResponse = { data: unknown; error: { message: string } | null };
 
+type DbError = { message: string } | null;
+type DbWriteResult = Promise<{ error: DbError }>;
+
+type LooseInsertTableApi = {
+  from: (table: string) => {
+    insert: (values: Record<string, unknown>) => DbWriteResult;
+  };
+};
+
 type BlockCheckResult = {
   is_blocked?: boolean;
   block_id?: string;
@@ -103,7 +112,8 @@ type ApiRequestEventInput = {
 
 export async function logApiRequestEvent(input: ApiRequestEventInput) {
   const supabaseAdmin = getSupabaseAdmin();
-  const { error } = await supabaseAdmin.from("api_request_events").insert({
+  const db = supabaseAdmin as unknown as LooseInsertTableApi;
+  const { error } = await db.from("api_request_events").insert({
     source: input.source,
     endpoint: input.endpoint,
     action: input.action,

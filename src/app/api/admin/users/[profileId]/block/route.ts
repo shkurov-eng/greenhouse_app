@@ -4,6 +4,26 @@ import { logAdminAudit, requireAdminUser } from "@/lib/server/adminAuth";
 import { logSecurityEvent } from "@/lib/server/adminSecurity";
 import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
 
+type DbError = { message: string } | null;
+type DbWriteResult = Promise<{ error: DbError }>;
+type DbSingleResult = Promise<{ data: unknown; error: DbError }>;
+
+/** Tables not in generated Database types: avoid `.update` / `.insert` inferred as `never`. */
+type ProfileBlocksTableApi = {
+  from: (table: "profile_blocks") => {
+    update: (values: Record<string, unknown>) => {
+      eq: (column: string, value: string | number | boolean) => {
+        eq: (column: string, value: string | number | boolean) => DbWriteResult;
+      };
+    };
+    insert: (values: Record<string, unknown>) => {
+      select: (columns: string) => {
+        single: () => DbSingleResult;
+      };
+    };
+  };
+};
+
 type Context = {
   params: Promise<{ profileId: string }>;
 };
@@ -32,6 +52,7 @@ export async function POST(request: NextRequest, context: Context) {
     return NextResponse.json({ error: "endsAt is required for temporary block" }, { status: 400 });
   }
   const supabaseAdmin = getSupabaseAdmin();
+  const blocksDb = supabaseAdmin as unknown as ProfileBlocksTableApi;
 
   const { data: profile, error: profileError } = await supabaseAdmin
     .from("profiles")
@@ -44,7 +65,7 @@ export async function POST(request: NextRequest, context: Context) {
   if (!profile) {
     return NextResponse.json({ error: "Profile not found" }, { status: 404 });
   }
-  const { error: deactivateError } = await supabaseAdmin
+  const { error: deactivateError } = await blocksDb
     .from("profile_blocks")
     .update({
       is_active: false,
@@ -57,7 +78,7 @@ export async function POST(request: NextRequest, context: Context) {
     return NextResponse.json({ error: deactivateError.message }, { status: 400 });
   }
 
-  const { data: inserted, error: insertError } = await supabaseAdmin
+  const { data: inserted, error: insertError } = await blocksDb
     .from("profile_blocks")
     .insert({
       profile_id: profileId,
@@ -114,7 +135,8 @@ export async function DELETE(request: NextRequest, context: Context) {
   }
   const { profileId } = await context.params;
   const supabaseAdmin = getSupabaseAdmin();
-  const { error } = await supabaseAdmin
+  const blocksDb = supabaseAdmin as unknown as ProfileBlocksTableApi;
+  const { error } = await blocksDb
     .from("profile_blocks")
     .update({
       is_active: false,
