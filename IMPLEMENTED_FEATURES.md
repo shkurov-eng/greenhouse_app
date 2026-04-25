@@ -38,6 +38,26 @@ This document summarizes what has already been implemented in the project.
 - Invite codes are generated server-side in SQL where applicable.
 - Current invite-code generator (`api_generate_invite_code`) produces 10-character uppercase codes from a non-ambiguous alphabet (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`).
 - Join by invite code is protected from brute-force attempts via persistent DB-backed rate limiting (`api_check_join_invite_rate_limit`, `api_register_join_invite_failure`, `api_clear_join_invite_failures`): 5 failed attempts per 15 minutes -> 15-minute block.
+- Household creation is protected with DB-backed rate limits via `api_assert_household_create_allowed` and `household_create_events`:
+  - max 3 home creations per 1 hour
+  - max 10 home creations per 24 hours
+  - both manual create and auto-bootstrap fallback creation are counted
+- Room creation is protected with DB-backed rate limits via `api_assert_room_create_allowed` and `room_create_events`:
+  - max 10 room creations per 1 hour
+  - max 50 room creations per 24 hours
+  - limit is intentionally higher than household-create limit
+- Plant creation is protected with DB-backed rate limits via `api_assert_plant_create_allowed` and `plant_create_events`:
+  - max 30 plant creations per 1 hour
+  - max 150 plant creations per 24 hours
+  - limit is intentionally higher than room-create limit
+- AI photo requests are protected with DB-backed rate limits via `api_register_ai_photo_request` and `ai_photo_request_events`:
+  - max 30 AI photo requests per 1 hour
+  - max 150 AI photo requests per 24 hours
+  - applied for both `POST /api/plants/upload` (AI mode) and `POST /api/plants/analyze`
+- Bot task ingestion is protected with DB-backed rate limits via `api_register_bot_task_ingest` and `bot_task_ingest_events`:
+  - max 40 bot-task ingests per 1 hour
+  - max 200 bot-task ingests per 24 hours
+  - applied in `POST /api/bot/webhook` before draft create/merge logic
 - Optional owner approval for join-by-invite:
   - Household owner can enable `require_join_approval` in Settings.
   - Default policy is enabled: homes require owner approval for joins unless owner disables it.

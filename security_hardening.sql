@@ -18,6 +18,9 @@ begin
     'households',
     'household_members',
     'rooms',
+    'room_create_events',
+    'plant_create_events',
+    'ai_photo_request_events',
     'plants',
     'plant_markers',
     'tasks',
@@ -39,6 +42,36 @@ create table if not exists public.invite_join_attempts (
   blocked_until timestamp with time zone,
   updated_at timestamp with time zone not null default now()
 );
+
+create table if not exists public.room_create_events (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  household_id uuid not null references public.households(id) on delete cascade,
+  created_at timestamp with time zone not null default now()
+);
+
+create index if not exists room_create_events_profile_created_idx
+  on public.room_create_events (profile_id, created_at desc);
+
+create table if not exists public.plant_create_events (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  household_id uuid not null references public.households(id) on delete cascade,
+  room_id uuid not null references public.rooms(id) on delete cascade,
+  created_at timestamp with time zone not null default now()
+);
+
+create index if not exists plant_create_events_profile_created_idx
+  on public.plant_create_events (profile_id, created_at desc);
+
+create table if not exists public.ai_photo_request_events (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamp with time zone not null default now()
+);
+
+create index if not exists ai_photo_request_events_profile_created_idx
+  on public.ai_photo_request_events (profile_id, created_at desc);
 
 revoke all on all sequences in schema public from anon, authenticated;
 
@@ -120,6 +153,145 @@ begin
   end if;
 
   return v_profile_id;
+end
+$$;
+
+create or replace function public.api_assert_room_create_allowed(
+  p_profile_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hour_limit integer := 10;
+  v_day_limit integer := 50;
+  v_hour_count integer;
+  v_day_count integer;
+begin
+  if p_profile_id is null then
+    raise exception 'profile id is required';
+  end if;
+
+  select count(*)
+  into v_hour_count
+  from public.room_create_events e
+  where e.profile_id = p_profile_id
+    and e.created_at >= now() - interval '1 hour';
+
+  if v_hour_count >= v_hour_limit then
+    raise exception 'room creation rate limit exceeded (hourly)';
+  end if;
+
+  select count(*)
+  into v_day_count
+  from public.room_create_events e
+  where e.profile_id = p_profile_id
+    and e.created_at >= now() - interval '24 hours';
+
+  if v_day_count >= v_day_limit then
+    raise exception 'room creation rate limit exceeded (daily)';
+  end if;
+end
+$$;
+
+create or replace function public.api_assert_plant_create_allowed(
+  p_profile_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hour_limit integer := 30;
+  v_day_limit integer := 150;
+  v_hour_count integer;
+  v_day_count integer;
+begin
+  if p_profile_id is null then
+    raise exception 'profile id is required';
+  end if;
+
+  select count(*)
+  into v_hour_count
+  from public.plant_create_events e
+  where e.profile_id = p_profile_id
+    and e.created_at >= now() - interval '1 hour';
+
+  if v_hour_count >= v_hour_limit then
+    raise exception 'plant creation rate limit exceeded (hourly)';
+  end if;
+
+  select count(*)
+  into v_day_count
+  from public.plant_create_events e
+  where e.profile_id = p_profile_id
+    and e.created_at >= now() - interval '24 hours';
+
+  if v_day_count >= v_day_limit then
+    raise exception 'plant creation rate limit exceeded (daily)';
+  end if;
+end
+$$;
+
+create or replace function public.api_assert_ai_photo_request_allowed(
+  p_profile_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hour_limit integer := 30;
+  v_day_limit integer := 150;
+  v_hour_count integer;
+  v_day_count integer;
+begin
+  if p_profile_id is null then
+    raise exception 'profile id is required';
+  end if;
+
+  select count(*)
+  into v_hour_count
+  from public.ai_photo_request_events e
+  where e.profile_id = p_profile_id
+    and e.created_at >= now() - interval '1 hour';
+
+  if v_hour_count >= v_hour_limit then
+    raise exception 'AI photo rate limit exceeded (hourly)';
+  end if;
+
+  select count(*)
+  into v_day_count
+  from public.ai_photo_request_events e
+  where e.profile_id = p_profile_id
+    and e.created_at >= now() - interval '24 hours';
+
+  if v_day_count >= v_day_limit then
+    raise exception 'AI photo rate limit exceeded (daily)';
+  end if;
+end
+$$;
+
+create or replace function public.api_register_ai_photo_request(
+  p_telegram_id text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_profile_id uuid;
+begin
+  v_profile_id := public.api_profile_id_by_telegram(p_telegram_id);
+  perform public.api_assert_ai_photo_request_allowed(v_profile_id);
+
+  insert into public.ai_photo_request_events (profile_id)
+  values (v_profile_id);
 end
 $$;
 
@@ -266,6 +438,7 @@ declare
 begin
   v_profile_id := public.api_profile_id_by_telegram(p_telegram_id);
   v_household_id := public.api_household_id_by_profile(v_profile_id);
+  perform public.api_assert_plant_create_allowed(v_profile_id);
 
   return query
   select r.id, r.name, r.background_path, r.background_url
@@ -295,11 +468,22 @@ declare
 begin
   v_profile_id := public.api_profile_id_by_telegram(p_telegram_id);
   v_household_id := public.api_household_id_by_profile(v_profile_id);
+  perform public.api_assert_room_create_allowed(v_profile_id);
 
   return query
-  insert into public.rooms (household_id, name)
-  values (v_household_id, nullif(btrim(p_name), ''))
-  returning rooms.id, rooms.name, rooms.background_path, rooms.background_url;
+  with inserted_room as (
+    insert into public.rooms (household_id, name)
+    values (v_household_id, nullif(btrim(p_name), ''))
+    returning rooms.id, rooms.name, rooms.background_path, rooms.background_url, rooms.household_id
+  ),
+  inserted_event as (
+    insert into public.room_create_events (profile_id, household_id)
+    select v_profile_id, ir.household_id
+    from inserted_room ir
+    returning id
+  )
+  select ir.id, ir.name, ir.background_path, ir.background_url
+  from inserted_room ir;
 end
 $$;
 
@@ -395,9 +579,19 @@ begin
   end if;
 
   return query
-  insert into public.plants (household_id, room_id, name, species, status, last_watered_at)
-  values (v_household_id, p_room_id, nullif(btrim(p_name), ''), nullif(btrim(p_species), ''), p_status, v_last_watered)
-  returning plants.id;
+  with inserted_plant as (
+    insert into public.plants (household_id, room_id, name, species, status, last_watered_at)
+    values (v_household_id, p_room_id, nullif(btrim(p_name), ''), nullif(btrim(p_species), ''), p_status, v_last_watered)
+    returning plants.id, plants.household_id, plants.room_id
+  ),
+  inserted_event as (
+    insert into public.plant_create_events (profile_id, household_id, room_id)
+    select v_profile_id, ip.household_id, ip.room_id
+    from inserted_plant ip
+    returning id
+  )
+  select ip.id
+  from inserted_plant ip;
 end
 $$;
 
@@ -754,6 +948,7 @@ grant execute on function public.api_update_plant(text, uuid, text, text, text) 
 grant execute on function public.api_upsert_marker(text, uuid, uuid, double precision, double precision) to anon, authenticated, service_role;
 grant execute on function public.api_prepare_room_image_upload(text, uuid, text) to anon, authenticated, service_role;
 grant execute on function public.api_attach_room_image(text, uuid, text) to anon, authenticated, service_role;
+grant execute on function public.api_register_ai_photo_request(text) to anon, authenticated, service_role;
 grant execute on function public.api_check_join_invite_rate_limit(text) to anon, authenticated, service_role;
 grant execute on function public.api_register_join_invite_failure(text) to anon, authenticated, service_role;
 grant execute on function public.api_clear_join_invite_failures(text) to anon, authenticated, service_role;

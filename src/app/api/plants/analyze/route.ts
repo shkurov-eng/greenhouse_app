@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
 import { getRequestTelegramId } from "@/lib/server/telegramAuth";
 
 const DEFAULT_THIRSTY_AFTER_MINUTES = 5;
@@ -231,7 +232,19 @@ async function detectPlantProfileWithAiStudio(
 export async function POST(request: NextRequest) {
   try {
     // Validates Telegram init data the same way as other secure routes.
-    getRequestTelegramId(request);
+    const telegramId = getRequestTelegramId(request);
+    const supabaseAdmin = getSupabaseAdmin();
+    type RpcResponse = { data: unknown; error: { message: string } | null };
+    const rpcAny = supabaseAdmin.rpc.bind(supabaseAdmin) as unknown as (
+      rpcName: string,
+      rpcParams?: Record<string, unknown>,
+    ) => Promise<RpcResponse>;
+    const { error: aiRateError } = await rpcAny("api_register_ai_photo_request", {
+      p_telegram_id: String(telegramId),
+    });
+    if (aiRateError) {
+      return NextResponse.json({ error: aiRateError.message }, { status: 429 });
+    }
     const formData = await request.formData();
     const fileValue = formData.get("file");
     if (!(fileValue instanceof File)) {

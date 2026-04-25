@@ -38,6 +38,18 @@ create table if not exists public.bot_task_drafts (
   created_at timestamp with time zone not null default now()
 );
 
+create table if not exists public.bot_task_ingest_events (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  source_platform text not null default 'telegram',
+  source_chat_id bigint,
+  source_message_id bigint,
+  created_at timestamp with time zone not null default now()
+);
+
+create index if not exists bot_task_ingest_events_profile_created_idx
+  on public.bot_task_ingest_events (profile_id, created_at desc);
+
 alter table if exists public.bot_task_drafts
   add column if not exists selected_scope text
     check (selected_scope in ('personal', 'household'));
@@ -47,6 +59,63 @@ create unique index if not exists bot_task_drafts_source_uidx
 
 alter table public.bot_task_drafts enable row level security;
 revoke all on table public.bot_task_drafts from anon, authenticated;
+alter table public.bot_task_ingest_events enable row level security;
+revoke all on table public.bot_task_ingest_events from anon, authenticated;
+
+create or replace function public.api_register_bot_task_ingest(
+  p_telegram_id text,
+  p_source_platform text default 'telegram',
+  p_source_chat_id bigint default null,
+  p_source_message_id bigint default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_profile_id uuid;
+  v_hour_limit integer := 40;
+  v_day_limit integer := 200;
+  v_hour_count integer;
+  v_day_count integer;
+begin
+  v_profile_id := public.api_profile_id_by_telegram(p_telegram_id);
+
+  select count(*)
+  into v_hour_count
+  from public.bot_task_ingest_events e
+  where e.profile_id = v_profile_id
+    and e.created_at >= now() - interval '1 hour';
+
+  if v_hour_count >= v_hour_limit then
+    raise exception 'bot task ingest rate limit exceeded (hourly)';
+  end if;
+
+  select count(*)
+  into v_day_count
+  from public.bot_task_ingest_events e
+  where e.profile_id = v_profile_id
+    and e.created_at >= now() - interval '24 hours';
+
+  if v_day_count >= v_day_limit then
+    raise exception 'bot task ingest rate limit exceeded (daily)';
+  end if;
+
+  insert into public.bot_task_ingest_events (
+    profile_id,
+    source_platform,
+    source_chat_id,
+    source_message_id
+  )
+  values (
+    v_profile_id,
+    coalesce(nullif(btrim(p_source_platform), ''), 'telegram'),
+    p_source_chat_id,
+    p_source_message_id
+  );
+end
+$$;
 
 drop function if exists public.api_list_tasks(text);
 
@@ -180,4 +249,6 @@ end
 $$;
 
 grant execute on function public.api_create_task(text, text, text, text, timestamp with time zone, text)
+  to anon, authenticated, service_role;
+grant execute on function public.api_register_bot_task_ingest(text, text, bigint, bigint)
   to anon, authenticated, service_role;

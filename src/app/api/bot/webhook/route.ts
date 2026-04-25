@@ -50,6 +50,8 @@ type TelegramUpdate = {
   };
 };
 
+const MAX_COMBINE_DRAFT_CHARS = 20000;
+
 async function telegramApiCall(method: string, payload: Record<string, unknown>) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
   if (!botToken) {
@@ -102,6 +104,17 @@ function parseJoinReviewCallbackData(value: string) {
 
 function hasUrl(text: string) {
   return /(https?:\/\/|www\.)\S+/i.test(text);
+}
+
+function clampDraftText(raw: string) {
+  const trimmed = raw.trim();
+  if (trimmed.length <= MAX_COMBINE_DRAFT_CHARS) {
+    return { text: trimmed, truncated: false };
+  }
+  return {
+    text: trimmed.slice(0, MAX_COMBINE_DRAFT_CHARS),
+    truncated: true,
+  };
 }
 
 async function listHouseholdsByTelegramId(telegramId: number) {
@@ -456,6 +469,29 @@ export async function POST(request: NextRequest) {
     const title = hasUrl(rawText) ? "Задача из ссылки" : rawText.slice(0, 140);
 
     const db = supabaseAdmin as unknown as LooseTableApi;
+    type RpcResponse = { data: unknown; error: { message: string } | null };
+    const rpcAny = supabaseAdmin.rpc.bind(supabaseAdmin) as unknown as (
+      rpcName: string,
+      rpcParams?: Record<string, unknown>,
+    ) => Promise<RpcResponse>;
+
+    const { error: ingestLimitError } = await rpcAny("api_register_bot_task_ingest", {
+      p_telegram_id: String(fromTelegramId),
+      p_source_platform: "telegram",
+      p_source_chat_id: chatId,
+      p_source_message_id: messageId,
+    });
+    if (ingestLimitError) {
+      await telegramApiCall("sendMessage", {
+        chat_id: chatId,
+        text:
+          "Слишком много задач за короткое время. Попробуйте позже (лимит анти-спам на создание задач ботом).",
+      });
+      return NextResponse.json({
+        data: { ok: true, skipped: "bot_task_ingest_rate_limited", detail: ingestLimitError.message },
+      });
+    }
+
     if (taskMessageMode === "combine") {
       const { data: existingDraft, error: existingDraftError } = await db
         .from("bot_task_drafts")
@@ -474,11 +510,14 @@ export async function POST(request: NextRequest) {
         const draft = existingDraft as { id?: string | null; raw_text?: string | null };
         const existingRaw = String(draft.raw_text ?? "").trim();
         const mergedRaw = existingRaw ? `${existingRaw}\n\n${rawText}` : rawText;
+        const { text: mergedRawLimited, truncated } = clampDraftText(mergedRaw);
         const { error: mergeError } = await db
           .from("bot_task_drafts")
           .update({
-            raw_text: mergedRaw,
-            normalized_title: hasUrl(mergedRaw) ? "Задача из ссылки" : mergedRaw.slice(0, 140),
+            raw_text: mergedRawLimited,
+            normalized_title: hasUrl(mergedRawLimited)
+              ? "Задача из ссылки"
+              : mergedRawLimited.slice(0, 140),
           })
           .eq("id", String(draft.id ?? ""));
         if (mergeError) {
@@ -486,7 +525,9 @@ export async function POST(request: NextRequest) {
         }
         await telegramApiCall("sendMessage", {
           chat_id: chatId,
-          text: "Добавил сообщение в текущий черновик задачи.",
+          text: truncated
+            ? "Добавил сообщение в черновик, но общий размер достиг лимита. Часть текста не включена."
+            : "Добавил сообщение в текущий черновик задачи.",
         });
         return NextResponse.json({
           data: {
@@ -499,6 +540,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const { text: initialRawLimited, truncated: initialTruncated } = clampDraftText(rawText);
     const { error: draftUpsertError } = await db.from("bot_task_drafts").upsert(
       {
         source_platform: "telegram",
@@ -507,7 +549,7 @@ export async function POST(request: NextRequest) {
         created_by_telegram_id: fromTelegramId,
         created_by_profile_id: profile.id,
         household_id: profile.active_household_id,
-        raw_text: rawText,
+        raw_text: initialRawLimited,
         normalized_title: title,
         priority: "normal",
         due_at: null,
@@ -544,7 +586,9 @@ export async function POST(request: NextRequest) {
     }
     await telegramApiCall("sendMessage", {
       chat_id: chatId,
-      text: "Создать задачу как личную или общую для дома?",
+      text: initialTruncated
+        ? "Текст сообщения слишком длинный, часть была обрезана. Создать задачу как личную или общую для дома?"
+        : "Создать задачу как личную или общую для дома?",
       reply_markup: {
         inline_keyboard: [
           [

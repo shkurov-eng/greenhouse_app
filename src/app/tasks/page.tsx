@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, CheckCircle2, Circle, Inbox, Pencil, RefreshCw, X } from "lucide-react";
 
 import { MobileShell } from "@/components/MobileShell";
-import { listHouseholds, listTasks, updateTask, updateTaskStatus, type Task } from "@/lib/api";
+import { createTask, listHouseholds, listTasks, updateTask, updateTaskStatus, type Task } from "@/lib/api";
 
 function resolveTelegramInitData() {
   if (typeof window === "undefined") {
@@ -20,6 +20,15 @@ function hasUrl(text: string | null) {
     return false;
   }
   return /(https?:\/\/|www\.)\S+/i.test(text);
+}
+
+function toDatetimeLocalValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
 export default function TasksPage() {
@@ -42,6 +51,11 @@ export default function TasksPage() {
   const [editTaskScope, setEditTaskScope] = useState<"personal" | "household">("personal");
   const [editHouseholdId, setEditHouseholdId] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newDueAt, setNewDueAt] = useState("");
+  const [newTaskScope, setNewTaskScope] = useState<"personal" | "household">("personal");
+  const [newHouseholdId, setNewHouseholdId] = useState("");
+  const [creatingTask, setCreatingTask] = useState(false);
 
   const initData = useMemo(() => resolveTelegramInitData(), []);
 
@@ -57,13 +71,16 @@ export default function TasksPage() {
         nextMap[household.household_id] = household.household_name;
       }
       setHouseholdNameById(nextMap);
+      if (!newHouseholdId && households.length > 0) {
+        setNewHouseholdId(households[0].household_id);
+      }
     } catch (error) {
       const text = error instanceof Error ? error.message : "Failed to load tasks";
       setMessage(text);
     } finally {
       setLoading(false);
     }
-  }, [initData]);
+  }, [initData, newHouseholdId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -157,6 +174,69 @@ export default function TasksPage() {
     }
   }, [editingTask, editTitle, editDueAt, editTaskScope, editHouseholdId, initData]);
 
+  const createTaskFromForm = useCallback(async () => {
+    const title = newTitle.trim();
+    if (!title) {
+      setMessage("Task title is required");
+      return;
+    }
+    if (!newHouseholdId) {
+      setMessage("Select home");
+      return;
+    }
+
+    setCreatingTask(true);
+    setMessage(null);
+    try {
+      const dueAt = newDueAt ? new Date(newDueAt).toISOString() : null;
+      const created = await createTask(initData, {
+        title,
+        dueAt,
+      });
+
+      await updateTask(initData, {
+        taskId: created.id,
+        title,
+        dueAt,
+        taskScope: newTaskScope,
+        householdId: newHouseholdId,
+      });
+
+      setNewTitle("");
+      setNewDueAt("");
+      setNewTaskScope("personal");
+      await loadTasks();
+      setMessage("Task created");
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "Failed to create task";
+      setMessage(text);
+    } finally {
+      setCreatingTask(false);
+    }
+  }, [initData, loadTasks, newDueAt, newHouseholdId, newTaskScope, newTitle]);
+
+  const setDuePreset = useCallback((preset: "plus_1h" | "today_20" | "tomorrow_09") => {
+    const now = new Date();
+    if (preset === "plus_1h") {
+      const next = new Date(now.getTime() + 60 * 60 * 1000);
+      setNewDueAt(toDatetimeLocalValue(next));
+      return;
+    }
+    if (preset === "today_20") {
+      const next = new Date(now);
+      next.setHours(20, 0, 0, 0);
+      if (next.getTime() <= now.getTime()) {
+        next.setDate(next.getDate() + 1);
+      }
+      setNewDueAt(toDatetimeLocalValue(next));
+      return;
+    }
+    const tomorrowMorning = new Date(now);
+    tomorrowMorning.setDate(tomorrowMorning.getDate() + 1);
+    tomorrowMorning.setHours(9, 0, 0, 0);
+    setNewDueAt(toDatetimeLocalValue(tomorrowMorning));
+  }, []);
+
   const visibleTasks = useMemo(() => {
     const startMs = deadlineFrom ? new Date(`${deadlineFrom}T00:00:00`).getTime() : null;
     const endMs = deadlineTo ? new Date(`${deadlineTo}T23:59:59.999`).getTime() : null;
@@ -241,7 +321,7 @@ export default function TasksPage() {
           </header>
           <section className="rounded-[24px] bg-white p-6 shadow-[0_4px_20px_rgba(148,74,35,0.06)]">
             <div className="mb-4 flex items-center justify-between gap-3">
-              <p className="text-sm text-[#6c7a71]">Forward a message to bot to create a task.</p>
+              <p className="text-sm text-[#6c7a71]">Create a task here or forward a message to bot.</p>
               <button
                 type="button"
                 onClick={() => void loadTasks()}
@@ -250,6 +330,87 @@ export default function TasksPage() {
                 <RefreshCw className="h-3.5 w-3.5" />
                 Refresh
               </button>
+            </div>
+            <div className="mb-4 rounded-2xl border border-[#ece6e1] bg-[#fffaf6] p-4">
+              <h2 className="text-sm font-bold text-[#1f1b17]">New task</h2>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71] sm:col-span-2">
+                  Task
+                  <input
+                    value={newTitle}
+                    onChange={(event) => setNewTitle(event.target.value)}
+                    placeholder="e.g. Buy fertilizer"
+                    className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
+                  />
+                </label>
+                <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
+                  Date & time
+                  <input
+                    type="datetime-local"
+                    value={newDueAt}
+                    onChange={(event) => setNewDueAt(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
+                  />
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDuePreset("plus_1h")}
+                      className="rounded-full border border-[#d9cec6] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#6c7a71] hover:bg-[#faf6f3]"
+                    >
+                      +1h
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDuePreset("today_20")}
+                      className="rounded-full border border-[#d9cec6] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#6c7a71] hover:bg-[#faf6f3]"
+                    >
+                      Today 20:00
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDuePreset("tomorrow_09")}
+                      className="rounded-full border border-[#d9cec6] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#6c7a71] hover:bg-[#faf6f3]"
+                    >
+                      Tomorrow 09:00
+                    </button>
+                  </div>
+                </label>
+                <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
+                  Type
+                  <select
+                    value={newTaskScope}
+                    onChange={(event) => setNewTaskScope(event.target.value as "personal" | "household")}
+                    className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
+                  >
+                    <option value="personal">Личная</option>
+                    <option value="household">Общая на дом</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71] sm:col-span-2">
+                  Home
+                  <select
+                    value={newHouseholdId}
+                    onChange={(event) => setNewHouseholdId(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
+                  >
+                    {households.map((home) => (
+                      <option key={home.household_id} value={home.household_id}>
+                        {home.household_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  disabled={creatingTask}
+                  onClick={() => void createTaskFromForm()}
+                  className="rounded-full bg-[#006c49] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {creatingTask ? "Creating..." : "Create task"}
+                </button>
+              </div>
             </div>
             <div className="mb-4 grid gap-2 sm:grid-cols-2">
               <label className="text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">

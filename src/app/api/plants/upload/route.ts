@@ -281,6 +281,19 @@ export async function POST(request: NextRequest) {
     }
 
     const shouldRunAi = aiModeValue !== "manual";
+    if (shouldRunAi) {
+      type RpcResponse = { data: unknown; error: { message: string } | null };
+      const rpcAny = supabaseAdmin.rpc.bind(supabaseAdmin) as unknown as (
+        rpcName: string,
+        rpcParams?: Record<string, unknown>,
+      ) => Promise<RpcResponse>;
+      const { error: aiRateError } = await rpcAny("api_register_ai_photo_request", {
+        p_telegram_id: String(telegramId),
+      });
+      if (aiRateError) {
+        return NextResponse.json({ error: aiRateError.message }, { status: 429 });
+      }
+    }
     const { profile: aiProfile, status: aiStatus } = shouldRunAi
       ? await detectPlantProfileWithAiStudio(arrayBuffer, fileValue.type || "image/jpeg")
       : { profile: null, status: "skipped_manual" as const };

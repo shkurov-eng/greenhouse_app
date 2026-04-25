@@ -24,6 +24,59 @@ from (
 where h.id = sub.household_id
   and h.created_by_profile_id is null;
 
+create table if not exists public.household_create_events (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  reason text not null check (reason in ('manual_create', 'bootstrap_fallback')),
+  created_at timestamp with time zone not null default now()
+);
+
+create index if not exists household_create_events_profile_created_idx
+  on public.household_create_events (profile_id, created_at desc);
+
+alter table public.household_create_events enable row level security;
+revoke all on table public.household_create_events from anon, authenticated;
+
+create or replace function public.api_assert_household_create_allowed(
+  p_profile_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hour_limit integer := 3;
+  v_day_limit integer := 10;
+  v_hour_count integer;
+  v_day_count integer;
+begin
+  if p_profile_id is null then
+    raise exception 'profile id is required';
+  end if;
+
+  select count(*)
+  into v_hour_count
+  from public.household_create_events e
+  where e.profile_id = p_profile_id
+    and e.created_at >= now() - interval '1 hour';
+
+  if v_hour_count >= v_hour_limit then
+    raise exception 'household creation rate limit exceeded (hourly)';
+  end if;
+
+  select count(*)
+  into v_day_count
+  from public.household_create_events e
+  where e.profile_id = p_profile_id
+    and e.created_at >= now() - interval '24 hours';
+
+  if v_day_count >= v_day_limit then
+    raise exception 'household creation rate limit exceeded (daily)';
+  end if;
+end
+$$;
+
 create or replace function public.api_bootstrap_user(
   p_telegram_id text,
   p_username text default null
@@ -57,6 +110,8 @@ begin
   limit 1;
 
   if v_household_id is null then
+    perform public.api_assert_household_create_allowed(v_profile_id);
+
     loop
       v_invite_code := public.api_generate_invite_code();
       begin
@@ -74,6 +129,9 @@ begin
       'insert into public.household_members (household_id, user_id) values ($1, $2)
        on conflict (household_id, user_id) do nothing'
       using v_household_id, v_profile_id;
+
+    insert into public.household_create_events (profile_id, reason)
+    values (v_profile_id, 'bootstrap_fallback');
   end if;
 
   v_household_id := public.api_household_id_by_profile(v_profile_id);
@@ -107,6 +165,8 @@ begin
   v_profile_id := public.api_profile_id_by_telegram(p_telegram_id);
   v_name := coalesce(nullif(btrim(p_name), ''), 'New Home');
 
+  perform public.api_assert_household_create_allowed(v_profile_id);
+
   loop
     v_invite_code := public.api_generate_invite_code();
     begin
@@ -124,6 +184,9 @@ begin
     'insert into public.household_members (household_id, user_id) values ($1, $2)
      on conflict (household_id, user_id) do nothing'
     using v_household_id, v_profile_id;
+
+  insert into public.household_create_events (profile_id, reason)
+  values (v_profile_id, 'manual_create');
 
   update public.profiles
   set active_household_id = v_household_id

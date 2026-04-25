@@ -70,6 +70,7 @@ type LooseTableApi = {
 
 const INVITE_CODE_LENGTH = 10;
 const INVITE_CODE_REGEX = new RegExp(`^[A-Z2-9]{${INVITE_CODE_LENGTH}}$`);
+const LEGACY_INVITE_CODE_EXCEPTIONS = new Set(["ZFXQSB"]);
 
 function unwrapSingleRow<T>(data: unknown): T {
   if (Array.isArray(data)) {
@@ -93,7 +94,7 @@ function asString(value: unknown, fieldName: string) {
 
 function asInviteCode(value: unknown) {
   const inviteCode = asString(value, "inviteCode").toUpperCase();
-  if (!INVITE_CODE_REGEX.test(inviteCode)) {
+  if (!INVITE_CODE_REGEX.test(inviteCode) && !LEGACY_INVITE_CODE_EXCEPTIONS.has(inviteCode)) {
     throw new Error("Invalid invite code format");
   }
   return inviteCode;
