@@ -1058,7 +1058,6 @@ export default function Home() {
                 const markerPlant = plants.find((plant) => plant.id === marker.plant_id);
                 const isActive = activeMarkerId === marker.id;
                 const isPendingWatering = pendingWateringMarkerIds.includes(marker.id);
-                const isInfoBubbleVisible = isActive || isPendingWatering;
                 const isJustWatered = justWateredMarkerId === marker.id;
                 const secondsLeft = getPendingWateringSecondsLeft(marker.id);
                 const status = wateringDerivedStatus(markerPlant?.last_watered_at ?? null);
@@ -1111,33 +1110,21 @@ export default function Home() {
                     >
                       <span className={`absolute inset-0 animate-ping rounded-full ${colors.pulse}`} />
                     </button>
-                    {isInfoBubbleVisible ? (
+                    {isPendingWatering ? (
                       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 rounded-lg bg-white px-2 py-1 text-[10px] font-semibold text-[#3c4a42] shadow-md">
-                        <div className="whitespace-nowrap">
-                          <span
-                            className={`mr-1 rounded-full px-1.5 py-0.5 text-[9px] uppercase ${colors.labelChip} ${colors.labelText}`}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[9px] text-[#6c7a71]">Watering in {secondsLeft}s</span>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleCancelPendingMarkerWatering(marker.id);
+                            }}
+                            className="rounded-md border border-[#ba1a1a]/30 px-1.5 py-0.5 text-[9px] font-semibold text-[#93000a] hover:bg-[#ffdad6]/40"
                           >
-                            {status}
-                          </span>
-                          {markerPlant?.name ?? "Plant"}
+                            Cancel
+                          </button>
                         </div>
-                        {isPendingWatering ? (
-                          <div className="mt-1 flex items-center justify-between gap-2">
-                            <span className="text-[9px] text-[#6c7a71]">
-                              Watering in {secondsLeft}s
-                            </span>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleCancelPendingMarkerWatering(marker.id);
-                              }}
-                              className="rounded-md border border-[#ba1a1a]/30 px-1.5 py-0.5 text-[9px] font-semibold text-[#93000a] hover:bg-[#ffdad6]/40"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : null}
                         <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1 rotate-45 bg-white" />
                       </div>
                     ) : null}
