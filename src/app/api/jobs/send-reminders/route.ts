@@ -19,9 +19,14 @@ type CandidateTask = {
   created_by_profile_id: string | null;
 };
 
+const DUE_SOON_LEAD_MS = 15 * 60 * 1000;
+const DUE_SOON_GRACE_MS = 5 * 60 * 1000;
+const DUE_SOON_DEDUPE_MS = 15 * 60 * 1000;
+const OVERDUE_DEDUPE_MS = 24 * 60 * 60 * 1000;
+
 function classifyReminderKind(dueAt: string): ReminderKind {
   const due = new Date(dueAt).getTime();
-  return due <= Date.now() ? "overdue" : "due_soon";
+  return due < Date.now() - DUE_SOON_GRACE_MS ? "overdue" : "due_soon";
 }
 
 async function sendTelegramMessage(chatId: string, text: string) {
@@ -56,13 +61,16 @@ export async function POST(request: NextRequest) {
     }
 
     const supabaseAdmin = getSupabaseAdmin();
-    const dueSoonCutoff = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const nowMs = Date.now();
+    const dueWindowStartIso = new Date(nowMs - DUE_SOON_GRACE_MS).toISOString();
+    const dueWindowEndIso = new Date(nowMs + DUE_SOON_LEAD_MS).toISOString();
     const { data, error } = await supabaseAdmin
       .from("tasks")
       .select("id,title,due_at,created_by_profile_id")
       .eq("status", "open")
       .not("due_at", "is", null)
-      .lte("due_at", dueSoonCutoff)
+      .gte("due_at", dueWindowStartIso)
+      .lte("due_at", dueWindowEndIso)
       .order("due_at", { ascending: true })
       .limit(100);
     if (error) {
@@ -79,7 +87,7 @@ export async function POST(request: NextRequest) {
         continue;
       }
       const kind = classifyReminderKind(task.due_at);
-      const dedupeWindowMs = kind === "overdue" ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
+      const dedupeWindowMs = kind === "overdue" ? OVERDUE_DEDUPE_MS : DUE_SOON_DEDUPE_MS;
       const sinceIso = new Date(Date.now() - dedupeWindowMs).toISOString();
 
       const { data: existingLog, error: existingLogError } = await supabaseAdmin

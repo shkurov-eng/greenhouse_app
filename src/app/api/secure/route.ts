@@ -456,6 +456,8 @@ export async function POST(request: NextRequest) {
               row.owner_telegram_id == null || row.owner_telegram_id === ""
                 ? null
                 : Number(row.owner_telegram_id),
+            owner_notified: null as boolean | null,
+            owner_notify_error: null as string | null,
           };
 
           if (
@@ -464,26 +466,32 @@ export async function POST(request: NextRequest) {
             data.owner_telegram_id &&
             Number.isFinite(data.owner_telegram_id)
           ) {
-            await telegramApiCall("sendMessage", {
-              chat_id: data.owner_telegram_id,
-              text:
-                `Новая заявка на вступление в дом "${data.household_name}".\n` +
-                `Telegram ID пользователя: ${telegramId}`,
-              reply_markup: {
-                inline_keyboard: [
-                  [
-                    { text: "Approve", callback_data: `join_review:approve:${data.request_id}` },
-                    { text: "Reject", callback_data: `join_review:reject:${data.request_id}` },
+            try {
+              await telegramApiCall("sendMessage", {
+                chat_id: data.owner_telegram_id,
+                text:
+                  `Новая заявка на вступление в дом "${data.household_name}".\n` +
+                  `Telegram ID пользователя: ${telegramId}`,
+                reply_markup: {
+                  inline_keyboard: [
+                    [
+                      { text: "Approve", callback_data: `join_review:approve:${data.request_id}` },
+                      { text: "Reject", callback_data: `join_review:reject:${data.request_id}` },
+                    ],
                   ],
-                ],
-              },
-            }).catch((notifyError) => {
+                },
+              });
+              data.owner_notified = true;
+            } catch (notifyError) {
+              data.owner_notified = false;
+              data.owner_notify_error =
+                notifyError instanceof Error ? notifyError.message : String(notifyError);
               console.warn("[secure-api] failed to notify household owner about join request", {
-                message: notifyError instanceof Error ? notifyError.message : String(notifyError),
+                message: data.owner_notify_error,
                 householdId: data.household_id,
                 requestId: data.request_id,
               });
-            });
+            }
           }
           return NextResponse.json({ data });
         } catch (error) {

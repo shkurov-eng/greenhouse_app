@@ -881,7 +881,13 @@ export default function Home() {
     if (targetHome.join_status === "pending_approval") {
       setIsJoinHomeOpen(false);
       setJoinCode("");
-      setMessage(`Join request sent to ${targetHome.household_name} owner`);
+      if (targetHome.owner_notified === false) {
+        setMessage(
+          `Join request sent to ${targetHome.household_name}. Bot could not notify owner automatically - ask owner to start bot chat and open /settings.`,
+        );
+      } else {
+        setMessage(`Join request sent to ${targetHome.household_name} owner`);
+      }
       return;
     }
 

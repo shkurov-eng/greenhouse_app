@@ -20,6 +20,8 @@ export type JoinHouseholdResult = {
   invite_code: string | null;
   request_id: string | null;
   owner_telegram_id?: number | null;
+  owner_notified?: boolean | null;
+  owner_notify_error?: string | null;
 };
 
 export type HouseholdJoinSetting = {
