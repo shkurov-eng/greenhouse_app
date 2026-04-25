@@ -63,6 +63,23 @@ Goal: make watering thresholds predictable for the same species by moving thresh
 - [ ] **Settings controls**
   - Optional toggle for default behavior on medium-confidence matches.
 
+## Epic: Task Ingestion and Link Parsing
+
+Status: Planned  
+Priority: P1
+
+Goal: improve incoming task quality for forwarded content, including URLs.
+
+### P1 - Link-aware task parsing
+
+- [ ] **Fetch and summarize URL content for task parsing**
+  - If message includes URL, server fetches page title + short excerpt (with timeout and size limits).
+  - Pass fetched context to AI parser to infer better title/deadline/priority.
+- [ ] **Safety and reliability**
+  - Only allow `http/https`.
+  - Block private/localhost IP ranges.
+  - Graceful fallback when URL is inaccessible or requires auth.
+
 ### Done criteria
 
 - [ ] New plants of the same canonical species receive stable deterministic thresholds.

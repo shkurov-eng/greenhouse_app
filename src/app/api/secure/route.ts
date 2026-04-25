@@ -26,8 +26,11 @@ type SecureAction =
   | "createRoomImageSignedUrl"
   | "listTasks"
   | "createTask"
+  | "updateTask"
   | "updateTaskStatus"
-  | "deleteTask";
+  | "deleteTask"
+  | "getTaskSettings"
+  | "setTaskSettings";
 
 type RequestBody = {
   action?: SecureAction;
@@ -124,6 +127,13 @@ function asTaskScope(value: unknown) {
     return value;
   }
   throw new Error("Invalid task scope");
+}
+
+function asTaskMessageMode(value: unknown) {
+  if (value === "single" || value === "combine") {
+    return value;
+  }
+  throw new Error("Invalid task message mode");
 }
 
 function asOptionalIsoDate(value: unknown, fieldName: string) {
@@ -735,6 +745,75 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ data });
       }
 
+      case "updateTask": {
+        const taskId = asUuid(payload.taskId, "taskId");
+        const title = asString(payload.title, "title");
+        const dueAt = asOptionalIsoDate(payload.dueAt, "dueAt");
+        const taskScope = asTaskScope(payload.taskScope);
+        const householdId = asUuid(payload.householdId, "householdId");
+        const supabaseAdmin = getSupabaseAdmin();
+        const { data: profile, error: profileError } = await supabaseAdmin
+          .from("profiles")
+          .select("id")
+          .eq("telegram_id", telegramId)
+          .single();
+        if (profileError) {
+          throw new Error(profileError.message);
+        }
+        const profileId = String((profile as { id?: string } | null)?.id ?? "");
+        if (!profileId) {
+          throw new Error("Profile not found");
+        }
+
+        const { data: memberRows, error: memberError } = await supabaseAdmin
+          .from("household_members")
+          .select("household_id")
+          .eq("user_id", profileId);
+        if (memberError) {
+          throw new Error(memberError.message);
+        }
+        const memberHouseholds = new Set(
+          ((memberRows as Array<{ household_id?: string | null }> | null) ?? [])
+            .map((row) => String(row.household_id ?? ""))
+            .filter(Boolean),
+        );
+        if (!memberHouseholds.has(householdId)) {
+          throw new Error("Forbidden household target");
+        }
+
+        const { data: taskRow, error: taskError } = await supabaseAdmin
+          .from("tasks")
+          .select("household_id")
+          .eq("id", taskId)
+          .single();
+        if (taskError) {
+          throw new Error(taskError.message);
+        }
+        const currentHouseholdId = String(
+          (taskRow as { household_id?: string | null } | null)?.household_id ?? "",
+        );
+        if (!memberHouseholds.has(currentHouseholdId)) {
+          throw new Error("Task not found in your households");
+        }
+
+        const db = supabaseAdmin as unknown as LooseTableApi;
+        const { error: updateError } = await db
+          .from("tasks")
+          .update({
+            title,
+            due_at: dueAt,
+            task_scope: taskScope,
+            household_id: householdId,
+            assignee_profile_id: taskScope === "personal" ? profileId : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", taskId);
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+        return NextResponse.json({ data: { id: taskId } });
+      }
+
       case "updateTaskStatus": {
         const taskId = asUuid(payload.taskId, "taskId");
         const status = asTaskStatus(payload.status);
@@ -754,6 +833,35 @@ export async function POST(request: NextRequest) {
           p_task_id: taskId,
         });
         return NextResponse.json({ data: { ok: true as const } });
+      }
+
+      case "getTaskSettings": {
+        const supabaseAdmin = getSupabaseAdmin();
+        const { data: profileRow, error: profileError } = await supabaseAdmin
+          .from("profiles")
+          .select("task_message_mode")
+          .eq("telegram_id", telegramId)
+          .single();
+        if (profileError) {
+          throw new Error(profileError.message);
+        }
+        const modeRaw = (profileRow as { task_message_mode?: string | null } | null)?.task_message_mode;
+        const taskMessageMode = modeRaw === "combine" ? "combine" : "single";
+        return NextResponse.json({ data: { taskMessageMode } });
+      }
+
+      case "setTaskSettings": {
+        const taskMessageMode = asTaskMessageMode(payload.taskMessageMode);
+        const supabaseAdmin = getSupabaseAdmin();
+        const db = supabaseAdmin as unknown as LooseTableApi;
+        const { error: updateError } = await db
+          .from("profiles")
+          .update({ task_message_mode: taskMessageMode })
+          .eq("telegram_id", Number(telegramId));
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+        return NextResponse.json({ data: { taskMessageMode } });
       }
 
       default:

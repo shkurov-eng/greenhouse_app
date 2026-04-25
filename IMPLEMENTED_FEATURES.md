@@ -121,16 +121,33 @@ This document summarizes what has already been implemented in the project.
   - `tasks` table with household scope, source message metadata, AI parse metadata, and status/priority fields.
   - `task_reminders_log` table for reminder deduplication history.
   - RPCs: `api_list_tasks`, `api_create_task`, `api_update_task_status`, `api_delete_task`.
+- Added SQL migration `tasks_scope_and_bot_choice.sql`:
+  - Task visibility fields: `tasks.task_scope` (`personal`/`household`) and `tasks.assignee_profile_id`.
+  - `bot_task_drafts` table for two-step bot flow.
+  - Updated `api_list_tasks` visibility filter (personal tasks only for assignee, shared tasks for household members).
+- Added SQL migration `task_message_mode_settings.sql`:
+  - `profiles.task_message_mode` (`single`/`combine`) for bot ingestion behavior.
 - `/api/secure` now supports task actions: `listTasks`, `createTask`, `updateTaskStatus`, `deleteTask`.
+- `/api/secure` also supports:
+  - `updateTask` (edit title, deadline, scope, household)
+  - `getTaskSettings` / `setTaskSettings` (task message mode in settings)
 - `/tasks` page is now functional (no longer a placeholder):
   - Loads tasks for current Telegram user / active household.
   - Lets user toggle task status between `open` and `done`.
-  - Shows AI parse badges (`AI parsed`, `needs review`) and due date when available.
+  - Shows task scope badges (`Личная` / `Дом: <name>`), AI badges, and due date.
+  - Supports filtering/sorting by scope and deadline, plus date-range calendar controls and reset.
+  - Supports task details modal (including original forwarded message and source ids for Telegram tasks).
+  - Supports task editing (title, deadline, scope, home).
 - Added Telegram bot webhook endpoint `POST /api/bot/webhook`:
   - Accepts Telegram updates, validates optional secret token, and asks user to choose task scope via inline buttons.
-  - Scope choice flow: **Personal** (visible only to task owner) or **Shared household** (visible to all household members).
-  - Uses draft table + idempotent source keys to safely process message -> choice -> task creation.
-  - Integrates AI task parsing when `GEMINI_API_KEY` is available, with fallback to plain text task creation.
+  - Scope choice flow: **Personal** or **Shared household**; when user has multiple homes, webhook asks for explicit home selection.
+  - Uses draft table + source keys to safely process message -> choice -> task creation.
+  - Fast UX: immediate callback acknowledgment (`Обрабатываю...`) and deferred AI parsing after user choice.
+  - Supports message ingestion modes:
+    - `single`: one message -> one draft/task flow
+    - `combine`: multiple messages merged into one pending draft before finalization
+  - Media without caption is supported with fallback titles (`Задача из фото`, `...из файла`, etc.).
+  - Link messages default to title `Задача из ссылки` (URL content parsing postponed to backlog).
 
 ## Stage 7 - Reminders
 
@@ -209,6 +226,8 @@ Scope and plan:
 - `plant_ai_watering_amount.sql` — adds `plants.watering_amount_recommendation`, migrates legacy values (`little`/`a_lot`), and extends room details payload.
 - `plant_ai_watering_summary.sql` — adds `plants.watering_summary` and extends room details payload.
 - `tasks_bot_reminders.sql` — adds `tasks` + `task_reminders_log`, task RPCs, and grants used by secure API and reminder worker.
+- `tasks_scope_and_bot_choice.sql` — adds personal/shared task scope, bot drafts, and task visibility logic for multi-home users.
+- `task_message_mode_settings.sql` — adds per-profile bot task ingestion mode (`single`/`combine`).
 
 ## Current Behavior Summary
 

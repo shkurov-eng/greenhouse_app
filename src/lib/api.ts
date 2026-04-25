@@ -438,3 +438,38 @@ export async function deleteTask(initData: string | null, taskId: string) {
     payload: { taskId },
   });
 }
+
+export async function updateTask(
+  initData: string | null,
+  payload: {
+    taskId: string;
+    title: string;
+    dueAt?: string | null;
+    taskScope: "personal" | "household";
+    householdId: string;
+  },
+) {
+  return secureRequest<{ id: string }>({
+    action: "updateTask",
+    initData,
+    payload,
+  });
+}
+
+export async function getTaskSettings(initData: string | null) {
+  return secureRequest<{ taskMessageMode: "single" | "combine" }>({
+    action: "getTaskSettings",
+    initData,
+  });
+}
+
+export async function setTaskSettings(
+  initData: string | null,
+  payload: { taskMessageMode: "single" | "combine" },
+) {
+  return secureRequest<{ taskMessageMode: "single" | "combine" }>({
+    action: "setTaskSettings",
+    initData,
+    payload,
+  });
+}

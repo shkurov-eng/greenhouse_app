@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Circle, Inbox, RefreshCw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Circle, Inbox, Pencil, RefreshCw, X } from "lucide-react";
 
 import { MobileShell } from "@/components/MobileShell";
-import { listHouseholds, listTasks, updateTaskStatus, type Task } from "@/lib/api";
+import { listHouseholds, listTasks, updateTask, updateTaskStatus, type Task } from "@/lib/api";
 
 function resolveTelegramInitData() {
   if (typeof window === "undefined") {
@@ -13,6 +13,13 @@ function resolveTelegramInitData() {
   }
   const telegram = (window as Window & { Telegram?: { WebApp?: { initData?: string } } }).Telegram;
   return telegram?.WebApp?.initData?.trim() || null;
+}
+
+function hasUrl(text: string | null) {
+  if (!text) {
+    return false;
+  }
+  return /(https?:\/\/|www\.)\S+/i.test(text);
 }
 
 export default function TasksPage() {
@@ -27,6 +34,14 @@ export default function TasksPage() {
   >("created_desc");
   const [deadlineFrom, setDeadlineFrom] = useState("");
   const [deadlineTo, setDeadlineTo] = useState("");
+  const [households, setHouseholds] = useState<Array<{ household_id: string; household_name: string }>>([]);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDueAt, setEditDueAt] = useState("");
+  const [editTaskScope, setEditTaskScope] = useState<"personal" | "household">("personal");
+  const [editHouseholdId, setEditHouseholdId] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const initData = useMemo(() => resolveTelegramInitData(), []);
 
@@ -36,6 +51,7 @@ export default function TasksPage() {
     try {
       const [data, households] = await Promise.all([listTasks(initData), listHouseholds(initData)]);
       setTasks(data);
+      setHouseholds(households);
       const nextMap: Record<string, string> = {};
       for (const household of households) {
         nextMap[household.household_id] = household.household_name;
@@ -85,6 +101,61 @@ export default function TasksPage() {
     },
     [initData],
   );
+
+  const openEdit = useCallback((task: Task) => {
+    setEditingTask(task);
+    setEditTitle(task.title);
+    setEditDueAt(task.due_at ? new Date(task.due_at).toISOString().slice(0, 16) : "");
+    setEditTaskScope(task.task_scope);
+    setEditHouseholdId(task.household_id);
+  }, []);
+
+  const saveEdit = useCallback(async () => {
+    if (!editingTask) {
+      return;
+    }
+    const title = editTitle.trim();
+    if (!title) {
+      setMessage("Task title is required");
+      return;
+    }
+    if (!editHouseholdId) {
+      setMessage("Select home");
+      return;
+    }
+    setSavingEdit(true);
+    setMessage(null);
+    try {
+      const dueAt = editDueAt ? new Date(editDueAt).toISOString() : null;
+      await updateTask(initData, {
+        taskId: editingTask.id,
+        title,
+        dueAt,
+        taskScope: editTaskScope,
+        householdId: editHouseholdId,
+      });
+      setTasks((prev) =>
+        prev.map((item) =>
+          item.id === editingTask.id
+            ? {
+                ...item,
+                title,
+                due_at: dueAt,
+                task_scope: editTaskScope,
+                household_id: editHouseholdId,
+                updated_at: new Date().toISOString(),
+              }
+            : item,
+        ),
+      );
+      setEditingTask(null);
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "Failed to save task";
+      setMessage(text);
+    } finally {
+      setSavingEdit(false);
+    }
+  }, [editingTask, editTitle, editDueAt, editTaskScope, editHouseholdId, initData]);
 
   const visibleTasks = useMemo(() => {
     const startMs = deadlineFrom ? new Date(`${deadlineFrom}T00:00:00`).getTime() : null;
@@ -266,12 +337,13 @@ export default function TasksPage() {
                   const isDone = task.status === "done";
                   const dueText = task.due_at ? new Date(task.due_at).toLocaleString() : null;
                   const householdName = householdNameById[task.household_id] ?? "Unknown home";
+                  const fromLink = hasUrl(task.description);
                   return (
                     <li
                       key={task.id}
                       className="flex items-start justify-between gap-3 rounded-2xl border border-[#ece6e1] px-3 py-3"
                     >
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1 text-left">
                         <p className={`text-sm font-semibold ${isDone ? "text-[#8e8a86] line-through" : "text-[#1f1b17]"}`}>
                           {task.title}
                         </p>
@@ -283,7 +355,7 @@ export default function TasksPage() {
                                 : "bg-[#f3eefb] text-[#6a3ea1]"
                             }`}
                           >
-                            {task.task_scope === "household" ? `Дом: ${householdName}` : `Личная · ${householdName}`}
+                            {task.task_scope === "household" ? `Дом: ${householdName}` : "Личная"}
                           </span>
                         </p>
                         {task.description ? (
@@ -291,20 +363,38 @@ export default function TasksPage() {
                         ) : null}
                         <p className="mt-1 text-[11px] uppercase tracking-wide text-[#8e8a86]">
                           {task.priority}
+                          {fromLink ? " · из ссылки" : ""}
                           {task.parse_source === "ai" ? " · AI parsed" : ""}
                           {task.needs_review ? " · needs review" : ""}
                           {dueText ? ` · due ${dueText}` : ""}
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        disabled={busyTaskId === task.id}
-                        onClick={() => void toggleStatus(task)}
-                        className="rounded-full p-1 text-[#006c49] disabled:cursor-not-allowed disabled:opacity-60"
-                        aria-label={isDone ? "Mark as open" : "Mark as done"}
-                      >
-                        {isDone ? <CheckCircle2 className="h-5 w-5" /> : <Circle className="h-5 w-5" />}
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTask(task)}
+                          className="rounded-full border border-[#d9cec6] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#6c7a71] hover:bg-[#f5f1ed]"
+                        >
+                          Details
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEdit(task)}
+                          className="rounded-full p-1 text-[#6c7a71] hover:bg-[#f5f1ed]"
+                          aria-label="Edit task"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyTaskId === task.id}
+                          onClick={() => void toggleStatus(task)}
+                          className="rounded-full p-1 text-[#006c49] disabled:cursor-not-allowed disabled:opacity-60"
+                          aria-label={isDone ? "Mark as open" : "Mark as done"}
+                        >
+                          {isDone ? <CheckCircle2 className="h-5 w-5" /> : <Circle className="h-5 w-5" />}
+                        </button>
+                      </div>
                     </li>
                   );
                 })}
@@ -312,6 +402,122 @@ export default function TasksPage() {
             )}
           </section>
         </div>
+
+        {selectedTask ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center">
+            <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-base font-bold text-[#1f1b17]">Task details</h2>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTask(null)}
+                  className="rounded-full p-1 text-[#6c7a71] hover:bg-[#f3efeb]"
+                  aria-label="Close details"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="text-sm font-semibold text-[#1f1b17]">{selectedTask.title}</p>
+              <p className="mt-2 text-xs text-[#6c7a71]">
+                {selectedTask.task_scope === "household"
+                  ? `Дом: ${householdNameById[selectedTask.household_id] ?? "Unknown home"}`
+                  : "Личная"}
+              </p>
+              {hasUrl(selectedTask.description) ? (
+                <p className="mt-1 text-xs font-semibold text-[#006c49]">Источник: ссылка</p>
+              ) : null}
+              {selectedTask.source_platform === "telegram" && selectedTask.description ? (
+                <div className="mt-4 rounded-xl border border-[#ece6e1] bg-[#fffaf6] p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8e8a86]">
+                    Оригинал пересланного сообщения
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-[#3a332e]">{selectedTask.description}</p>
+                  <p className="mt-2 text-[11px] text-[#8e8a86]">
+                    source_message_id: {selectedTask.source_message_id ?? "n/a"} · source_chat_id:{" "}
+                    {selectedTask.source_chat_id ?? "n/a"}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {editingTask ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center">
+            <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-base font-bold text-[#1f1b17]">Edit task</h2>
+                <button
+                  type="button"
+                  onClick={() => setEditingTask(null)}
+                  className="rounded-full p-1 text-[#6c7a71] hover:bg-[#f3efeb]"
+                  aria-label="Close editor"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
+                Task
+                <input
+                  value={editTitle}
+                  onChange={(event) => setEditTitle(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
+                />
+              </label>
+              <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
+                Deadline time
+                <input
+                  type="datetime-local"
+                  value={editDueAt}
+                  onChange={(event) => setEditDueAt(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
+                />
+              </label>
+              <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
+                Type
+                <select
+                  value={editTaskScope}
+                  onChange={(event) => setEditTaskScope(event.target.value as "personal" | "household")}
+                  className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
+                >
+                  <option value="personal">Личная</option>
+                  <option value="household">Общая на дом</option>
+                </select>
+              </label>
+              <label className="mb-4 block text-xs font-semibold uppercase tracking-wide text-[#6c7a71]">
+                Home
+                <select
+                  value={editHouseholdId}
+                  onChange={(event) => setEditHouseholdId(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[#e7ddd6] bg-white px-3 py-2 text-sm text-[#1f1b17]"
+                >
+                  {households.map((home) => (
+                    <option key={home.household_id} value={home.household_id}>
+                      {home.household_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingTask(null)}
+                  className="rounded-full border border-[#d9cec6] bg-white px-4 py-2 text-sm font-semibold text-[#6c7a71]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={savingEdit}
+                  onClick={() => void saveEdit()}
+                  className="rounded-full bg-[#006c49] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {savingEdit ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </main>
     </MobileShell>
   );

@@ -9,6 +9,8 @@ type DbSingleResult = Promise<{ data: unknown; error: DbError }>;
 type LooseSelectBuilder = {
   eq: (column: string, value: string | number) => LooseSelectBuilder;
   is: (column: string, value: null) => LooseSelectBuilder;
+  order: (column: string, options: { ascending: boolean }) => LooseSelectBuilder;
+  limit: (count: number) => LooseSelectBuilder;
   maybeSingle: () => DbSingleResult;
 };
 type LooseTableApi = {
@@ -30,6 +32,12 @@ type TelegramMessage = {
   caption?: string;
   chat?: { id?: number };
   from?: { id?: number };
+  photo?: Array<unknown>;
+  video?: unknown;
+  document?: unknown;
+  audio?: unknown;
+  voice?: unknown;
+  sticker?: unknown;
 };
 
 type TelegramUpdate = {
@@ -81,6 +89,10 @@ function parseHouseCallbackData(value: string) {
   };
 }
 
+function hasUrl(text: string) {
+  return /(https?:\/\/|www\.)\S+/i.test(text);
+}
+
 async function listHouseholdsByTelegramId(telegramId: number) {
   const supabaseAdmin = getSupabaseAdmin();
   type RpcResponse = { data: unknown; error: { message: string } | null };
@@ -114,13 +126,18 @@ export async function POST(request: NextRequest) {
     const update = (await request.json()) as TelegramUpdate;
     const callbackQuery = update.callback_query;
     if (callbackQuery?.id && callbackQuery.data && callbackQuery.from?.id) {
+      await telegramApiCall("answerCallbackQuery", {
+        callback_query_id: callbackQuery.id,
+        text: "Обрабатываю...",
+        show_alert: false,
+      });
+
       const parsedScope = parseScopeCallbackData(callbackQuery.data);
       const parsedHouse = parseHouseCallbackData(callbackQuery.data);
       if (!parsedScope && !parsedHouse) {
-        await telegramApiCall("answerCallbackQuery", {
-          callback_query_id: callbackQuery.id,
-          text: "Неверное действие",
-          show_alert: false,
+        await telegramApiCall("sendMessage", {
+          chat_id: callbackQuery.from.id,
+          text: "Неверное действие. Попробуй еще раз.",
         });
         return NextResponse.json({ data: { ok: true, skipped: "unsupported_callback_data" } });
       }
@@ -140,10 +157,9 @@ export async function POST(request: NextRequest) {
         throw new Error(draftError.message);
       }
       if (!draft) {
-        await telegramApiCall("answerCallbackQuery", {
-          callback_query_id: callbackQuery.id,
-          text: "Эта задача уже обработана",
-          show_alert: false,
+        await telegramApiCall("sendMessage", {
+          chat_id: callbackQuery.from.id,
+          text: "Эта задача уже обработана.",
         });
         return NextResponse.json({ data: { ok: true, skipped: "draft_not_found_or_consumed" } });
       }
@@ -181,20 +197,14 @@ export async function POST(request: NextRequest) {
               ]),
             },
           });
-          await telegramApiCall("answerCallbackQuery", {
-            callback_query_id: callbackQuery.id,
-            text: "Выбери дом",
-            show_alert: false,
-          });
           return NextResponse.json({ data: { ok: true, waiting_for_household_choice: true } });
         }
       } else {
         const selectedScope = String(draftRow.selected_scope ?? "");
         if (selectedScope !== "personal" && selectedScope !== "household") {
-          await telegramApiCall("answerCallbackQuery", {
-            callback_query_id: callbackQuery.id,
-            text: "Сначала выбери тип задачи",
-            show_alert: false,
+          await telegramApiCall("sendMessage", {
+            chat_id: draftChatId,
+            text: "Сначала выбери тип задачи.",
           });
           return NextResponse.json({ data: { ok: true, skipped: "scope_not_selected" } });
         }
@@ -202,14 +212,70 @@ export async function POST(request: NextRequest) {
         const homes = await listHouseholdsByTelegramId(draftTelegramId);
         const targetHome = homes[parsedHouse!.houseIndex];
         if (!targetHome) {
-          await telegramApiCall("answerCallbackQuery", {
-            callback_query_id: callbackQuery.id,
-            text: "Дом не найден",
-            show_alert: false,
+          await telegramApiCall("sendMessage", {
+            chat_id: draftChatId,
+            text: "Дом не найден. Выбери снова.",
           });
           return NextResponse.json({ data: { ok: true, skipped: "household_not_found" } });
         }
         householdId = targetHome.household_id;
+      }
+
+      const rawText = String(draftRow.raw_text ?? "").trim();
+      let taskTitle = String(draftRow.normalized_title ?? rawText).slice(0, 140);
+      let taskPriority = String(draftRow.priority ?? "normal");
+      let taskDueAt = draftRow.due_at ?? null;
+      let taskType = draftRow.task_type ?? null;
+      let assigneeHint = draftRow.assignee_hint ?? null;
+      let parseSource = String(draftRow.parse_source ?? "manual");
+      let aiParseStatus = String(draftRow.ai_parse_status ?? "not_requested");
+      let aiConfidence = draftRow.ai_confidence ?? null;
+      let aiParsedAt = draftRow.ai_parsed_at ?? null;
+      let aiRawJson: unknown = draftRow.ai_raw_json ?? null;
+      let needsReview = Boolean(draftRow.needs_review);
+
+      // Fast first response: scope choice appears immediately. AI parsing happens later here.
+      if (aiParseStatus === "not_requested" && rawText) {
+        const ai = await parseTaskTextWithAi(rawText);
+        if (ai.parsed) {
+          taskTitle = ai.parsed.normalizedTitle.slice(0, 140);
+          taskPriority = ai.parsed.priority;
+          taskDueAt = ai.parsed.dueAt;
+          taskType = ai.parsed.taskType;
+          assigneeHint = ai.parsed.assigneeHint;
+          parseSource = "ai";
+          aiParseStatus = ai.parsed.status;
+          aiConfidence = ai.parsed.confidence;
+          aiParsedAt = new Date().toISOString();
+          aiRawJson = ai.parsed.rawJson;
+          needsReview = ai.parsed.needsReview;
+        } else {
+          parseSource = "manual";
+          aiParseStatus = "failed";
+          aiConfidence = null;
+          aiParsedAt = null;
+          aiRawJson = null;
+          needsReview = false;
+        }
+        const { error: refreshDraftError } = await db
+          .from("bot_task_drafts")
+          .update({
+            normalized_title: taskTitle,
+            priority: taskPriority,
+            due_at: taskDueAt,
+            task_type: taskType,
+            assignee_hint: assigneeHint,
+            parse_source: parseSource,
+            ai_parse_status: aiParseStatus,
+            ai_confidence: aiConfidence,
+            ai_parsed_at: aiParsedAt,
+            ai_raw_json: aiRawJson,
+            needs_review: needsReview,
+          })
+          .eq("id", draftId);
+        if (refreshDraftError) {
+          throw new Error(refreshDraftError.message);
+        }
       }
 
       const { error: insertError } = await db.from("tasks").upsert(
@@ -218,22 +284,22 @@ export async function POST(request: NextRequest) {
           created_by_profile_id: draftRow.created_by_profile_id,
           assignee_profile_id: scope === "personal" ? draftRow.created_by_profile_id : null,
           task_scope: scope,
-          title: draftRow.normalized_title,
-          description: draftRow.raw_text,
+          title: taskTitle,
+          description: rawText,
           status: "open",
-          priority: draftRow.priority,
-          due_at: draftRow.due_at,
+          priority: taskPriority,
+          due_at: taskDueAt,
           source_platform: draftRow.source_platform,
           source_chat_id: draftRow.source_chat_id,
           source_message_id: draftRow.source_message_id,
-          task_type: draftRow.task_type,
-          assignee_hint: draftRow.assignee_hint,
-          parse_source: draftRow.parse_source,
-          ai_parse_status: draftRow.ai_parse_status,
-          ai_confidence: draftRow.ai_confidence,
-          ai_parsed_at: draftRow.ai_parsed_at,
-          ai_raw_json: draftRow.ai_raw_json,
-          needs_review: draftRow.needs_review,
+          task_type: taskType,
+          assignee_hint: assigneeHint,
+          parse_source: parseSource,
+          ai_parse_status: aiParseStatus,
+          ai_confidence: aiConfidence,
+          ai_parsed_at: aiParsedAt,
+          ai_raw_json: aiRawJson,
+          needs_review: needsReview,
         },
         {
           onConflict: "source_platform,source_chat_id,source_message_id",
@@ -255,10 +321,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      await telegramApiCall("answerCallbackQuery", {
-        callback_query_id: callbackQuery.id,
-        text: scope === "household" ? "Создана общая задача для дома" : "Создана личная задача",
-        show_alert: false,
+      await telegramApiCall("sendMessage", {
+        chat_id: draftChatId,
+        text: scope === "household" ? "Создана общая задача для дома." : "Создана личная задача.",
       });
       return NextResponse.json({ data: { ok: true, created: true, task_scope: scope } });
     }
@@ -268,18 +333,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ data: { ok: true, skipped: "unsupported_update_type" } });
     }
 
-    const rawText = (message.text ?? message.caption ?? "").trim();
+    const explicitText = (message.text ?? message.caption ?? "").trim();
+    const mediaFallbackText =
+      Array.isArray(message.photo) && message.photo.length > 0
+        ? "Задача из фото"
+        : message.video
+          ? "Задача из видео"
+          : message.document
+            ? "Задача из файла"
+            : message.audio
+              ? "Задача из аудио"
+              : message.voice
+                ? "Задача из голосового сообщения"
+                : message.sticker
+                  ? "Задача из стикера"
+                  : "Задача из сообщения";
+    const rawText = explicitText || mediaFallbackText;
     const chatId = message.chat?.id ?? null;
     const messageId = message.message_id ?? null;
     const fromTelegramId = message.from?.id ?? null;
-    if (!rawText || chatId == null || messageId == null || fromTelegramId == null) {
+    if (chatId == null || messageId == null || fromTelegramId == null) {
       return NextResponse.json({ data: { ok: true, skipped: "missing_message_fields" } });
     }
 
     const supabaseAdmin = getSupabaseAdmin();
     const { data: profileRow, error: profileError } = await supabaseAdmin
       .from("profiles")
-      .select("id,active_household_id")
+      .select("id,active_household_id,task_message_mode")
       .eq("telegram_id", fromTelegramId)
       .single();
     if (profileError) {
@@ -287,16 +367,62 @@ export async function POST(request: NextRequest) {
         data: { ok: true, skipped: "profile_not_found", detail: profileError.message },
       });
     }
-    const profile = profileRow as { id?: string; active_household_id?: string | null };
+    const profile = profileRow as {
+      id?: string;
+      active_household_id?: string | null;
+      task_message_mode?: string | null;
+    };
     if (!profile.id || !profile.active_household_id) {
       return NextResponse.json({ data: { ok: true, skipped: "missing_active_household" } });
     }
+    const taskMessageMode = profile.task_message_mode === "combine" ? "combine" : "single";
 
-    const ai = await parseTaskTextWithAi(rawText);
-    const aiParsed = ai.parsed;
-    const title = (aiParsed?.normalizedTitle || rawText).slice(0, 140);
+    const title = hasUrl(rawText) ? "Задача из ссылки" : rawText.slice(0, 140);
 
     const db = supabaseAdmin as unknown as LooseTableApi;
+    if (taskMessageMode === "combine") {
+      const { data: existingDraft, error: existingDraftError } = await db
+        .from("bot_task_drafts")
+        .select("id,raw_text")
+        .eq("created_by_profile_id", profile.id)
+        .eq("source_chat_id", chatId)
+        .is("selected_scope", null)
+        .is("consumed_at", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existingDraftError) {
+        throw new Error(existingDraftError.message);
+      }
+      if (existingDraft) {
+        const draft = existingDraft as { id?: string | null; raw_text?: string | null };
+        const existingRaw = String(draft.raw_text ?? "").trim();
+        const mergedRaw = existingRaw ? `${existingRaw}\n\n${rawText}` : rawText;
+        const { error: mergeError } = await db
+          .from("bot_task_drafts")
+          .update({
+            raw_text: mergedRaw,
+            normalized_title: hasUrl(mergedRaw) ? "Задача из ссылки" : mergedRaw.slice(0, 140),
+          })
+          .eq("id", String(draft.id ?? ""));
+        if (mergeError) {
+          throw new Error(mergeError.message);
+        }
+        await telegramApiCall("sendMessage", {
+          chat_id: chatId,
+          text: "Добавил сообщение в текущий черновик задачи.",
+        });
+        return NextResponse.json({
+          data: {
+            ok: true,
+            created: false,
+            merged_into_existing_draft: true,
+            task_message_mode: "combine",
+          },
+        });
+      }
+    }
+
     const { error: draftUpsertError } = await db.from("bot_task_drafts").upsert(
       {
         source_platform: "telegram",
@@ -307,16 +433,16 @@ export async function POST(request: NextRequest) {
         household_id: profile.active_household_id,
         raw_text: rawText,
         normalized_title: title,
-        priority: aiParsed?.priority ?? "normal",
-        due_at: aiParsed?.dueAt ?? null,
-        task_type: aiParsed?.taskType ?? null,
-        assignee_hint: aiParsed?.assigneeHint ?? null,
-        parse_source: aiParsed ? "ai" : "manual",
-        ai_parse_status: aiParsed?.status ?? "failed",
-        ai_confidence: aiParsed?.confidence ?? null,
-        ai_parsed_at: aiParsed ? new Date().toISOString() : null,
-        ai_raw_json: aiParsed?.rawJson ?? null,
-        needs_review: aiParsed?.needsReview ?? false,
+        priority: "normal",
+        due_at: null,
+        task_type: null,
+        assignee_hint: null,
+        parse_source: "manual",
+        ai_parse_status: "not_requested",
+        ai_confidence: null,
+        ai_parsed_at: null,
+        ai_raw_json: null,
+        needs_review: false,
         selected_scope: null,
         consumed_at: null,
       },
@@ -364,8 +490,7 @@ export async function POST(request: NextRequest) {
         ok: true,
         created: false,
         waiting_for_scope_choice: true,
-        ai_status: aiParsed?.status ?? "failed",
-        ai_error: ai.errorMessage,
+        task_message_mode: taskMessageMode,
       },
     });
   } catch (error) {
