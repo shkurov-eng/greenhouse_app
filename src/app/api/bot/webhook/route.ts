@@ -89,6 +89,17 @@ function parseHouseCallbackData(value: string) {
   };
 }
 
+function parseJoinReviewCallbackData(value: string) {
+  const match = /^join_review:(approve|reject):([0-9a-f-]{36})$/i.exec(value);
+  if (!match) {
+    return null;
+  }
+  return {
+    decision: match[1].toLowerCase() as "approve" | "reject",
+    requestId: match[2],
+  };
+}
+
 function hasUrl(text: string) {
   return /(https?:\/\/|www\.)\S+/i.test(text);
 }
@@ -134,12 +145,77 @@ export async function POST(request: NextRequest) {
 
       const parsedScope = parseScopeCallbackData(callbackQuery.data);
       const parsedHouse = parseHouseCallbackData(callbackQuery.data);
-      if (!parsedScope && !parsedHouse) {
+      const parsedJoinReview = parseJoinReviewCallbackData(callbackQuery.data);
+      if (!parsedScope && !parsedHouse && !parsedJoinReview) {
         await telegramApiCall("sendMessage", {
           chat_id: callbackQuery.from.id,
           text: "Неверное действие. Попробуй еще раз.",
         });
         return NextResponse.json({ data: { ok: true, skipped: "unsupported_callback_data" } });
+      }
+
+      if (parsedJoinReview) {
+        const supabaseAdmin = getSupabaseAdmin();
+        type RpcResponse = { data: unknown; error: { message: string } | null };
+        const rpcAny = supabaseAdmin.rpc.bind(supabaseAdmin) as unknown as (
+          rpcName: string,
+          rpcParams?: Record<string, unknown>,
+        ) => Promise<RpcResponse>;
+
+        const { data, error } = await rpcAny("api_review_household_join_request", {
+          p_telegram_id: String(callbackQuery.from.id),
+          p_request_id: parsedJoinReview.requestId,
+          p_decision: parsedJoinReview.decision,
+        });
+        if (error) {
+          await telegramApiCall("sendMessage", {
+            chat_id: callbackQuery.from.id,
+            text: `Не удалось обработать заявку: ${error.message}`,
+          });
+          return NextResponse.json({ data: { ok: true, skipped: "join_request_review_failed" } });
+        }
+
+        const row = Array.isArray(data) ? data[0] : data;
+        const reviewed = (row as Record<string, unknown> | null) ?? {};
+        const householdName = String(reviewed.household_name ?? "дом");
+        const requesterTelegramId = Number(reviewed.requester_telegram_id ?? 0);
+        const requesterUsername =
+          reviewed.requester_username == null || reviewed.requester_username === ""
+            ? null
+            : String(reviewed.requester_username);
+
+        const ownerText =
+          parsedJoinReview.decision === "approve"
+            ? `Заявка одобрена для "${householdName}".`
+            : `Заявка отклонена для "${householdName}".`;
+        await telegramApiCall("sendMessage", {
+          chat_id: callbackQuery.from.id,
+          text: ownerText,
+        });
+
+        if (Number.isFinite(requesterTelegramId) && requesterTelegramId > 0) {
+          const requesterText =
+            parsedJoinReview.decision === "approve"
+              ? `Ваша заявка на вступление в "${householdName}" одобрена. Откройте Mini App и снова нажмите Join по коду дома.`
+              : `Ваша заявка на вступление в "${householdName}" отклонена.`;
+          await telegramApiCall("sendMessage", {
+            chat_id: requesterTelegramId,
+            text: requesterText,
+          });
+        } else if (requesterUsername) {
+          console.warn("[bot-webhook] join requester has no telegram id for notification", {
+            requesterUsername,
+            requestId: parsedJoinReview.requestId,
+          });
+        }
+
+        return NextResponse.json({
+          data: {
+            ok: true,
+            join_request_reviewed: true,
+            decision: parsedJoinReview.decision,
+          },
+        });
       }
 
       const supabaseAdmin = getSupabaseAdmin();

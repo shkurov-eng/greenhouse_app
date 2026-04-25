@@ -36,6 +36,13 @@ This document summarizes what has already been implemented in the project.
 
 - Household bootstrap and join are done through RPC (`api_bootstrap_user`, `api_join_household`) invoked from `/api/secure`.
 - Invite codes are generated server-side in SQL where applicable.
+- Current invite-code generator (`api_generate_invite_code`) produces 10-character uppercase codes from a non-ambiguous alphabet (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`).
+- Join by invite code is protected from brute-force attempts via persistent DB-backed rate limiting (`api_check_join_invite_rate_limit`, `api_register_join_invite_failure`, `api_clear_join_invite_failures`): 5 failed attempts per 15 minutes -> 15-minute block.
+- Optional owner approval for join-by-invite:
+  - Household owner can enable `require_join_approval` in Settings.
+  - Join attempts create pending requests instead of instant membership.
+  - Owner sees pending requests in Settings (`Telegram ID`, `username`, home name, invite code) and can approve/reject.
+  - Bot notifies owner about each pending request and provides inline `Approve` / `Reject` buttons in Telegram.
 - Join home in UI:
   - Homes section shows invite code with **copy to clipboard** action.
   - User can join another home via invite code modal (`Join with code`).
@@ -228,6 +235,7 @@ Scope and plan:
 - `tasks_bot_reminders.sql` — adds `tasks` + `task_reminders_log`, task RPCs, and grants used by secure API and reminder worker.
 - `tasks_scope_and_bot_choice.sql` — adds personal/shared task scope, bot drafts, and task visibility logic for multi-home users.
 - `task_message_mode_settings.sql` — adds per-profile bot task ingestion mode (`single`/`combine`).
+- `household_join_approval.sql` — adds owner-approval flow for invite joins, pending join requests, and settings/review RPCs.
 
 ## Current Behavior Summary
 

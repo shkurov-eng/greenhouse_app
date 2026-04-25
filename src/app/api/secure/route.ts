@@ -11,6 +11,10 @@ type SecureAction =
   | "setActiveHousehold"
   | "deleteHousehold"
   | "renameHousehold"
+  | "getHouseholdJoinSettings"
+  | "setHouseholdJoinSetting"
+  | "listHouseholdJoinRequests"
+  | "reviewHouseholdJoinRequest"
   | "listRooms"
   | "createRoom"
   | "renameRoom"
@@ -62,6 +66,9 @@ type LooseTableApi = {
   };
 };
 
+const INVITE_CODE_LENGTH = 10;
+const INVITE_CODE_REGEX = new RegExp(`^[A-Z2-9]{${INVITE_CODE_LENGTH}}$`);
+
 function unwrapSingleRow<T>(data: unknown): T {
   if (Array.isArray(data)) {
     if (data.length === 0) {
@@ -80,6 +87,51 @@ function asString(value: unknown, fieldName: string) {
     throw new Error(`Invalid ${fieldName}`);
   }
   return value.trim();
+}
+
+function asInviteCode(value: unknown) {
+  const inviteCode = asString(value, "inviteCode").toUpperCase();
+  if (!INVITE_CODE_REGEX.test(inviteCode)) {
+    throw new Error("Invalid invite code format");
+  }
+  return inviteCode;
+}
+
+function getInviteJoinThrottleKey(request: NextRequest, telegramId: string) {
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  const firstForwardedIp = forwardedFor?.split(",")[0]?.trim() ?? "";
+  const realIp = request.headers.get("x-real-ip")?.trim() ?? "";
+  const ipPart = firstForwardedIp || realIp || "unknown-ip";
+  return `${telegramId}:${ipPart}`;
+}
+
+async function ensureInviteJoinNotBlocked(key: string) {
+  const result = await rpc("api_check_join_invite_rate_limit", {
+    p_key: key,
+  });
+  const row = unwrapSingleRow<{ is_blocked?: boolean; retry_after_seconds?: number }>(result);
+  if (!row.is_blocked) {
+    return;
+  }
+  const retryAfterSec = Math.max(1, Number(row.retry_after_seconds ?? 0));
+  throw new Error(`Too many failed attempts. Try again in ${retryAfterSec} seconds`);
+}
+
+async function recordInviteJoinFailure(key: string) {
+  const result = await rpc("api_register_join_invite_failure", {
+    p_key: key,
+  });
+  const row = unwrapSingleRow<{ is_blocked?: boolean; retry_after_seconds?: number }>(result);
+  if (row.is_blocked) {
+    const retryAfterSec = Math.max(1, Number(row.retry_after_seconds ?? 0));
+    throw new Error(`Too many failed attempts. Try again in ${retryAfterSec} seconds`);
+  }
+}
+
+async function clearInviteJoinFailures(key: string) {
+  await rpc("api_clear_join_invite_failures", {
+    p_key: key,
+  });
 }
 
 function asOptionalString(value: unknown) {
@@ -213,6 +265,23 @@ async function rpc(fn: string, params: Record<string, unknown>): Promise<unknown
     throw new Error(error.message);
   }
   return data as unknown;
+}
+
+async function telegramApiCall(method: string, payload: Record<string, unknown>) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!botToken) {
+    return;
+  }
+  const response = await fetch(`https://api.telegram.org/bot${encodeURIComponent(botToken)}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    const compact = text.replace(/\s+/g, " ").trim().slice(0, 220);
+    throw new Error(`Telegram API ${method} failed: ${compact || response.statusText}`);
+  }
 }
 
 function roomsStoragePathFromLegacyPublicUrl(url: string): string | null {
@@ -358,12 +427,150 @@ export async function POST(request: NextRequest) {
       }
 
       case "joinHousehold": {
-        const inviteCode = asString(payload.inviteCode, "inviteCode").toUpperCase();
-        const result = await rpc("api_join_household", {
+        const inviteCode = asInviteCode(payload.inviteCode);
+        const throttleKey = getInviteJoinThrottleKey(request, String(telegramId));
+        await ensureInviteJoinNotBlocked(throttleKey);
+
+        try {
+          const result = await rpc("api_join_household", {
+            p_telegram_id: telegramId,
+            p_invite_code: inviteCode,
+          });
+          await clearInviteJoinFailures(throttleKey);
+          const row = unwrapSingleRow<Record<string, unknown>>(result);
+          const data = {
+            join_status: String(row.join_status ?? "joined"),
+            household_id: String(row.household_id ?? ""),
+            household_name: String(row.household_name ?? ""),
+            invite_code:
+              row.invite_code == null || row.invite_code === ""
+                ? null
+                : String(row.invite_code),
+            request_id:
+              row.request_id == null || row.request_id === ""
+                ? null
+                : String(row.request_id),
+            owner_telegram_id:
+              row.owner_telegram_id == null || row.owner_telegram_id === ""
+                ? null
+                : Number(row.owner_telegram_id),
+          };
+
+          if (
+            data.join_status === "pending_approval" &&
+            data.request_id &&
+            data.owner_telegram_id &&
+            Number.isFinite(data.owner_telegram_id)
+          ) {
+            await telegramApiCall("sendMessage", {
+              chat_id: data.owner_telegram_id,
+              text:
+                `Новая заявка на вступление в дом "${data.household_name}".\n` +
+                `Telegram ID пользователя: ${telegramId}`,
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    { text: "Approve", callback_data: `join_review:approve:${data.request_id}` },
+                    { text: "Reject", callback_data: `join_review:reject:${data.request_id}` },
+                  ],
+                ],
+              },
+            }).catch((notifyError) => {
+              console.warn("[secure-api] failed to notify household owner about join request", {
+                message: notifyError instanceof Error ? notifyError.message : String(notifyError),
+                householdId: data.household_id,
+                requestId: data.request_id,
+              });
+            });
+          }
+          return NextResponse.json({ data });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "";
+          if (message.toLowerCase().includes("invite code not found")) {
+            await recordInviteJoinFailure(throttleKey);
+          }
+          throw error;
+        }
+      }
+
+      case "getHouseholdJoinSettings": {
+        const raw = (await rpc("api_get_household_join_settings", {
           p_telegram_id: telegramId,
-          p_invite_code: inviteCode,
+        })) as Array<Record<string, unknown>> | null;
+        const rows = raw ?? [];
+        const data = rows.map((row) => ({
+          household_id: String(row.household_id),
+          household_name: String(row.household_name ?? ""),
+          require_join_approval: Boolean(row.require_join_approval),
+          is_owner: Boolean(row.is_owner),
+        }));
+        return NextResponse.json({ data });
+      }
+
+      case "setHouseholdJoinSetting": {
+        const householdId = asUuid(payload.householdId, "householdId");
+        const requireJoinApproval = Boolean(payload.requireJoinApproval);
+        const result = await rpc("api_set_household_join_setting", {
+          p_telegram_id: telegramId,
+          p_household_id: householdId,
+          p_require_join_approval: requireJoinApproval,
         });
-        const data = unwrapSingleRow<Record<string, unknown>>(result);
+        const row = unwrapSingleRow<Record<string, unknown>>(result);
+        const data = {
+          household_id: String(row.household_id),
+          household_name: String(row.household_name ?? ""),
+          require_join_approval: Boolean(row.require_join_approval),
+          is_owner: Boolean(row.is_owner),
+        };
+        return NextResponse.json({ data });
+      }
+
+      case "listHouseholdJoinRequests": {
+        const householdId = asUuid(payload.householdId, "householdId");
+        const raw = (await rpc("api_list_household_join_requests", {
+          p_telegram_id: telegramId,
+          p_household_id: householdId,
+        })) as Array<Record<string, unknown>> | null;
+        const rows = raw ?? [];
+        const data = rows.map((row) => ({
+          request_id: String(row.request_id),
+          household_id: String(row.household_id),
+          household_name: String(row.household_name ?? ""),
+          requester_profile_id: String(row.requester_profile_id ?? ""),
+          requester_telegram_id: Number(row.requester_telegram_id),
+          requester_username:
+            row.requester_username == null || row.requester_username === ""
+              ? null
+              : String(row.requester_username),
+          invite_code: String(row.invite_code ?? ""),
+          status: String(row.status ?? "pending"),
+          created_at: String(row.created_at ?? ""),
+        }));
+        return NextResponse.json({ data });
+      }
+
+      case "reviewHouseholdJoinRequest": {
+        const requestId = asUuid(payload.requestId, "requestId");
+        const decisionRaw = asString(payload.decision, "decision").toLowerCase();
+        if (decisionRaw !== "approve" && decisionRaw !== "reject") {
+          throw new Error("Invalid decision");
+        }
+        const result = await rpc("api_review_household_join_request", {
+          p_telegram_id: telegramId,
+          p_request_id: requestId,
+          p_decision: decisionRaw,
+        });
+        const row = unwrapSingleRow<Record<string, unknown>>(result);
+        const data = {
+          join_status: String(row.join_status ?? ""),
+          household_id: String(row.household_id ?? ""),
+          household_name: String(row.household_name ?? ""),
+          requester_telegram_id: Number(row.requester_telegram_id),
+          requester_username:
+            row.requester_username == null || row.requester_username === ""
+              ? null
+              : String(row.requester_username),
+        };
         return NextResponse.json({ data });
       }
 

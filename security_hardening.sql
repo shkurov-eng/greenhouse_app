@@ -20,7 +20,8 @@ begin
     'rooms',
     'plants',
     'plant_markers',
-    'tasks'
+    'tasks',
+    'invite_join_attempts'
   ]
   loop
     if to_regclass('public.' || t) is not null then
@@ -30,6 +31,14 @@ begin
   end loop;
 end
 $$;
+
+create table if not exists public.invite_join_attempts (
+  key text primary key,
+  failures integer not null default 0,
+  window_started_at timestamp with time zone not null default now(),
+  blocked_until timestamp with time zone,
+  updated_at timestamp with time zone not null default now()
+);
 
 revoke all on all sequences in schema public from anon, authenticated;
 
@@ -80,7 +89,7 @@ declare
   candidate text := '';
   i integer;
 begin
-  for i in 1..6 loop
+  for i in 1..10 loop
     candidate := candidate || substr(chars, 1 + floor(random() * length(chars))::int, 1);
   end loop;
   return candidate;
@@ -598,6 +607,138 @@ begin
 end
 $$;
 
+create or replace function public.api_check_join_invite_rate_limit(
+  p_key text
+)
+returns table(is_blocked boolean, retry_after_seconds integer)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_blocked_until timestamp with time zone;
+begin
+  if p_key is null or btrim(p_key) = '' then
+    raise exception 'rate-limit key is required';
+  end if;
+
+  select blocked_until
+  into v_blocked_until
+  from public.invite_join_attempts a
+  where a.key = p_key;
+
+  if v_blocked_until is null then
+    return query select false, 0;
+    return;
+  end if;
+
+  if v_blocked_until <= now() then
+    update public.invite_join_attempts
+    set blocked_until = null,
+        failures = 0,
+        window_started_at = now(),
+        updated_at = now()
+    where key = p_key;
+
+    return query select false, 0;
+    return;
+  end if;
+
+  return query
+  select true, greatest(1, ceil(extract(epoch from (v_blocked_until - now())))::int);
+end
+$$;
+
+create or replace function public.api_register_join_invite_failure(
+  p_key text
+)
+returns table(is_blocked boolean, retry_after_seconds integer, failures integer)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_window interval := interval '15 minutes';
+  v_block interval := interval '15 minutes';
+  v_max_failures integer := 5;
+  v_row public.invite_join_attempts%rowtype;
+  v_now timestamp with time zone := now();
+  v_failures integer;
+  v_window_started timestamp with time zone;
+  v_blocked_until timestamp with time zone;
+begin
+  if p_key is null or btrim(p_key) = '' then
+    raise exception 'rate-limit key is required';
+  end if;
+
+  select *
+  into v_row
+  from public.invite_join_attempts a
+  where a.key = p_key
+  for update;
+
+  if not found then
+    insert into public.invite_join_attempts (key, failures, window_started_at, blocked_until, updated_at)
+    values (p_key, 1, v_now, null, v_now);
+    return query select false, 0, 1;
+    return;
+  end if;
+
+  if v_row.blocked_until is not null and v_row.blocked_until > v_now then
+    return query
+    select true, greatest(1, ceil(extract(epoch from (v_row.blocked_until - v_now)))::int), v_row.failures;
+    return;
+  end if;
+
+  if v_now - v_row.window_started_at > v_window then
+    v_failures := 1;
+    v_window_started := v_now;
+  else
+    v_failures := v_row.failures + 1;
+    v_window_started := v_row.window_started_at;
+  end if;
+
+  if v_failures >= v_max_failures then
+    v_blocked_until := v_now + v_block;
+  else
+    v_blocked_until := null;
+  end if;
+
+  update public.invite_join_attempts
+  set failures = v_failures,
+      window_started_at = v_window_started,
+      blocked_until = v_blocked_until,
+      updated_at = v_now
+  where key = p_key;
+
+  if v_blocked_until is null then
+    return query select false, 0, v_failures;
+    return;
+  end if;
+
+  return query
+  select true, greatest(1, ceil(extract(epoch from (v_blocked_until - v_now)))::int), v_failures;
+end
+$$;
+
+create or replace function public.api_clear_join_invite_failures(
+  p_key text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_key is null or btrim(p_key) = '' then
+    return;
+  end if;
+
+  delete from public.invite_join_attempts a
+  where a.key = p_key;
+end
+$$;
+
 revoke all on function public.api_generate_invite_code() from public;
 revoke all on function public.api_profile_id_by_telegram(text) from public;
 revoke all on function public.api_household_id_by_profile(uuid) from public;
@@ -613,3 +754,6 @@ grant execute on function public.api_update_plant(text, uuid, text, text, text) 
 grant execute on function public.api_upsert_marker(text, uuid, uuid, double precision, double precision) to anon, authenticated, service_role;
 grant execute on function public.api_prepare_room_image_upload(text, uuid, text) to anon, authenticated, service_role;
 grant execute on function public.api_attach_room_image(text, uuid, text) to anon, authenticated, service_role;
+grant execute on function public.api_check_join_invite_rate_limit(text) to anon, authenticated, service_role;
+grant execute on function public.api_register_join_invite_failure(text) to anon, authenticated, service_role;
+grant execute on function public.api_clear_join_invite_failures(text) to anon, authenticated, service_role;

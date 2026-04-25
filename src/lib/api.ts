@@ -13,6 +13,34 @@ export type HouseholdSummary = {
   is_active: boolean;
 };
 
+export type JoinHouseholdResult = {
+  join_status: "joined" | "already_member" | "pending_approval";
+  household_id: string;
+  household_name: string;
+  invite_code: string | null;
+  request_id: string | null;
+  owner_telegram_id?: number | null;
+};
+
+export type HouseholdJoinSetting = {
+  household_id: string;
+  household_name: string;
+  require_join_approval: boolean;
+  is_owner: boolean;
+};
+
+export type HouseholdJoinRequest = {
+  request_id: string;
+  household_id: string;
+  household_name: string;
+  requester_profile_id: string;
+  requester_telegram_id: number;
+  requester_username: string | null;
+  invite_code: string;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+};
+
 export type Room = {
   id: string;
   name: string;
@@ -123,14 +151,53 @@ export async function bootstrapUser(initData: string | null, username: string | 
 }
 
 export async function joinHousehold(initData: string | null, inviteCode: string) {
-  return secureRequest<{
-    household_id: string;
-    household_name: string;
-    invite_code: string | null;
-  }>({
+  return secureRequest<JoinHouseholdResult>({
     action: "joinHousehold",
     initData,
     payload: { inviteCode },
+  });
+}
+
+export async function getHouseholdJoinSettings(initData: string | null) {
+  return secureRequest<HouseholdJoinSetting[]>({
+    action: "getHouseholdJoinSettings",
+    initData,
+  });
+}
+
+export async function setHouseholdJoinSetting(
+  initData: string | null,
+  payload: { householdId: string; requireJoinApproval: boolean },
+) {
+  return secureRequest<HouseholdJoinSetting>({
+    action: "setHouseholdJoinSetting",
+    initData,
+    payload,
+  });
+}
+
+export async function listHouseholdJoinRequests(initData: string | null, householdId: string) {
+  return secureRequest<HouseholdJoinRequest[]>({
+    action: "listHouseholdJoinRequests",
+    initData,
+    payload: { householdId },
+  });
+}
+
+export async function reviewHouseholdJoinRequest(
+  initData: string | null,
+  payload: { requestId: string; decision: "approve" | "reject" },
+) {
+  return secureRequest<{
+    join_status: "approved" | "rejected";
+    household_id: string;
+    household_name: string;
+    requester_telegram_id: number;
+    requester_username: string | null;
+  }>({
+    action: "reviewHouseholdJoinRequest",
+    initData,
+    payload,
   });
 }
 

@@ -873,6 +873,13 @@ export default function Home() {
     }
 
     const targetHome = await joinHousehold(getCurrentInitData(), code);
+    if (targetHome.join_status === "pending_approval") {
+      setIsJoinHomeOpen(false);
+      setJoinCode("");
+      setMessage(`Join request sent to ${targetHome.household_name} owner`);
+      return;
+    }
+
     if (targetHome.household_id === householdId) {
       setMessage("This home is already active");
       await loadHouseholds();
@@ -2477,7 +2484,7 @@ export default function Home() {
             <input
               value={joinCode}
               onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
-              placeholder="ABC123"
+              placeholder="AB7D9K2Q4M"
               className="mt-4 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm uppercase outline-none focus:border-[#006c49]"
               autoFocus
             />
