@@ -74,7 +74,10 @@ This document summarizes what has already been implemented in the project.
 ## Stage 5 - Watering
 
 - Watering updates `last_watered_at` and `status` via secure API / RPC.
-- Marker tap still waters plant; flash animation unchanged.
+- Marker tap starts a **3-second delayed watering** (instead of instant watering).
+- Delayed watering supports **multi-tap batching**: tapping another marker does not cancel already scheduled markers; each marker keeps its own timer.
+- Marker popup shows **live countdown** (`Watering in 3s/2s/1s`) and a **Cancel** action to abort watering for that specific marker.
+- Closing a room does **not** cancel already scheduled marker waterings; they continue server-side and appear on next room open.
 - Re-watering is allowed: tapping an already watered marker updates `last_watered_at` to the current time again (timer reset/restart).
 - **Marker long-press opens `Edit Plant`** for that exact marker's plant (tap behavior still waters as before).
 - **Edit Plant** includes **Undo last watering** with persistent DB history: restores `last_watered_at` to the value captured before the latest watering action, including after app reloads, and closes the edit modal right after undo.

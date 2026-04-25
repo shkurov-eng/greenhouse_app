@@ -77,7 +77,7 @@ function asUuid(value: unknown, fieldName: string) {
   return s;
 }
 
-async function getScopedPlantForActiveHousehold(telegramId: number, plantId: string) {
+async function getScopedPlantForActiveHousehold(telegramId: string | number, plantId: string) {
   const supabaseAdmin = getSupabaseAdmin();
   const { data: profile, error: profileError } = await supabaseAdmin
     .from("profiles")
@@ -87,7 +87,8 @@ async function getScopedPlantForActiveHousehold(telegramId: number, plantId: str
   if (profileError) {
     throw new Error(profileError.message);
   }
-  const activeHouseholdId = profile?.active_household_id;
+  const profileRow = profile as { active_household_id?: string | null } | null;
+  const activeHouseholdId = profileRow?.active_household_id ?? null;
   if (!activeHouseholdId) {
     throw new Error("No active household");
   }
@@ -99,14 +100,17 @@ async function getScopedPlantForActiveHousehold(telegramId: number, plantId: str
   if (plantError) {
     throw new Error(plantError.message);
   }
-  const plantHouseholdId = (plantRow?.rooms as { household_id?: string } | null)?.household_id;
+  const plantRowData = plantRow as
+    | { last_watered_at?: string | null; rooms?: { household_id?: string | null } | null }
+    | null;
+  const plantHouseholdId = plantRowData?.rooms?.household_id ?? null;
   if (!plantHouseholdId || plantHouseholdId !== activeHouseholdId) {
     throw new Error("Plant not found in active household");
   }
   return {
     supabaseAdmin,
     lastWateredAt:
-      plantRow?.last_watered_at == null ? null : String(plantRow.last_watered_at),
+      plantRowData?.last_watered_at == null ? null : String(plantRowData.last_watered_at),
   };
 }
 
@@ -383,7 +387,16 @@ export async function POST(request: NextRequest) {
           plantId,
         );
         const nextWateredAt = new Date().toISOString();
-        const { error: waterUpdateError } = await supabaseAdmin
+        type LooseTableApi = {
+          from: (table: string) => {
+            update: (values: Record<string, unknown>) => {
+              eq: (column: string, value: string) => Promise<{ error: { message: string } | null }>;
+            };
+            insert: (values: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
+          };
+        };
+        const db = supabaseAdmin as unknown as LooseTableApi;
+        const { error: waterUpdateError } = await db
           .from("plants")
           .update({
             last_watered_at: nextWateredAt,
@@ -393,7 +406,7 @@ export async function POST(request: NextRequest) {
         if (waterUpdateError) {
           throw new Error(waterUpdateError.message);
         }
-        const { error: historyError } = await supabaseAdmin.from("plant_watering_events").insert({
+        const { error: historyError } = await db.from("plant_watering_events").insert({
           plant_id: plantId,
           previous_last_watered_at: lastWateredAt,
         });
@@ -413,7 +426,8 @@ export async function POST(request: NextRequest) {
       case "revertLastWatering": {
         const plantId = asUuid(payload.plantId, "plantId");
         const { supabaseAdmin } = await getScopedPlantForActiveHousehold(telegramId, plantId);
-        const { data: latestEvent, error: latestEventError } = await supabaseAdmin
+        const dbAny = supabaseAdmin as any;
+        const { data: latestEvent, error: latestEventError } = await dbAny
           .from("plant_watering_events")
           .select("id,previous_last_watered_at")
           .eq("plant_id", plantId)
@@ -427,21 +441,22 @@ export async function POST(request: NextRequest) {
         if (!latestEvent) {
           throw new Error("No recent watering to undo");
         }
+        const latestEventRow = latestEvent as { id?: string; previous_last_watered_at?: string | null };
         const previousLastWateredAt =
-          latestEvent.previous_last_watered_at == null
+          latestEventRow.previous_last_watered_at == null
             ? null
-            : String(latestEvent.previous_last_watered_at);
-        const { error: updateError } = await supabaseAdmin
+            : String(latestEventRow.previous_last_watered_at);
+        const { error: updateError } = await dbAny
           .from("plants")
           .update({ last_watered_at: previousLastWateredAt })
           .eq("id", plantId);
         if (updateError) {
           throw new Error(updateError.message);
         }
-        const { error: markUndoneError } = await supabaseAdmin
+        const { error: markUndoneError } = await dbAny
           .from("plant_watering_events")
           .update({ undone_at: new Date().toISOString() })
-          .eq("id", String(latestEvent.id))
+          .eq("id", String(latestEventRow.id))
           .is("undone_at", null);
         if (markUndoneError) {
           throw new Error(markUndoneError.message);
@@ -457,14 +472,15 @@ export async function POST(request: NextRequest) {
       case "deletePlant": {
         const plantId = asUuid(payload.plantId, "plantId");
         const { supabaseAdmin } = await getScopedPlantForActiveHousehold(telegramId, plantId);
-        const { error: deleteMarkersError } = await supabaseAdmin
+        const dbAny = supabaseAdmin as any;
+        const { error: deleteMarkersError } = await dbAny
           .from("plant_markers")
           .delete()
           .eq("plant_id", plantId);
         if (deleteMarkersError) {
           throw new Error(deleteMarkersError.message);
         }
-        const { error: deletePlantError } = await supabaseAdmin.from("plants").delete().eq("id", plantId);
+        const { error: deletePlantError } = await dbAny.from("plants").delete().eq("id", plantId);
         if (deletePlantError) {
           throw new Error(deletePlantError.message);
         }
