@@ -315,6 +315,8 @@ export async function uploadPlantImage(
     ai_inferred: boolean;
     ai_status:
       | "ok"
+      | "not_plant"
+      | "low_confidence"
       | "disabled_missing_api_key"
       | "request_failed"
       | "invalid_response"
@@ -342,7 +344,13 @@ export async function analyzePlantImage(initData: string | null, payload: { file
   });
 
   return readApiPayload<{
-    ai_status: "ok" | "disabled_missing_api_key" | "request_failed" | "invalid_response";
+    ai_status:
+      | "ok"
+      | "not_plant"
+      | "low_confidence"
+      | "disabled_missing_api_key"
+      | "request_failed"
+      | "invalid_response";
     ai_error: string | null;
     ai_profile: {
       plant_name: string;

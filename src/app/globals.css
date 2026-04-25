@@ -24,6 +24,34 @@ body {
   font-family: var(--font-plus-jakarta), Arial, Helvetica, sans-serif;
 }
 
+button {
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.16s ease,
+    filter 0.16s ease,
+    opacity 0.16s ease;
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(0.95) saturate(1.08);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.12);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97) translateY(1px);
+  filter: brightness(0.9) saturate(1.1);
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.16) inset;
+}
+
+button:focus-visible {
+  outline: 2px solid rgba(0, 108, 73, 0.45);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
 .material-symbols-outlined {
   font-variation-settings:
     "FILL" 0,

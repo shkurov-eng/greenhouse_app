@@ -6,7 +6,7 @@ This document summarizes what has already been implemented in the project.
 
 - Next.js app (App Router) with TypeScript.
 - Supabase (PostgreSQL + Storage); **browser no longer queries tables directly**.
-- Typed client API wrapper: `src/lib/api.ts` (calls `POST /api/secure` and `POST /api/rooms/upload`). Secure actions include household list/create/set-active/`deleteHousehold`/`renameHousehold`, room create/`renameRoom`/`deleteRoom`, and existing room/plant flows (see `SecureAction` in `src/app/api/secure/route.ts`).
+- Typed client API wrapper: `src/lib/api.ts` (calls `POST /api/secure`, `POST /api/rooms/upload`, `POST /api/plants/upload`, and `POST /api/plants/analyze`). Secure actions include household list/create/set-active/`deleteHousehold`/`renameHousehold`, room create/`renameRoom`/`deleteRoom`, and existing room/plant flows (see `SecureAction` in `src/app/api/secure/route.ts`).
 - Server-side Supabase admin client: `src/lib/server/supabaseAdmin.ts` (service role, lazy init).
 - Telegram auth helper: `src/lib/server/telegramAuth.ts` (`initData` HMAC verification; optional local dev mode).
 - Environment variables (see also `.env.example`):
@@ -68,15 +68,24 @@ This document summarizes what has already been implemented in the project.
 
 - Plants: `household_id`, `room_id`, `name`, `species`, `status`, `last_watered_at`, etc.
 - Plant photos: add flow now supports either **taking a photo** or **uploading from gallery** in `Add Plant`; image is uploaded via `POST /api/plants/upload`, stored in Supabase Storage, and shown on plant cards and edit modal through signed URLs. `Edit Plant` also supports **Replace photo** and **Remove photo**.
-- AI auto-detection on plant photo upload: when `GEMINI_API_KEY` is configured, `POST /api/plants/upload` sends the photo to Google AI Studio (Gemini) and auto-updates plant name + per-plant watering thresholds from model output.
+- **Android camera fallback:** `Add Plant` includes in-app camera capture via `getUserMedia` + frame capture, so Telegram Android/WebView `file input` quirks no longer block taking photos.
+- **Photo compression before AI/upload:** client compresses selected/captured images (downscale + JPEG quality) before sending to AI Studio and storage upload; UI shows compression result (`Compressed: X -> Y` or `No compression gain`).
+- **AI analyze flow in Add Plant:** after photo selection, user can run a single explicit **Analyze with AI** action; UI shows `Analyzing...`, success autofill, precise error messages, retry, and **Apply anyway** for low-confidence suggestions.
+- **AI auto-detection on plant photo upload:** when `GEMINI_API_KEY` is configured, `POST /api/plants/upload` sends the photo to Google AI Studio (Gemini) and auto-updates plant name + per-plant watering thresholds from model output.
+- **Dedicated AI analyze endpoint:** `POST /api/plants/analyze` analyzes the photo before save and returns `ai_status`, `ai_error`, and optional `ai_profile` for controlled autofill UX.
+- **AI model updated:** moved from `gemini-2.0-flash` to `gemini-2.5-flash` for new-key compatibility.
 - AI watering amount recommendation: photo analysis stores suggested watering amount (`light` / `moderate` / `abundant`) and shows it in plant info; legacy values are mapped (`little`→`light`, `a_lot`→`abundant`).
-- AI watering summary: photo analysis stores `watering_summary` (2-3 sentence watering recommendation) and shows it in plant card/edit info.
+- AI watering summary: photo analysis stores `watering_summary` (2-3 short sentences with watering guidance + care tips like light/drainage/humidity/temperature) and shows it in plant card/edit info.
+- **Non-plant and uncertain photos:** AI prompt now requires `is_plant` + `confidence`; server returns explicit statuses for `not_plant` and `low_confidence`, and UI blocks blind autofill for obvious non-plant images.
 - AI detection badge: inferred results are marked in DB (`plants.ai_inferred_at`) and shown in plant list / edit modal as `AI detected`.
 - Manual override behavior: saving plant edits manually (`api_update_plant`) clears `ai_inferred_at`, so the `AI detected` badge is removed after user override.
 - Per-plant watering thresholds: each plant stores **thirsty-after minutes** and **overdue-after minutes** (defaults 5/60). In UI values are shown/edited in **hours** (`step=0.1`) and converted to minutes for storage.
+- **AI threshold safety rails:** server normalizes AI thresholds to realistic indoor ranges (`thirsty >= 6h`, `overdue >= 12h`, minimum 6h gap) to avoid absurd minute-level watering advice.
 - `plant_markers`: normalized `x`, `y` in `0..1`, unique per `plant_id`
 - Marker coordinates are calculated against the **visible image content area** (for `object-contain`), so marker placement stays aligned both on real phones and in desktop mobile emulation (no offset from letterboxing).
 - Plant CRUD, marker placement, edit-from-plant-dialog flows as before (all via `/api/secure` + RPC).
+- **Post-add marker guidance:** after `Add Plant`, UI enters marker edit mode with a clear top banner (`Place marker`), selected plant name, center-screen instruction (`Tap on room photo to place marker`), and explicit cancel action.
+- **Marker placement instant feedback:** on tap, UI shows a short tap ripple plus an optimistic temporary marker with `Saving...` until RPC completes.
 - Plant deletion is available from **Edit Plant** with a warning modal (**Continue/Cancel**); room markers are removed together with the plant.
 - In **Plants in this room**, plants without a marker display a `no marker` badge next to the plant name.
 - **Marker pin color and active-marker status chip** (in `src/app/page.tsx`) use **watering urgency derived from `last_watered_at`**, not the stored `plants.status` field, so colors track time since last water without waiting for server-side status flips.
@@ -105,6 +114,8 @@ This document summarizes what has already been implemented in the project.
 ## UI / Design System Work
 
 - Stitch-style layout, Lucide SVG icons, cards, mobile shell (unchanged intent).
+- **Button interaction clarity:** global button states in `src/app/globals.css` now have stronger hover/active/focus-visible feedback (clearer press depth, contrast, and keyboard focus ring).
+- **Add Plant submit feedback:** `Add Plant` now has explicit pending state (`Adding plant...` + spinner), disables repeat clicks while request/upload is running, and keeps action state visible during network delay.
 - **Home cards** are a `div` with two side actions (rename / delete) so icon buttons are not nested inside the main “switch home” control (valid HTML, clearer hit targets).
 - **Bottom navigation** (`src/components/MobileShell.tsx`): `Link` routes — **Rooms** `/`, **Inbox** `/tasks`, **Settings** `/settings` (active tab from pathname). Main rooms experience stays on `/`.
 - **Placeholder pages:** `src/app/tasks/page.tsx` (tasks / inbox stub), `src/app/settings/page.tsx` (settings stub), each with back link to `/`.
@@ -135,7 +146,7 @@ This document summarizes what has already been implemented in the project.
 
 - **Production:** open only from Telegram Mini App (menu / `web_app` button). Server requires valid `initData` + `TELEGRAM_BOT_TOKEN`.
 - **Local browser debug:** `npm run dev` + `DEV_BROWSER_MODE=true` + `DEV_TELEGRAM_ID` + `SUPABASE_SERVICE_ROLE_KEY` (not available on deployed Vercel preview/prod by design).
-- All data access: `POST /api/secure`, `POST /api/rooms/upload`; RLS + RPC enforce household scope (active household from `profiles.active_household_id` when migration applied).
+- All data access: `POST /api/secure`, `POST /api/rooms/upload`, `POST /api/plants/upload`, `POST /api/plants/analyze`; RLS + RPC enforce household scope (active household from `profiles.active_household_id` when migration applied).
 - **Households:** members can **rename** (`api_rename_household`) or **delete** (`api_delete_household`) a home they belong to; delete removes shared data for everyone; empty membership after deletes is healed by **`bootstrapUser`** inside `loadHouseholds` (default home again).
 - Room thumbnails and detail images use **signed URLs**; legacy public URLs are supported via path extraction when needed.
 - **Opening a room** scrolls the page to the **top** before paint (`useLayoutEffect` in `src/app/page.tsx`) so watering markers on the image are usable without scrolling up from the list position.

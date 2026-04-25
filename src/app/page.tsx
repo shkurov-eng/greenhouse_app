@@ -95,15 +95,15 @@ function formatHours(hours: number) {
 
 function formatWateringAmount(value: Plant["watering_amount_recommendation"]) {
   if (value === "light") {
-    return "light";
+    return "low (light)";
   }
   if (value === "moderate") {
-    return "moderate";
+    return "medium (moderate)";
   }
   if (value === "abundant") {
-    return "abundant";
+    return "high (abundant)";
   }
-  return "unknown";
+  return "not set";
 }
 
 type TelegramWebAppUser = {
@@ -129,6 +129,17 @@ type ImageContentBox = {
   top: number;
   width: number;
   height: number;
+};
+
+type MarkerPlacementFeedback = {
+  x: number;
+  y: number;
+};
+
+type OptimisticMarkerPlacement = {
+  plantId: string;
+  x: number;
+  y: number;
 };
 
 declare global {
@@ -173,6 +184,7 @@ export default function Home() {
   const [selectedPlantIdForMarker, setSelectedPlantIdForMarker] = useState<string>("");
   const [isMarkerEditMode, setIsMarkerEditMode] = useState(false);
   const [isAddPlantOpen, setIsAddPlantOpen] = useState(false);
+  const [isCreatingPlant, setIsCreatingPlant] = useState(false);
   const [isEditPlantOpen, setIsEditPlantOpen] = useState(false);
   const [editingPlantId, setEditingPlantId] = useState<string | null>(null);
   const [plantName, setPlantName] = useState("");
@@ -195,6 +207,18 @@ export default function Home() {
   const [isAnalyzingPlantPhoto, setIsAnalyzingPlantPhoto] = useState(false);
   const [newPlantPhotoAiError, setNewPlantPhotoAiError] = useState<string | null>(null);
   const [didApplyAiAutofill, setDidApplyAiAutofill] = useState(false);
+  const [latestAiProfile, setLatestAiProfile] = useState<{
+    plant_name: string;
+    thirsty_after_minutes: number;
+    overdue_after_minutes: number;
+    watering_amount_recommendation: "light" | "moderate" | "abundant";
+    watering_summary: string;
+  } | null>(null);
+  const [lowConfidenceAiProfile, setLowConfidenceAiProfile] = useState<{
+    plant_name: string;
+    thirsty_after_minutes: number;
+    overdue_after_minutes: number;
+  } | null>(null);
   const [newPlantPhotoCompressionInfo, setNewPlantPhotoCompressionInfo] = useState<string | null>(
     null,
   );
@@ -240,11 +264,17 @@ export default function Home() {
   const roomImageContainerRef = useRef<HTMLDivElement | null>(null);
   const roomImageRef = useRef<HTMLImageElement | null>(null);
   const [roomImageContentBox, setRoomImageContentBox] = useState<ImageContentBox | null>(null);
+  const [markerPlacementFeedback, setMarkerPlacementFeedback] = useState<MarkerPlacementFeedback | null>(
+    null,
+  );
+  const [optimisticMarkerPlacement, setOptimisticMarkerPlacement] =
+    useState<OptimisticMarkerPlacement | null>(null);
   const addPlantCameraInputRef = useRef<HTMLInputElement | null>(null);
   const addPlantUploadInputRef = useRef<HTMLInputElement | null>(null);
   const editPlantPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const cameraPreviewVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const markerPlacementFeedbackTimerRef = useRef<number | null>(null);
 
   /** Opening a room reuses the same document scroll as the overview; reset so the photo + markers are in view. */
   useLayoutEffect(() => {
@@ -383,6 +413,8 @@ export default function Home() {
     setIsAnalyzingPlantPhoto(false);
     setNewPlantPhotoAiError(null);
     setDidApplyAiAutofill(false);
+    setLatestAiProfile(null);
+    setLowConfidenceAiProfile(null);
     setNewPlantPhotoCompressionInfo(null);
     if (addPlantCameraInputRef.current) {
       addPlantCameraInputRef.current.value = "";
@@ -404,6 +436,8 @@ export default function Home() {
     setNewPlantPhotoPreviewUrl(URL.createObjectURL(file));
     setNewPlantPhotoAiError(null);
     setDidApplyAiAutofill(false);
+    setLatestAiProfile(null);
+    setLowConfidenceAiProfile(null);
     setNewPlantPhotoCompressionInfo(null);
   }
 
@@ -492,6 +526,8 @@ export default function Home() {
     setIsAnalyzingPlantPhoto(true);
     setNewPlantPhotoAiError(null);
     setDidApplyAiAutofill(false);
+    setLatestAiProfile(null);
+    setLowConfidenceAiProfile(null);
     try {
       const compressedResult = await compressImageIfNeeded(newPlantPhotoFile);
       if (compressedResult.compressed) {
@@ -507,11 +543,26 @@ export default function Home() {
         setPlantThirstyAfterHours(minutesToHours(result.ai_profile.thirsty_after_minutes));
         setPlantOverdueAfterHours(minutesToHours(result.ai_profile.overdue_after_minutes));
         setDidApplyAiAutofill(true);
+        setLatestAiProfile(result.ai_profile);
+        setLowConfidenceAiProfile(null);
         setMessage("AI analysis complete. Fields auto-filled.");
         return;
       }
       if (result.ai_status === "disabled_missing_api_key") {
         setNewPlantPhotoAiError("AI is disabled on server (missing GEMINI_API_KEY).");
+      } else if (result.ai_status === "not_plant") {
+        setNewPlantPhotoAiError("This photo does not look like a plant. Use another photo or fill manually.");
+      } else if (result.ai_status === "low_confidence") {
+        if (result.ai_profile) {
+          setLatestAiProfile(result.ai_profile);
+          setLowConfidenceAiProfile({
+            plant_name: result.ai_profile.plant_name,
+            thirsty_after_minutes: result.ai_profile.thirsty_after_minutes,
+            overdue_after_minutes: result.ai_profile.overdue_after_minutes,
+          });
+        }
+        const detail = result.ai_error?.trim();
+        setNewPlantPhotoAiError(detail ? `AI is not confident enough: ${detail}` : "AI is not confident enough.");
       } else if (result.ai_status === "request_failed") {
         const detail = result.ai_error?.trim();
         setNewPlantPhotoAiError(
@@ -530,6 +581,19 @@ export default function Home() {
     } finally {
       setIsAnalyzingPlantPhoto(false);
     }
+  }
+
+  function handleApplyLowConfidenceAiSuggestion() {
+    if (!lowConfidenceAiProfile) {
+      return;
+    }
+    setPlantName(lowConfidenceAiProfile.plant_name);
+    setPlantThirstyAfterHours(minutesToHours(lowConfidenceAiProfile.thirsty_after_minutes));
+    setPlantOverdueAfterHours(minutesToHours(lowConfidenceAiProfile.overdue_after_minutes));
+    setDidApplyAiAutofill(true);
+    setLowConfidenceAiProfile(null);
+    setNewPlantPhotoAiError(null);
+    setMessage("Low-confidence AI suggestion applied.");
   }
 
   function closeCameraCapture() {
@@ -922,6 +986,9 @@ export default function Home() {
   }
 
   async function handleCreatePlant() {
+    if (isCreatingPlant) {
+      return;
+    }
     if (!selectedRoom || !householdId) {
       setMessage("Room is not ready");
       return;
@@ -949,48 +1016,54 @@ export default function Home() {
       setMessage("Cannot save plant: invalid watering thresholds");
       return;
     }
-    const photoToUpload = newPlantPhotoFile;
-    const createdPlant = await createPlant(getCurrentInitData(), {
-      roomId: selectedRoom.id,
-      name: newPlantName,
-      species: plantSpecies.trim() || null,
-      status: "healthy",
-      thirstyAfterMinutes: nextThirstyAfterMinutes,
-      overdueAfterMinutes: nextOverdueAfterMinutes,
-    });
-
-    if (createdPlant?.id && photoToUpload) {
-      const compressedResult = await compressImageIfNeeded(photoToUpload);
-      if (compressedResult.compressed) {
-        setNewPlantPhotoCompressionInfo(
-          `Compressed: ${formatBytes(compressedResult.originalBytes)} -> ${formatBytes(compressedResult.resultBytes)}`,
-        );
-      } else {
-        setNewPlantPhotoCompressionInfo(`No compression gain: ${formatBytes(compressedResult.resultBytes)}`);
-      }
-      await uploadPlantImage(getCurrentInitData(), {
-        plantId: createdPlant.id,
-        file: compressedResult.file,
-        aiMode: "manual",
+    setIsCreatingPlant(true);
+    setMessage("Adding plant...");
+    try {
+      const photoToUpload = newPlantPhotoFile;
+      const createdPlant = await createPlant(getCurrentInitData(), {
+        roomId: selectedRoom.id,
+        name: newPlantName,
+        species: plantSpecies.trim() || null,
+        status: "healthy",
+        thirstyAfterMinutes: nextThirstyAfterMinutes,
+        overdueAfterMinutes: nextOverdueAfterMinutes,
       });
-    }
 
-    setPlantName("");
-    setPlantSpecies("");
-    setPlantThirstyAfterMinutes(DEFAULT_THIRSTY_AFTER_MINUTES);
-    setPlantOverdueAfterMinutes(DEFAULT_OVERDUE_AFTER_MINUTES);
-    setPlantThirstyAfterHours(minutesToHours(DEFAULT_THIRSTY_AFTER_MINUTES));
-    setPlantOverdueAfterHours(minutesToHours(DEFAULT_OVERDUE_AFTER_MINUTES));
-    clearNewPlantPhotoSelection();
-    setIsAddPlantOpen(false);
-    await fetchRoomDetails(selectedRoom.id);
-    const aiMessage = didApplyAiAutofill ? " AI profile applied." : "";
-    if (createdPlant?.id) {
-      setSelectedPlantIdForMarker(createdPlant.id);
-      setIsMarkerEditMode(true);
-      setMessage(`Plant added. Tap image to place marker.${aiMessage}`);
-    } else {
-      setMessage(`Plant added.${aiMessage}`);
+      if (createdPlant?.id && photoToUpload) {
+        const compressedResult = await compressImageIfNeeded(photoToUpload);
+        if (compressedResult.compressed) {
+          setNewPlantPhotoCompressionInfo(
+            `Compressed: ${formatBytes(compressedResult.originalBytes)} -> ${formatBytes(compressedResult.resultBytes)}`,
+          );
+        } else {
+          setNewPlantPhotoCompressionInfo(`No compression gain: ${formatBytes(compressedResult.resultBytes)}`);
+        }
+        await uploadPlantImage(getCurrentInitData(), {
+          plantId: createdPlant.id,
+          file: compressedResult.file,
+          aiMode: didApplyAiAutofill && latestAiProfile ? "auto" : "manual",
+        });
+      }
+
+      setPlantName("");
+      setPlantSpecies("");
+      setPlantThirstyAfterMinutes(DEFAULT_THIRSTY_AFTER_MINUTES);
+      setPlantOverdueAfterMinutes(DEFAULT_OVERDUE_AFTER_MINUTES);
+      setPlantThirstyAfterHours(minutesToHours(DEFAULT_THIRSTY_AFTER_MINUTES));
+      setPlantOverdueAfterHours(minutesToHours(DEFAULT_OVERDUE_AFTER_MINUTES));
+      clearNewPlantPhotoSelection();
+      setIsAddPlantOpen(false);
+      await fetchRoomDetails(selectedRoom.id);
+      const aiMessage = didApplyAiAutofill ? " AI profile applied." : "";
+      if (createdPlant?.id) {
+        setSelectedPlantIdForMarker(createdPlant.id);
+        setIsMarkerEditMode(true);
+        setMessage(`Plant added. Tap image to place marker.${aiMessage}`);
+      } else {
+        setMessage(`Plant added.${aiMessage}`);
+      }
+    } finally {
+      setIsCreatingPlant(false);
     }
   }
 
@@ -1318,17 +1391,30 @@ export default function Home() {
     const rawY = localY / contentBox.height;
     const x = Math.min(Math.max(rawX, 0), 1);
     const y = Math.min(Math.max(rawY, 0), 1);
+    const plantIdForMarker = selectedPlantIdForMarker;
+    setOptimisticMarkerPlacement({ plantId: plantIdForMarker, x, y });
+    if (markerPlacementFeedbackTimerRef.current !== null) {
+      window.clearTimeout(markerPlacementFeedbackTimerRef.current);
+    }
+    setMarkerPlacementFeedback({ x, y });
+    markerPlacementFeedbackTimerRef.current = window.setTimeout(() => {
+      setMarkerPlacementFeedback(null);
+      markerPlacementFeedbackTimerRef.current = null;
+    }, 700);
 
-    await upsertMarker(getCurrentInitData(), {
-      roomId: selectedRoom.id,
-      plantId: selectedPlantIdForMarker,
-      x,
-      y,
-    });
-
-    await fetchRoomDetails(selectedRoom.id);
-    setMessage("Marker saved");
-    setIsMarkerEditMode(false);
+    try {
+      await upsertMarker(getCurrentInitData(), {
+        roomId: selectedRoom.id,
+        plantId: plantIdForMarker,
+        x,
+        y,
+      });
+      await fetchRoomDetails(selectedRoom.id);
+      setMessage("Marker saved");
+      setIsMarkerEditMode(false);
+    } finally {
+      setOptimisticMarkerPlacement(null);
+    }
   }
 
   function handleRoomFileChange(roomId: string, file: File | null) {
@@ -1394,10 +1480,16 @@ export default function Home() {
             },
           ]
         : [];
+  const markerPlantForEdit = selectedPlantIdForMarker
+    ? plants.find((plant) => plant.id === selectedPlantIdForMarker) ?? null
+    : null;
 
   useEffect(() => {
     return () => {
       clearMarkerLongPressTimer();
+      if (markerPlacementFeedbackTimerRef.current !== null) {
+        window.clearTimeout(markerPlacementFeedbackTimerRef.current);
+      }
       const timers = Object.values(pendingWateringTimersRef.current);
       for (const timerId of timers) {
         window.clearTimeout(timerId);
@@ -1475,7 +1567,7 @@ export default function Home() {
                   setPlantOverdueAfterHours(minutesToHours(DEFAULT_OVERDUE_AFTER_MINUTES));
                   setIsAddPlantOpen(true);
                 }}
-                className="shrink-0 rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-3 py-1 text-xs font-semibold text-white"
+                className="shrink-0 rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-3 py-1 text-xs font-semibold text-white shadow-[0_4px_12px_rgba(0,108,73,0.28)]"
               >
                 Add Plant
               </button>
@@ -1591,19 +1683,77 @@ export default function Home() {
                   </div>
                 );
               })}
+              {optimisticMarkerPlacement ? (
+                <div
+                  className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+                  style={{
+                    left: roomImageContentBox
+                      ? `${roomImageContentBox.left + optimisticMarkerPlacement.x * roomImageContentBox.width}px`
+                      : `${optimisticMarkerPlacement.x * 100}%`,
+                    top: roomImageContentBox
+                      ? `${roomImageContentBox.top + optimisticMarkerPlacement.y * roomImageContentBox.height}px`
+                      : `${optimisticMarkerPlacement.y * 100}%`,
+                  }}
+                >
+                  <span className="absolute -inset-2 animate-ping rounded-full bg-[#006c49]/30" />
+                  <span className="relative block h-6 w-6 rounded-full border-2 border-white bg-[#006c49] shadow-md" />
+                  <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 rounded-md bg-white/95 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#006c49] shadow">
+                    Saving...
+                  </span>
+                </div>
+              ) : null}
+              {markerPlacementFeedback ? (
+                <div
+                  className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+                  style={{
+                    left: roomImageContentBox
+                      ? `${roomImageContentBox.left + markerPlacementFeedback.x * roomImageContentBox.width}px`
+                      : `${markerPlacementFeedback.x * 100}%`,
+                    top: roomImageContentBox
+                      ? `${roomImageContentBox.top + markerPlacementFeedback.y * roomImageContentBox.height}px`
+                      : `${markerPlacementFeedback.y * 100}%`,
+                  }}
+                >
+                  <span className="block h-8 w-8 animate-ping rounded-full bg-[#006c49]/35" />
+                  <span className="absolute inset-0 m-auto block h-4 w-4 rounded-full border-2 border-white bg-[#006c49] shadow-md" />
+                </div>
+              ) : null}
               {isMarkerEditMode ? (
-                <div className="absolute left-3 top-3 flex items-center gap-2 rounded-lg bg-white/90 px-2 py-1 text-xs text-[#3c4a42] shadow">
-                  <span>Marker edit mode</span>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setIsMarkerEditMode(false);
-                    }}
-                    className="rounded bg-[#ffdad6] px-1.5 py-0.5 text-[10px] font-semibold text-[#93000a]"
-                  >
-                    Cancel
-                  </button>
+                <div className="absolute inset-0 z-20">
+                  <div className="absolute left-3 right-3 top-3 flex items-center justify-between gap-2 rounded-xl border border-[#d4e8df] bg-white/95 px-3 py-2 text-xs shadow-md">
+                    <div className="min-w-0">
+                      <p className="font-bold uppercase tracking-wide text-[#006c49]">
+                        Place marker
+                      </p>
+                      <p className="truncate text-[11px] text-[#3c4a42]">
+                        Tap on room photo for{" "}
+                        <span className="font-semibold">
+                          {markerPlantForEdit?.name ?? "selected plant"}
+                        </span>
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setIsMarkerEditMode(false);
+                      }}
+                      className="pointer-events-auto rounded-md bg-[#ffdad6] px-2 py-1 text-[10px] font-semibold text-[#93000a]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
+                    <div className="rounded-2xl border border-[#d4e8df] bg-white/88 px-4 py-3 text-center shadow-lg backdrop-blur-sm">
+                      <div className="mx-auto mb-2 h-3 w-3 animate-ping rounded-full bg-[#006c49]" />
+                      <p className="text-sm font-semibold text-[#006c49]">
+                        Tap on room photo to place marker
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-[#3c4a42]">
+                        Marker will be saved at tap position
+                      </p>
+                    </div>
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -1692,7 +1842,7 @@ export default function Home() {
                             onClick={() => {
                               void runSafely(() => handleWaterPlant(plant.id, selectedRoom.id));
                             }}
-                            className="rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-2.5 py-1.5 text-[11px] font-semibold text-white"
+                            className="rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-[0_3px_10px_rgba(0,108,73,0.24)]"
                           >
                             Watered
                           </button>
@@ -2322,12 +2472,33 @@ export default function Home() {
                     </button>
                     {newPlantPhotoAiError ? (
                       <p className="mt-2 text-[11px] text-[#ba1a1a]">
-                        {newPlantPhotoAiError} You can retry or continue manually.
+                        {newPlantPhotoAiError}
+                        {lowConfidenceAiProfile
+                          ? " You can retry, use another photo, apply anyway, or continue manually."
+                          : " You can retry or continue manually."}
                       </p>
+                    ) : null}
+                    {lowConfidenceAiProfile ? (
+                      <button
+                        type="button"
+                        onClick={handleApplyLowConfidenceAiSuggestion}
+                        className="mt-2 w-full rounded-lg border border-[#bbcabf] bg-white px-3 py-2 text-xs font-semibold text-[#3c4a42]"
+                      >
+                        Apply anyway
+                      </button>
                     ) : null}
                     {didApplyAiAutofill ? (
                       <p className="mt-2 text-[11px] text-[#006c49]">
                         AI filled fields automatically.
+                      </p>
+                    ) : null}
+                    {didApplyAiAutofill && latestAiProfile ? (
+                      <p className="mt-2 text-[11px] text-[#6c7a71]">
+                        Suggested water amount:{" "}
+                        <span className="font-semibold text-[#3c4a42]">
+                          {formatWateringAmount(latestAiProfile.watering_amount_recommendation)}
+                        </span>
+                        . {latestAiProfile.watering_summary}
                       </p>
                     ) : null}
                   </div>
@@ -2354,6 +2525,7 @@ export default function Home() {
                   setPlantOverdueAfterHours(minutesToHours(DEFAULT_OVERDUE_AFTER_MINUTES));
                   setIsAddPlantOpen(false);
                 }}
+                disabled={isCreatingPlant}
                 className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-medium text-[#3c4a42]"
               >
                 Cancel
@@ -2363,9 +2535,18 @@ export default function Home() {
                 onClick={() => {
                   void runSafely(handleCreatePlant);
                 }}
-                className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
+                disabled={isCreatingPlant}
+                aria-busy={isCreatingPlant}
+                className="inline-flex min-w-[8.75rem] items-center justify-center gap-2 rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-80"
               >
-                Add Plant
+                {isCreatingPlant ? (
+                  <>
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                    Adding plant...
+                  </>
+                ) : (
+                  "Add Plant"
+                )}
               </button>
             </div>
           </div>

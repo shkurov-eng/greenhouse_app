@@ -4,6 +4,9 @@ import { getRequestTelegramId } from "@/lib/server/telegramAuth";
 
 const DEFAULT_THIRSTY_AFTER_MINUTES = 5;
 const DEFAULT_OVERDUE_AFTER_MINUTES = 60;
+const MIN_THIRSTY_AFTER_MINUTES = 6 * 60;
+const MIN_OVERDUE_AFTER_MINUTES = 12 * 60;
+const MIN_GAP_BETWEEN_THRESHOLDS_MINUTES = 6 * 60;
 
 type PlantAiProfile = {
   plantName: string;
@@ -15,6 +18,8 @@ type PlantAiProfile = {
 
 type PlantAiStatus =
   | "ok"
+  | "not_plant"
+  | "low_confidence"
   | "disabled_missing_api_key"
   | "request_failed"
   | "invalid_response";
@@ -26,6 +31,27 @@ function extractJsonObject(raw: string): string | null {
     return null;
   }
   return raw.slice(start, end + 1);
+}
+
+function normalizeWateringThresholds(thirstyRaw: number, overdueRaw: number) {
+  const fallbackThirsty = Math.max(DEFAULT_THIRSTY_AFTER_MINUTES, MIN_THIRSTY_AFTER_MINUTES);
+  const fallbackOverdue = Math.max(DEFAULT_OVERDUE_AFTER_MINUTES, MIN_OVERDUE_AFTER_MINUTES);
+  const parsedThirsty =
+    Number.isFinite(thirstyRaw) && thirstyRaw > 0 ? Math.round(thirstyRaw) : fallbackThirsty;
+  const normalizedThirsty = Math.max(parsedThirsty, MIN_THIRSTY_AFTER_MINUTES);
+
+  const parsedOverdue =
+    Number.isFinite(overdueRaw) && overdueRaw > 0 ? Math.round(overdueRaw) : fallbackOverdue;
+  const normalizedOverdue = Math.max(
+    parsedOverdue,
+    MIN_OVERDUE_AFTER_MINUTES,
+    normalizedThirsty + MIN_GAP_BETWEEN_THRESHOLDS_MINUTES,
+  );
+
+  return {
+    thirstyAfterMinutes: normalizedThirsty,
+    overdueAfterMinutes: normalizedOverdue,
+  };
 }
 
 async function detectPlantProfileWithAiStudio(
@@ -41,12 +67,20 @@ async function detectPlantProfileWithAiStudio(
   const prompt = [
     "You are a houseplant assistant.",
     "From the plant photo, identify the likely common plant name and suggest watering urgency thresholds in minutes.",
+    "First decide whether the main subject is a real plant in a pot/garden.",
+    "If the image is not a plant (person, pet, car, text document, landscape, random object), mark it as not plant.",
+    "For typical indoor potted plants, use realistic ranges measured in many hours or days, not minutes.",
+    `Never return thirsty_after_minutes below ${MIN_THIRSTY_AFTER_MINUTES}.`,
+    `Never return overdue_after_minutes below ${MIN_OVERDUE_AFTER_MINUTES}.`,
+    `Keep overdue_after_minutes at least ${MIN_GAP_BETWEEN_THRESHOLDS_MINUTES} minutes later than thirsty_after_minutes.`,
     "Return ONLY JSON with keys:",
+    "- is_plant (boolean)",
+    "- confidence (number 0..1)",
     "- plant_name (string)",
     "- thirsty_after_minutes (integer > 0)",
     "- overdue_after_minutes (integer >= thirsty_after_minutes)",
     "- watering_amount_recommendation (string: \"light\", \"moderate\", or \"abundant\")",
-    "- watering_summary (string, 2-3 concise sentences with practical watering guidance)",
+    "- watering_summary (string, 2-3 concise sentences: include watering guidance + 1-2 practical care tips such as light, drainage, humidity, or temperature)",
     "Use realistic conservative defaults if uncertain.",
     `Default baseline: thirsty_after_minutes=${DEFAULT_THIRSTY_AFTER_MINUTES}, overdue_after_minutes=${DEFAULT_OVERDUE_AFTER_MINUTES}.`,
   ].join("\n");
@@ -113,12 +147,20 @@ async function detectPlantProfileWithAiStudio(
   }
 
   const row = parsed as {
+    is_plant?: unknown;
+    confidence?: unknown;
     plant_name?: unknown;
     thirsty_after_minutes?: unknown;
     overdue_after_minutes?: unknown;
     watering_amount_recommendation?: unknown;
     watering_summary?: unknown;
   };
+  const isPlant = typeof row.is_plant === "boolean" ? row.is_plant : true;
+  const confidenceRaw = Number(row.confidence);
+  const confidence = Number.isFinite(confidenceRaw) ? confidenceRaw : 0.8;
+  if (!isPlant) {
+    return { profile: null, status: "not_plant", errorMessage: "Photo does not appear to contain a plant" };
+  }
   const plantName = typeof row.plant_name === "string" ? row.plant_name.trim() : "";
   const thirstyRaw = Number(row.thirsty_after_minutes);
   const overdueRaw = Number(row.overdue_after_minutes);
@@ -151,26 +193,33 @@ async function detectPlantProfileWithAiStudio(
     return { profile: null, status: "invalid_response", errorMessage: "Missing plant_name in AI response" };
   }
 
-  const thirsty = Number.isFinite(thirstyRaw) && thirstyRaw > 0
-    ? Math.round(thirstyRaw)
-    : DEFAULT_THIRSTY_AFTER_MINUTES;
-  const overdueCandidate = Number.isFinite(overdueRaw) && overdueRaw > 0
-    ? Math.round(overdueRaw)
-    : DEFAULT_OVERDUE_AFTER_MINUTES;
-  const overdue = Math.max(overdueCandidate, thirsty);
+  const { thirstyAfterMinutes: thirsty, overdueAfterMinutes: overdue } = normalizeWateringThresholds(
+    thirstyRaw,
+    overdueRaw,
+  );
   const wateringAmount = wateringAmountRecommendation ?? "moderate";
   const wateringSummary =
     wateringSummaryRaw ||
-    `Water when topsoil feels dry. Prefer ${wateringAmount} watering and avoid stagnant water. Recheck moisture before the next cycle.`;
+    `Water when topsoil feels dry. Prefer ${wateringAmount} watering and avoid stagnant water. Keep bright indirect light and ensure good drainage to reduce root stress.`;
+
+  const profile: PlantAiProfile = {
+    plantName,
+    thirstyAfterMinutes: thirsty,
+    overdueAfterMinutes: overdue,
+    wateringAmountRecommendation: wateringAmount,
+    wateringSummary,
+  };
+
+  if (confidence < 0.55) {
+    return {
+      profile,
+      status: "low_confidence",
+      errorMessage: `Low confidence (${confidence.toFixed(2)}).`,
+    };
+  }
 
   return {
-    profile: {
-      plantName,
-      thirstyAfterMinutes: thirsty,
-      overdueAfterMinutes: overdue,
-      wateringAmountRecommendation: wateringAmount,
-      wateringSummary,
-    },
+    profile,
     status: "ok",
   };
 }
