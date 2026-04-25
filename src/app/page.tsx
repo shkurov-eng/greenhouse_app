@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import {
   ArrowLeft,
   Camera,
-  CheckCircle2,
+  ChevronsUpDown,
   ImagePlus,
   Pencil,
   Plus,
@@ -215,6 +215,7 @@ export default function Home() {
     null,
   );
   const [isCameraCaptureOpen, setIsCameraCaptureOpen] = useState(false);
+  const [cameraCaptureTarget, setCameraCaptureTarget] = useState<"plant" | "room" | null>(null);
   const [isStartingCamera, setIsStartingCamera] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [editPlantName, setEditPlantName] = useState("");
@@ -237,6 +238,7 @@ export default function Home() {
   const [isAnalyzingEditPlantPhoto, setIsAnalyzingEditPlantPhoto] = useState(false);
   const [roomFiles, setRoomFiles] = useState<Record<string, File | null>>({});
   const [roomUploadStatus, setRoomUploadStatus] = useState<Record<string, string>>({});
+  const [roomPhotoPickerRoomId, setRoomPhotoPickerRoomId] = useState<string | null>(null);
   const [pendingDeleteTarget, setPendingDeleteTarget] = useState<PendingDeleteTarget | null>(null);
   const [isConfirmDeletePending, setIsConfirmDeletePending] = useState(false);
   /** Bumps on an interval so marker colors refresh from `last_watered_at` without refetch. */
@@ -265,6 +267,7 @@ export default function Home() {
     useState<OptimisticMarkerPlacement | null>(null);
   const addPlantCameraInputRef = useRef<HTMLInputElement | null>(null);
   const addPlantUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const roomPhotoUploadInputRef = useRef<HTMLInputElement | null>(null);
   const editPlantCameraInputRef = useRef<HTMLInputElement | null>(null);
   const editPlantPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const cameraPreviewVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -606,13 +609,15 @@ export default function Home() {
   function closeCameraCapture() {
     stopCameraStream();
     setIsCameraCaptureOpen(false);
+    setCameraCaptureTarget(null);
     setIsStartingCamera(false);
     setCameraError(null);
   }
 
-  async function handleOpenCameraCapture() {
+  async function handleOpenCameraCapture(target: "plant" | "room" = "plant") {
     setCameraError(null);
     setIsStartingCamera(true);
+    setCameraCaptureTarget(target);
     if (!navigator.mediaDevices?.getUserMedia) {
       setIsStartingCamera(false);
       setCameraError("Camera API is not available in this Telegram WebView.");
@@ -666,8 +671,28 @@ export default function Home() {
       setCameraError("Failed to create captured image.");
       return;
     }
-    const capturedFile = new File([blob], `plant-${Date.now()}.jpg`, { type: "image/jpeg" });
-    handleNewPlantPhotoSelected(capturedFile);
+    const nextTarget = cameraCaptureTarget;
+    const capturedFile = new File(
+      [blob],
+      `${nextTarget === "room" ? "room" : "plant"}-${Date.now()}.jpg`,
+      { type: "image/jpeg" },
+    );
+    if (nextTarget === "room") {
+      const targetRoomId = roomPhotoPickerRoomId;
+      if (!targetRoomId) {
+        setCameraError("Room photo picker is not open.");
+        return;
+      }
+      handleRoomFileChange(targetRoomId, capturedFile);
+      closeCameraCapture();
+      setMessage("Photo captured. Uploading...");
+      await uploadRoomImageFile(targetRoomId, capturedFile);
+      closeRoomPhotoPicker();
+      setMessage("Room photo uploaded");
+      return;
+    } else {
+      handleNewPlantPhotoSelected(capturedFile);
+    }
     closeCameraCapture();
     setMessage("Photo captured");
   }
@@ -972,25 +997,6 @@ export default function Home() {
     setRenameRoomInput("");
     await fetchRoomsForHousehold();
     setMessage("Room renamed");
-  }
-
-  function householdInitials(name: string) {
-    const parts = name.trim().split(/\s+/).filter(Boolean);
-    if (parts.length >= 2) {
-      return (parts[0]!.slice(0, 1) + parts[1]!.slice(0, 1)).toUpperCase();
-    }
-    const compact = name.trim().slice(0, 2);
-    return compact.length > 0 ? compact.toUpperCase() : "H";
-  }
-
-  function householdCardTint(index: number) {
-    const tints = [
-      "from-[#006c49] to-[#0d8f6e]",
-      "from-[#944a23] to-[#c45c2a]",
-      "from-[#355c7d] to-[#5b8fb9]",
-      "from-[#5c4d7d] to-[#8b7ab8]",
-    ];
-    return tints[index % tints.length]!;
   }
 
   async function handleCreatePlant() {
@@ -1506,17 +1512,18 @@ export default function Home() {
     }));
   }
 
-  async function handleUploadImage(roomId: string) {
-    const file = roomFiles[roomId];
-    if (!file) {
-      const text = "No file selected";
-      setRoomUploadStatus((prev) => ({
-        ...prev,
-        [roomId]: text,
-      }));
-      return;
-    }
+  function openRoomPhotoPicker(roomId: string) {
+    setRoomPhotoPickerRoomId(roomId);
+  }
 
+  function closeRoomPhotoPicker() {
+    setRoomPhotoPickerRoomId(null);
+    if (roomPhotoUploadInputRef.current) {
+      roomPhotoUploadInputRef.current.value = "";
+    }
+  }
+
+  async function uploadRoomImageFile(roomId: string, file: File) {
     setRoomUploadStatus((prev) => ({
       ...prev,
       [roomId]: "Uploading...",
@@ -1533,6 +1540,20 @@ export default function Home() {
       [roomId]: "Uploaded successfully",
     }));
     await fetchRoomsForHousehold();
+  }
+
+  async function handleUploadImage(roomId: string) {
+    const file = roomFiles[roomId];
+    if (!file) {
+      const text = "No file selected";
+      setRoomUploadStatus((prev) => ({
+        ...prev,
+        [roomId]: text,
+      }));
+      return;
+    }
+
+    await uploadRoomImageFile(roomId, file);
   }
 
   async function runSafely(action: () => Promise<void>) {
@@ -1571,6 +1592,11 @@ export default function Home() {
             },
           ]
         : [];
+  const roomForPhotoPicker = roomPhotoPickerRoomId
+    ? rooms.find((room) => room.id === roomPhotoPickerRoomId) ?? null
+    : null;
+  const roomPhotoPickerStatus = roomPhotoPickerRoomId ? roomUploadStatus[roomPhotoPickerRoomId] : null;
+  const selectedRoomPhotoFile = roomPhotoPickerRoomId ? roomFiles[roomPhotoPickerRoomId] ?? null : null;
   const markerPlantForEdit = selectedPlantIdForMarker
     ? plants.find((plant) => plant.id === selectedPlantIdForMarker) ?? null
     : null;
@@ -1976,7 +2002,9 @@ export default function Home() {
               </span>
               <div>
                 <p className="text-base font-extrabold tracking-tight text-[#006c49]">GreenHouse</p>
-                <p className="text-[11px] font-medium text-[#6c7a71]">Select home</p>
+                <p className="text-[11px] font-medium text-[#6c7a71] truncate max-w-[12rem]">
+                  {currentHousehold?.name ?? "Home"}
+                </p>
               </div>
             </div>
             <Link
@@ -1994,90 +2022,35 @@ export default function Home() {
             </p>
           ) : null}
 
-          <section className="relative mb-6 overflow-hidden rounded-[28px] shadow-[0_8px_40px_rgba(0,108,73,0.12)] ring-1 ring-[#006c49]/10">
-            <div
-              className="pointer-events-none absolute -right-16 -top-24 h-48 w-48 rounded-full bg-[#006c49] opacity-[0.14] blur-3xl"
-              aria-hidden
-            />
-            <div
-              className="pointer-events-none absolute -bottom-20 -left-12 h-40 w-40 rounded-full bg-[#944a23] opacity-[0.1] blur-3xl"
-              aria-hidden
-            />
-            <div className="relative bg-gradient-to-br from-white via-[#faf9f7] to-[#eef7f2] p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-bold tracking-tight text-[#1f1b17]">Choose home</h2>
-                  <p className="mt-0.5 text-xs text-[#6c7a71]">Rooms and plants follow active home.</p>
-                </div>
-                {homesForPicker.length > 0 ? (
-                  <div className="flex h-10 min-w-10 items-center justify-center rounded-2xl bg-[#006c49]/10 px-2.5 text-sm font-bold tabular-nums text-[#006c49]">
-                    {homesForPicker.length}
-                  </div>
-                ) : (
-                  <div className="h-10 w-10 animate-pulse rounded-2xl bg-[#e8ece9]" aria-hidden />
-                )}
+          <section className="mb-5 rounded-2xl border border-[#d8e5de] bg-white/92 p-3 shadow-[0_8px_24px_rgba(81,55,37,0.06)]">
+            {homesForPicker.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-[#c5d4cc] bg-[#fbfaf6] px-3 py-4 text-center">
+                <p className="text-xs font-medium text-[#6c7a71]">Loading your homes…</p>
               </div>
-
-              {homesForPicker.length === 0 ? (
-                <div className="mt-4 rounded-2xl border border-dashed border-[#c5d4cc] bg-white/60 p-8 text-center">
-                  <p className="text-sm font-medium text-[#6c7a71]">Loading your homes…</p>
-                </div>
-              ) : (
-              <div className="mt-4 flex flex-col gap-2.5">
-                {homesForPicker.map((h, index) => {
-                  const isCurrent = h.household_id === householdId;
-                  const tint = householdCardTint(index);
-                  return (
-                    <div
-                      key={h.household_id}
-                      className={`group flex w-full transition rounded-2xl border-2 focus-within:ring-2 focus-within:ring-[#006c49] focus-within:ring-offset-2 ${
-                        isCurrent
-                          ? "border-[#006c49] bg-white shadow-[0_6px_24px_rgba(0,108,73,0.15)]"
-                          : "border-transparent bg-white/70 shadow-sm hover:border-[#bbcabf]/80 hover:bg-white hover:shadow-md"
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!isCurrent) {
-                            void runSafely(() => handleSwitchHousehold(h.household_id));
-                          }
-                        }}
-                        className={`min-w-0 flex-1 rounded-2xl p-3.5 text-left focus:outline-none ${
-                          isCurrent ? "cursor-default" : "cursor-pointer active:scale-[0.98]"
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div
-                            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-bold text-white shadow-inner ${tint}`}
-                          >
-                            {householdInitials(h.household_name)}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="break-words text-sm font-semibold leading-snug text-[#1f1b17]">
-                              {h.household_name}
-                            </p>
-                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                              {isCurrent ? (
-                                <span className="inline-flex items-center gap-0.5 rounded-full bg-[#e6f5ef] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#006c49]">
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  Active
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-semibold uppercase tracking-wide text-[#6c7a71]">
-                                  Tap to open
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </button>
-                    </div>
-                  );
-                })}
+            ) : (
+              <div className="relative">
+                <select
+                  value={householdId ?? homesForPicker[0]?.household_id ?? ""}
+                  onChange={(event) => {
+                    const nextHouseholdId = event.target.value;
+                    if (nextHouseholdId && nextHouseholdId !== householdId) {
+                      void runSafely(() => handleSwitchHousehold(nextHouseholdId));
+                    }
+                  }}
+                  className="w-full appearance-none rounded-xl border border-[#c8d8cf] bg-[#f8fcfa] py-2.5 pl-3 pr-10 text-sm font-semibold text-[#1f1b17] outline-none transition focus:border-[#006c49] focus:ring-2 focus:ring-[#006c49]/20"
+                  aria-label="Active home"
+                >
+                  {homesForPicker.map((home) => (
+                    <option key={home.household_id} value={home.household_id}>
+                      {home.household_name}
+                    </option>
+                  ))}
+                </select>
+                <span className="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-[#6c7a71]">
+                  <ChevronsUpDown className="h-4 w-4" />
+                </span>
               </div>
-              )}
-            </div>
+            )}
           </section>
 
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -2166,37 +2139,20 @@ export default function Home() {
                     </div>
 
                     <div
-                      className="mt-4 rounded-2xl border border-[#eee6dc] bg-[#fbfaf6] p-3"
+                      className="mt-4 rounded-2xl border border-[#eee6dc] bg-[#fbfaf6] px-3 py-2.5"
                       onClick={(event) => event.stopPropagation()}
                     >
-                      <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#6c7a71]">
-                        Room photo
-                      </p>
-                      <div className="flex items-center gap-2">
-                      <label
-                        htmlFor={`room-photo-${room.id}`}
-                        className="inline-flex min-h-10 flex-1 cursor-pointer items-center justify-center rounded-xl border border-[#d5ddd9] bg-white px-3 py-2 text-xs font-bold text-[#3c4a42] shadow-sm hover:border-[#bbcabf]"
-                      >
-                        Choose photo
-                      </label>
-                      <input
-                        id={`room-photo-${room.id}`}
-                        type="file"
-                        accept="image/*"
-                        onChange={(event) =>
-                          handleRoomFileChange(room.id, event.target.files?.[0] ?? null)
-                        }
-                        className="sr-only"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void runSafely(() => handleUploadImage(room.id));
-                        }}
-                        className="min-h-10 whitespace-nowrap rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-xs font-bold text-[#006c49]"
-                      >
-                        Upload
-                      </button>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6c7a71]">
+                          Room photo
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => openRoomPhotoPicker(room.id)}
+                          className="inline-flex min-h-8 items-center justify-center rounded-lg border border-[#d5ddd9] bg-white px-2.5 py-1 text-[11px] font-bold text-[#3c4a42] shadow-sm hover:border-[#bbcabf]"
+                        >
+                          Change
+                        </button>
                       </div>
                     </div>
 
@@ -2248,6 +2204,73 @@ export default function Home() {
                 className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
               >
                 Create Room
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {!selectedRoom && roomForPhotoPicker ? (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-black/35 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
+          <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
+            <h3 className="text-base font-semibold text-[#1f1b17]">Room photo</h3>
+            <p className="mt-1 text-sm text-[#6c7a71]">{roomForPhotoPicker.name}</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  void runSafely(() => handleOpenCameraCapture("room"));
+                }}
+                className="rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-xs font-semibold text-[#3c4a42]"
+              >
+                Take photo
+              </button>
+              <button
+                type="button"
+                onClick={() => roomPhotoUploadInputRef.current?.click()}
+                className="rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-xs font-semibold text-[#3c4a42]"
+              >
+                Choose photo
+              </button>
+            </div>
+            <input
+              ref={roomPhotoUploadInputRef}
+              type="file"
+              accept="image/*"
+              onChange={(event) =>
+                handleRoomFileChange(roomForPhotoPicker.id, event.target.files?.[0] ?? null)
+              }
+              className="hidden"
+            />
+            {selectedRoomPhotoFile ? (
+              <p className="mt-3 rounded-lg border border-[#e8ddd6] bg-[#fbfaf6] px-2.5 py-2 text-xs text-[#3c4a42]">
+                Selected: {selectedRoomPhotoFile.name}
+              </p>
+            ) : (
+              <p className="mt-3 text-xs text-[#6c7a71]">No photo selected yet.</p>
+            )}
+            {roomPhotoPickerStatus ? (
+              <p className="mt-2 text-xs text-[#6c7a71]">{roomPhotoPickerStatus}</p>
+            ) : null}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeRoomPhotoPicker}
+                className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-medium text-[#3c4a42]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void runSafely(async () => {
+                    await handleUploadImage(roomForPhotoPicker.id);
+                    closeRoomPhotoPicker();
+                  });
+                }}
+                className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-sm font-semibold text-white"
+              >
+                Upload
               </button>
             </div>
           </div>
@@ -2617,11 +2640,15 @@ export default function Home() {
         </div>
       ) : null}
 
-      {selectedRoom && isAddPlantOpen && isCameraCaptureOpen ? (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-black/50 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
+      {isCameraCaptureOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center overflow-y-auto bg-black/50 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
           <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
             <h3 className="text-base font-semibold text-[#1f1b17]">Take photo</h3>
-            <p className="mt-1 text-sm text-[#6c7a71]">Point camera at the plant and tap Capture.</p>
+            <p className="mt-1 text-sm text-[#6c7a71]">
+              {cameraCaptureTarget === "room"
+                ? "Point camera at the room and tap Capture."
+                : "Point camera at the plant and tap Capture."}
+            </p>
             <video
               ref={cameraPreviewVideoRef}
               autoPlay

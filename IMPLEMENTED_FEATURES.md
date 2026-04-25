@@ -197,7 +197,7 @@ This document summarizes what has already been implemented in the project.
 - **Button interaction clarity:** global button states in `src/app/globals.css` now have stronger hover/active/focus-visible feedback (clearer press depth, contrast, and keyboard focus ring).
 - **Add Plant submit feedback:** `Add Plant` now has explicit pending state (`Adding plant...` + spinner), disables repeat clicks while request/upload is running, and keeps action state visible during network delay.
 - **Room-screen runtime status visibility:** room detail now shows current `message` in-page (compact status card above room photo), so API/validation/upload errors are visible where user is acting.
-- **Home cards** are a `div` with two side actions (rename / delete) so icon buttons are not nested inside the main “switch home” control (valid HTML, clearer hit targets).
+- **Main-screen home switcher compact mode:** card-based home picker was replaced with a compact dropdown select showing active home name; tap opens household list for quick switch with less vertical space.
 - **Bottom navigation** (`src/components/MobileShell.tsx`): `Link` routes — **Rooms** `/`, **Inbox** `/tasks`, **Settings** `/settings` (active tab from pathname). Main rooms experience stays on `/`.
 - **Placeholder pages:** `src/app/tasks/page.tsx` (tasks / inbox stub), `src/app/settings/page.tsx` (settings stub), each with back link to `/`.
 - Overview header **settings** icon links to `/settings`.
@@ -206,7 +206,9 @@ This document summarizes what has already been implemented in the project.
 - **Bottom nav refresh:** `MobileShell` navigation got larger touch targets, clearer active/inactive states, stronger elevation/backdrop blur, and explicit `aria-label` for primary navigation.
 - **Overview UX refresh:** rooms overview now has a stronger hero/introduction block, clearer hierarchy, and status presented as a compact chip/card instead of competing with main headings.
 - **Room cards UX refresh:** room cards are now keyboard-openable (`role="button"`, `tabIndex`, Enter/Space handling), have better visual hierarchy, clearer “open room” affordance, and friendlier no-photo state.
-- **Room image upload affordance:** room cards now use a dedicated “Room photo” subpanel with `Choose photo` + `Upload` actions (instead of raw file input presentation), improving clarity and tap ergonomics.
+- **Room image upload compact flow:** room cards now show a compact `Room photo` action that opens a modal with `Take photo` and `Choose photo`.
+- **Room camera flow parity with plants:** `Take photo` for room images now opens in-app camera preview (`getUserMedia` + `Capture`) similar to plant camera flow, avoiding Telegram/WebView file-input camera quirks.
+- **Room photo auto-upload after capture:** when capturing room photo in camera modal, upload starts immediately and room-photo modal closes after successful upload.
 - **Empty states refresh:** both overview (no rooms) and room detail (no plants) now include guided copy and immediate primary actions to reduce first-use friction.
 - **Room detail visual refresh:** selected-room header/back button/add-plant CTA and plant list cards were updated with larger hit areas, improved spacing, and stronger contrast hierarchy.
 - **Home screen bootstrap cleanup:** initial success toast/message (`User initialized`) was removed from `src/app/page.tsx` so the main screen starts cleaner after auth bootstrap.
