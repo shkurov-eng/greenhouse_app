@@ -2010,14 +2010,13 @@ export default function Home() {
                 Take a new photo or pick one from gallery.
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => addPlantCameraInputRef.current?.click()}
-                  className="inline-flex items-center gap-1 rounded-lg border border-[#bbcabf] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4a42]"
+                <label
+                  htmlFor="add-plant-camera-input"
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#bbcabf] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4a42]"
                 >
                   <Camera className="h-4 w-4" />
                   Take photo
-                </button>
+                </label>
                 <button
                   type="button"
                   onClick={() => addPlantUploadInputRef.current?.click()}
@@ -2037,6 +2036,7 @@ export default function Home() {
                 ) : null}
               </div>
               <input
+                id="add-plant-camera-input"
                 ref={addPlantCameraInputRef}
                 type="file"
                 accept="image/*;capture=camera"
