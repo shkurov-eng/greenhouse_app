@@ -5,6 +5,11 @@
 - Household action label/behavior in `Settings` is intentionally role-based:
   - owner: `Delete` -> deletes household
   - non-owner: `Leave` -> leaves household without deleting it
+- Room/plant photo upload `413 FUNCTION_PAYLOAD_TOO_LARGE` issue is closed:
+  - unified client compression helper is used across room + plant flows
+  - uploads are capped to ~4 MB after compression/downscale
+  - if still too large, UI shows explicit guidance before request
+  - backend `413` is mapped to a readable client error text
 
 ## Epic: Deterministic Species Watering Catalog
 

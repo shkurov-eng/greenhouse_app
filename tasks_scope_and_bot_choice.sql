@@ -51,6 +51,7 @@ create index if not exists bot_task_ingest_events_profile_created_idx
   on public.bot_task_ingest_events (profile_id, created_at desc);
 
 alter table if exists public.bot_task_drafts
+  -- Keep this for databases that created bot_task_drafts before selected_scope existed.
   add column if not exists selected_scope text
     check (selected_scope in ('personal', 'household'));
 
@@ -248,6 +249,7 @@ begin
 end
 $$;
 
+grant execute on function public.api_list_tasks(text) to anon, authenticated, service_role;
 grant execute on function public.api_create_task(text, text, text, text, timestamp with time zone, text)
   to anon, authenticated, service_role;
 grant execute on function public.api_register_bot_task_ingest(text, text, bigint, bigint)

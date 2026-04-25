@@ -275,6 +275,25 @@ begin
     return;
   end if;
 
+  if v_require_approval and v_owner_profile_id is null then
+    -- Legacy households may predate owner tracking; repair deterministically before approval flow.
+    select hm.user_id
+    into v_owner_profile_id
+    from public.household_members hm
+    where hm.household_id = v_target_household_id
+    order by hm.user_id
+    limit 1;
+
+    if v_owner_profile_id is null then
+      raise exception 'household owner is required for approval';
+    end if;
+
+    update public.households h
+    set created_by_profile_id = v_owner_profile_id
+    where h.id = v_target_household_id
+      and h.created_by_profile_id is null;
+  end if;
+
   if v_require_approval and v_owner_profile_id is not null and v_owner_profile_id <> v_profile_id then
     select p.telegram_id
     into v_owner_telegram_id
@@ -639,6 +658,10 @@ begin
 end
 $$;
 
+revoke all on function public.api_assert_household_create_allowed(uuid) from public;
+
+grant execute on function public.api_bootstrap_user(text, text) to anon, authenticated, service_role;
+grant execute on function public.api_create_household(text, text) to anon, authenticated, service_role;
 grant execute on function public.api_join_household(text, text) to anon, authenticated, service_role;
 grant execute on function public.api_get_household_join_settings(text) to anon, authenticated, service_role;
 grant execute on function public.api_set_household_join_setting(text, uuid, boolean) to anon, authenticated, service_role;

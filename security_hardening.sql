@@ -119,11 +119,13 @@ set search_path = public
 as $$
 declare
   chars constant text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  random_bytes bytea := gen_random_bytes(10);
   candidate text := '';
   i integer;
 begin
   for i in 1..10 loop
-    candidate := candidate || substr(chars, 1 + floor(random() * length(chars))::int, 1);
+    -- Use pgcrypto bytes instead of random() because invite codes gate household access.
+    candidate := candidate || substr(chars, 1 + (get_byte(random_bytes, i - 1) % length(chars)), 1);
   end loop;
   return candidate;
 end
@@ -438,7 +440,6 @@ declare
 begin
   v_profile_id := public.api_profile_id_by_telegram(p_telegram_id);
   v_household_id := public.api_household_id_by_profile(v_profile_id);
-  perform public.api_assert_plant_create_allowed(v_profile_id);
 
   return query
   select r.id, r.name, r.background_path, r.background_url
@@ -936,6 +937,9 @@ $$;
 revoke all on function public.api_generate_invite_code() from public;
 revoke all on function public.api_profile_id_by_telegram(text) from public;
 revoke all on function public.api_household_id_by_profile(uuid) from public;
+revoke all on function public.api_assert_room_create_allowed(uuid) from public;
+revoke all on function public.api_assert_plant_create_allowed(uuid) from public;
+revoke all on function public.api_assert_ai_photo_request_allowed(uuid) from public;
 
 grant execute on function public.api_bootstrap_user(text, text) to anon, authenticated, service_role;
 grant execute on function public.api_join_household(text, text) to anon, authenticated, service_role;

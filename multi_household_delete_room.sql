@@ -399,6 +399,10 @@ begin
 end
 $$;
 
+revoke all on function public.api_household_id_by_profile(uuid) from public;
+
+grant execute on function public.api_bootstrap_user(text, text) to anon, authenticated, service_role;
+grant execute on function public.api_join_household(text, text) to anon, authenticated, service_role;
 grant execute on function public.api_list_households(text) to anon, authenticated, service_role;
 grant execute on function public.api_create_household(text, text) to anon, authenticated, service_role;
 grant execute on function public.api_set_active_household(text, uuid) to anon, authenticated, service_role;

@@ -32,6 +32,23 @@ create index if not exists tasks_personal_assignee_status_created_idx
 alter table if exists public.bot_task_drafts
   alter column household_id drop not null;
 
+create or replace function public.api_is_household_member(
+  p_profile_id uuid,
+  p_household_id uuid
+)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.household_members hm
+    where hm.user_id = p_profile_id
+      and hm.household_id = p_household_id
+  );
+$$;
+
 drop function if exists public.api_list_tasks(text);
 create or replace function public.api_list_tasks(
   p_telegram_id text
@@ -97,12 +114,7 @@ begin
     -- Household tasks: visible in member households.
     (
       t.task_scope = 'household'
-      and exists (
-        select 1
-        from public.household_members hm
-        where hm.household_id = t.household_id
-          and hm.user_id = v_profile_id
-      )
+      and public.api_is_household_member(v_profile_id, t.household_id)
     )
   order by
     case when t.status = 'open' then 0 else 1 end,
@@ -150,12 +162,7 @@ begin
     if v_household_id is null then
       raise exception 'household_id is required for household task';
     end if;
-    if not exists (
-      select 1
-      from public.household_members hm
-      where hm.household_id = v_household_id
-        and hm.user_id = v_profile_id
-    ) then
+    if not public.api_is_household_member(v_profile_id, v_household_id) then
       raise exception 'forbidden household target';
     end if;
   else
@@ -218,12 +225,7 @@ begin
       (t.task_scope = 'personal' and t.assignee_profile_id = v_profile_id)
       or (
         t.task_scope = 'household'
-        and exists (
-          select 1
-          from public.household_members hm
-          where hm.household_id = t.household_id
-            and hm.user_id = v_profile_id
-        )
+        and public.api_is_household_member(v_profile_id, t.household_id)
       )
     );
 
@@ -259,12 +261,7 @@ begin
       (t.task_scope = 'personal' and t.assignee_profile_id = v_profile_id)
       or (
         t.task_scope = 'household'
-        and exists (
-          select 1
-          from public.household_members hm
-          where hm.household_id = t.household_id
-            and hm.user_id = v_profile_id
-        )
+        and public.api_is_household_member(v_profile_id, t.household_id)
       )
     );
 
@@ -273,6 +270,8 @@ begin
   end if;
 end
 $$;
+
+revoke all on function public.api_is_household_member(uuid, uuid) from public;
 
 grant execute on function public.api_list_tasks(text) to anon, authenticated, service_role;
 grant execute on function public.api_create_task(text, text, text, text, timestamp with time zone, text, uuid)

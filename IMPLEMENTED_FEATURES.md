@@ -1,6 +1,13 @@
-# GreenHouse App - Implemented Features (Current State)
+# GreenHouse App - Implementation Ledger
 
-This document summarizes what has already been implemented in the project.
+This document records what has already been implemented. Keep `README.md` focused on setup, architecture, and operations; use this file as the detailed feature ledger so current behavior has one obvious place to live.
+
+Maintenance guidelines:
+
+- Prefer short, verifiable facts over broad roadmap language.
+- Keep security-sensitive behavior explicit, especially auth, RLS, storage, ownership, and rate limits.
+- Avoid duplicating setup instructions from `README.md`; link concepts here to concrete implemented files and flows.
+- When behavior changes, update the affected section and the current behavior summary in the same change.
 
 ## Tech Stack and Base Setup
 
@@ -16,7 +23,7 @@ This document summarizes what has already been implemented in the project.
   - `GEMINI_API_KEY` (Google AI Studio, optional; enables AI detection for plant and room photos)
   - Optional local browser debug: `DEV_BROWSER_MODE=true`, `DEV_TELEGRAM_ID` (only with `npm run dev`)
 - `src/lib/supabase.ts` remains for potential non-UI use; **main UI does not use it for data access**.
-- Current lint baseline is clean (`npm run lint` passes).
+- Last known lint baseline is clean (`npm run lint` passes).
 - Git repository initialized for the project.
 
 ## Stage 1 - Foundation
@@ -69,12 +76,15 @@ This document summarizes what has already been implemented in the project.
 - Join home in UI:
   - Homes section shows invite code with **copy to clipboard** action.
   - User can join another home via invite code modal (`Join with code`).
-  - **Multi-household** (after `multi_household_delete_room.sql` on Supabase):
-    - `profiles.active_household_id` — which household drives `listRooms` and other room/plant RPCs.
-    - `api_list_households`, `api_create_household`, `api_set_active_household`; `api_join_household` **adds** membership and sets the joined home active (user can belong to several homes).
-    - Legacy unique-on-`user_id` alone on `household_members` must be dropped in favor of `UNIQUE (household_id, user_id)` (script attempts common constraint/index names, including `household_members_user_id_unique`).
-    - `INSERT ... ON CONFLICT` in PL/pgSQL uses **dynamic `EXECUTE ... USING`** where needed so `RETURNS TABLE (household_id, ...)` output names do not shadow column names.
-    - UI: card-style **home picker** (horizontal scroll when multiple homes), **Create new home** modal, **rename home** (pencil → modal; `api_rename_household`), **delete/leave home** (trash action: owner deletes via `api_delete_household`, non-owner leaves via secure action `leaveHousehold`; custom warning modal with **Continue/Cancel**), same secure API patterns. If the user deletes/leaves their last home, `loadHouseholds` runs `bootstrapUser` again so a default home is recreated.
+- **Multi-household** behavior after `multi_household_delete_room.sql`:
+  - `profiles.active_household_id` drives `listRooms` and other room/plant RPCs.
+  - `api_list_households`, `api_create_household`, and `api_set_active_household` support home management.
+  - `api_join_household` adds membership and sets the joined home active, so a user can belong to several homes.
+  - Legacy unique-on-`user_id` alone on `household_members` must be dropped in favor of `UNIQUE (household_id, user_id)`.
+  - The migration attempts common legacy constraint/index names, including `household_members_user_id_unique`.
+  - PL/pgSQL uses dynamic `EXECUTE ... USING` where needed so `RETURNS TABLE (household_id, ...)` output names do not shadow column names.
+  - UI supports create home, rename home (`api_rename_household`), delete owned home (`api_delete_household`), and leave non-owned home (`leaveHousehold` secure action).
+  - If the user deletes/leaves their last home, `loadHouseholds` runs `bootstrapUser` again so a default home is recreated.
 
 ## Stage 3 - Rooms
 
@@ -92,6 +102,7 @@ This document summarizes what has already been implemented in the project.
 - Room images:
   - Upload: `POST /api/rooms/upload` (service role uploads file, RPC attaches path to room).
   - Room photos are compressed client-side before upload (same compression helper used for plant photos), with UI status reflecting size reduction when available.
+  - Room photo upload applies a strict client-side payload ceiling (`~4 MB` after compression/downscale). If file is still too large, request is blocked client-side with explicit guidance.
   - Display: `listRooms` / `createRoom` / **`renameRoom`** responses include **`signed_background_url`** (short-lived signed URL from Storage).
   - **Legacy rows** with only `background_url` (old public URL) and empty `background_path`: server tries to derive storage path from the public URL and sign it so images keep working after bucket goes private.
 
@@ -104,6 +115,7 @@ This document summarizes what has already been implemented in the project.
 - **Edit Plant AI analyze action:** in `Edit Plant`, user can run **Analyze with AI** on the current plant photo to refresh editable fields (name + watering thresholds) even if the plant was initially filled manually.
 - **Android camera fallback:** `Add Plant` includes in-app camera capture via `getUserMedia` + frame capture, so Telegram Android/WebView `file input` quirks no longer block taking photos.
 - **Photo compression before AI/upload:** client compresses selected/captured images (downscale + JPEG quality) before sending to AI Studio and storage upload; UI shows compression result (`Compressed: X -> Y` or `No compression gain`).
+- **Unified upload-size guardrails:** shared client helper now handles compression + max-size validation for room and plant photo upload flows (including Add Plant, Replace Plant Photo, and pre-save AI analyze). Limit target is `~4 MB` after compression.
 - **AI analyze flow in Add Plant:** after photo selection, user can run a single explicit **Analyze with AI** action; UI shows `Analyzing...`, success autofill, precise error messages, retry, and **Apply anyway** for low-confidence suggestions.
 - **Add Plant browser resilience:** if client-side image compression/decode fails for a specific photo format, upload falls back to the original file instead of aborting add flow (`Compression skipped... uploading original`).
 - **Add Plant partial-success behavior:** if plant row is created but photo upload fails, plant creation is kept (no full rollback), and user gets explicit status that plant was added without photo.
@@ -213,7 +225,7 @@ This document summarizes what has already been implemented in the project.
 - **Room-screen runtime status visibility:** room detail now shows current `message` in-page (compact status card above room photo), so API/validation/upload errors are visible where user is acting.
 - **Main-screen home switcher compact mode:** card-based home picker was replaced with a compact dropdown select showing active home name; tap opens household list for quick switch with less vertical space.
 - **Bottom navigation** (`src/components/MobileShell.tsx`): `Link` routes — **Rooms** `/`, **Inbox** `/tasks`, **Settings** `/settings` (active tab from pathname). Main rooms experience stays on `/`.
-- **Placeholder pages:** `src/app/tasks/page.tsx` (tasks / inbox stub), `src/app/settings/page.tsx` (settings stub), each with back link to `/`.
+- **Route pages:** `src/app/tasks/page.tsx` is the functional task inbox; `src/app/settings/page.tsx` owns settings, household management, invite codes, and task message mode.
 - Overview header **settings** icon links to `/settings`.
 - **Fonts:** `next/font/google` (Plus Jakarta Sans) was removed so **production build does not depend on Google Fonts at fetch time**; app font stack is set in `src/app/globals.css` (system / web-safe stack under `--font-plus-jakarta`).
 - **Visual foundation refresh:** global UI polish in `src/app/globals.css` adds a softer layered background, improved font rendering, accessible link focus states, and shared form control typography inheritance.
@@ -231,6 +243,8 @@ This document summarizes what has already been implemented in the project.
 ## Known Technical Debt
 
 - No icon-font technical debt at the moment: Material Symbols custom font link and related ESLint suppression were removed, and UI icons now render via local React SVG components (`lucide-react`).
+- Migration application is still manual through SQL files. For production operations, the next maintainability step is a repeatable migration runner or deployment checklist that records which migrations have been applied per environment.
+- AI plant thresholds still rely on model output plus server safety rails. The planned deterministic species catalog should reduce inconsistent recommendations for common plants.
 
 ## Planned Work (Backlog)
 
@@ -290,5 +304,6 @@ Scope and plan:
 - All data access: `POST /api/secure`, `POST /api/rooms/upload`, `POST /api/rooms/analyze`, `POST /api/plants/upload`, `POST /api/plants/analyze`; RLS + RPC enforce household scope (active household from `profiles.active_household_id` when migration applied).
 - **Households:** members can **rename** (`api_rename_household`) a home they belong to; owner can **delete** (`api_delete_household`) it, while non-owner can only **leave** (`leaveHousehold` secure action). Delete removes shared data for everyone; leave removes only current member access. Empty membership after delete/leave is healed by **`bootstrapUser`** inside `loadHouseholds` (default home again).
 - Room thumbnails and detail images use **signed URLs**; legacy public URLs are supported via path extraction when needed.
+- Upload API error mapping now converts HTTP `413` responses to a clear message (`Uploaded file is too large. Please choose a smaller photo.`) instead of exposing raw non-JSON payload text.
 - **Opening a room** scrolls the page to the **top** before paint (`useLayoutEffect` in `src/app/page.tsx`) so watering markers on the image are usable without scrolling up from the list position.
 - Deletions (home, room, plant) use an in-app warning modal with explicit **Continue** / **Cancel** actions instead of browser `confirm()`.
