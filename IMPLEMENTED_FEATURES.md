@@ -66,6 +66,7 @@ This document summarizes what has already been implemented in the project.
 
 - Plants: `household_id`, `room_id`, `name`, `species`, `status`, `last_watered_at`, etc.
 - `plant_markers`: normalized `x`, `y` in `0..1`, unique per `plant_id`
+- Marker coordinates are calculated against the **visible image content area** (for `object-contain`), so marker placement stays aligned both on real phones and in desktop mobile emulation (no offset from letterboxing).
 - Plant CRUD, marker placement, edit-from-plant-dialog flows as before (all via `/api/secure` + RPC).
 - Plant deletion is available from **Edit Plant** with a warning modal (**Continue/Cancel**); room markers are removed together with the plant.
 - In **Plants in this room**, plants without a marker display a `no marker` badge next to the plant name.
@@ -77,6 +78,7 @@ This document summarizes what has already been implemented in the project.
 - Marker tap starts a **3-second delayed watering** (instead of instant watering).
 - Delayed watering supports **multi-tap batching**: tapping another marker does not cancel already scheduled markers; each marker keeps its own timer.
 - Marker popup shows **live countdown** (`Watering in 3s/2s/1s`) and a **Cancel** action to abort watering for that specific marker.
+- Multiple marker popups can be visible at the same time while their independent countdowns are running.
 - Closing a room does **not** cancel already scheduled marker waterings; they continue server-side and appear on next room open.
 - Re-watering is allowed: tapping an already watered marker updates `last_watered_at` to the current time again (timer reset/restart).
 - **Marker long-press opens `Edit Plant`** for that exact marker's plant (tap behavior still waters as before).

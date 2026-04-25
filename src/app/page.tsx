@@ -73,6 +73,13 @@ type PendingDeleteTarget =
   | { kind: "household"; id: string; label: string }
   | { kind: "plant"; id: string; label: string };
 
+type ImageContentBox = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
 declare global {
   interface Window {
     Telegram?: {
@@ -135,6 +142,9 @@ export default function Home() {
   const pendingWateringTimersRef = useRef<Record<string, number>>({});
   const pendingWateringStartedAtRef = useRef<Record<string, number>>({});
   const markerLongPressHandledRef = useRef<string | null>(null);
+  const roomImageContainerRef = useRef<HTMLDivElement | null>(null);
+  const roomImageRef = useRef<HTMLImageElement | null>(null);
+  const [roomImageContentBox, setRoomImageContentBox] = useState<ImageContentBox | null>(null);
 
   /** Opening a room reuses the same document scroll as the overview; reset so the photo + markers are in view. */
   useLayoutEffect(() => {
@@ -246,6 +256,53 @@ export default function Home() {
 
   function getRoomImageUrl(room: Room) {
     return room.signed_background_url ?? room.background_url;
+  }
+
+  function computeObjectContainBox(
+    containerWidth: number,
+    containerHeight: number,
+    imageNaturalWidth: number,
+    imageNaturalHeight: number,
+  ): ImageContentBox {
+    if (
+      containerWidth <= 0 ||
+      containerHeight <= 0 ||
+      imageNaturalWidth <= 0 ||
+      imageNaturalHeight <= 0
+    ) {
+      return { left: 0, top: 0, width: containerWidth, height: containerHeight };
+    }
+
+    const containerRatio = containerWidth / containerHeight;
+    const imageRatio = imageNaturalWidth / imageNaturalHeight;
+
+    if (containerRatio > imageRatio) {
+      const height = containerHeight;
+      const width = height * imageRatio;
+      const left = (containerWidth - width) / 2;
+      return { left, top: 0, width, height };
+    }
+
+    const width = containerWidth;
+    const height = width / imageRatio;
+    const top = (containerHeight - height) / 2;
+    return { left: 0, top, width, height };
+  }
+
+  function measureRoomImageContentBox() {
+    const container = roomImageContainerRef.current;
+    const image = roomImageRef.current;
+    if (!container || !image) {
+      setRoomImageContentBox(null);
+      return;
+    }
+    const box = computeObjectContainBox(
+      container.clientWidth,
+      container.clientHeight,
+      image.naturalWidth,
+      image.naturalHeight,
+    );
+    setRoomImageContentBox(box);
   }
 
   async function fetchRoomsForHousehold() {
@@ -762,8 +819,23 @@ export default function Home() {
       return;
     }
 
-    const rawX = (event.clientX - rect.left) / rect.width;
-    const rawY = (event.clientY - rect.top) / rect.height;
+    const contentBox =
+      roomImageContentBox ??
+      computeObjectContainBox(
+        rect.width,
+        rect.height,
+        roomImageRef.current?.naturalWidth ?? rect.width,
+        roomImageRef.current?.naturalHeight ?? rect.height,
+      );
+    const localX = event.clientX - rect.left - contentBox.left;
+    const localY = event.clientY - rect.top - contentBox.top;
+    if (localX < 0 || localY < 0 || localX > contentBox.width || localY > contentBox.height) {
+      setMessage("Tap on the image area to place marker");
+      return;
+    }
+
+    const rawX = localX / contentBox.width;
+    const rawY = localY / contentBox.height;
     const x = Math.min(Math.max(rawX, 0), 1);
     const y = Math.min(Math.max(rawY, 0), 1);
 
@@ -860,6 +932,18 @@ export default function Home() {
     setShowMarkerLongPressHint(!isDismissed);
   }, []);
 
+  useEffect(() => {
+    if (!selectedRoom) return;
+    const onResize = () => {
+      measureRoomImageContentBox();
+    };
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+    };
+  }, [selectedRoom?.id]);
+
   return (
     <MobileShell>
     <main className="min-h-screen bg-[#fff8f5] pb-32 text-[#1f1b17]">
@@ -911,6 +995,7 @@ export default function Home() {
           <section className="px-5 pt-20">
             <div
               className="relative overflow-hidden rounded-[24px] bg-[#f6ece6] shadow-[0_4px_20px_rgba(148,74,35,0.08)]"
+              ref={roomImageContainerRef}
               onClick={(event) => {
                 void runSafely(() => handleImageClick(event));
               }}
@@ -925,6 +1010,10 @@ export default function Home() {
                   src={getRoomImageUrl(selectedRoom) ?? undefined}
                   alt={selectedRoom.name}
                   className="h-[72vh] w-full object-contain"
+                  ref={roomImageRef}
+                  onLoad={() => {
+                    measureRoomImageContentBox();
+                  }}
                 />
               ) : (
                 <div className="flex h-[72vh] items-center justify-center text-sm text-[#6c7a71]">
@@ -944,8 +1033,12 @@ export default function Home() {
                   <div
                     key={marker.id}
                     style={{
-                      left: `${marker.x * 100}%`,
-                      top: `${marker.y * 100}%`,
+                      left: roomImageContentBox
+                        ? `${roomImageContentBox.left + marker.x * roomImageContentBox.width}px`
+                        : `${marker.x * 100}%`,
+                      top: roomImageContentBox
+                        ? `${roomImageContentBox.top + marker.y * roomImageContentBox.height}px`
+                        : `${marker.y * 100}%`,
                     }}
                     className="absolute -translate-x-1/2 -translate-y-1/2"
                   >
