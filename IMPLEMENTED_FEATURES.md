@@ -162,6 +162,8 @@ This document summarizes what has already been implemented in the project.
   - `getTaskSettings` / `setTaskSettings` (task message mode in settings)
 - `/tasks` page is now functional (no longer a placeholder):
   - Loads tasks for current Telegram user / active household.
+  - Supports manual task creation in-page (title, deadline, scope, target home).
+  - Creation form includes quick deadline presets (`+1h`, `Today 20:00`, `Tomorrow 09:00`).
   - Lets user toggle task status between `open` and `done`.
   - Shows task scope badges (`Личная` / `Дом: <name>`), AI badges, and due date.
   - Supports filtering/sorting by scope and deadline, plus date-range calendar controls and reset.
@@ -175,6 +177,7 @@ This document summarizes what has already been implemented in the project.
   - Supports message ingestion modes:
     - `single`: one message -> one draft/task flow
     - `combine`: multiple messages merged into one pending draft before finalization
+    - `combine` merged draft is capped at `20,000` characters with explicit truncation notice.
   - Media without caption is supported with fallback titles (`Задача из фото`, `...из файла`, etc.).
   - Link messages default to title `Задача из ссылки` (URL content parsing postponed to backlog).
 
@@ -182,6 +185,8 @@ This document summarizes what has already been implemented in the project.
 
 - Added scheduled reminders endpoint `POST /api/jobs/send-reminders`:
   - Scans open tasks with `due_at` in reminder window.
+  - Reminder scheduler is configured to run every 5 minutes.
+  - Due-soon selection uses a near-deadline window (`now-5m .. now+15m`) to avoid overly early reminders.
   - Sends `due_soon` / `overdue` notifications through Telegram Bot API.
   - Uses `task_reminders_log` to avoid duplicate sends within reminder windows.
   - Supports optional job secret header (`x-job-secret`) via env.

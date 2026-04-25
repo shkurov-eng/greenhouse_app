@@ -1,19 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Settings } from "lucide-react";
+import { ArrowLeft, Copy, Settings } from "lucide-react";
 
 import { MobileShell } from "@/components/MobileShell";
 import {
+  bootstrapUser,
+  createHousehold,
+  deleteHousehold,
   getHouseholdJoinSettings,
   getTaskSettings,
+  joinHousehold,
   listHouseholdMembers,
+  listHouseholds,
   listHouseholdJoinRequests,
+  renameHousehold,
   removeHouseholdMember,
   reviewHouseholdJoinRequest,
+  setActiveHousehold,
   setHouseholdJoinSetting,
   setTaskSettings,
+  type HouseholdSummary,
   type HouseholdMember,
   type HouseholdJoinRequest,
   type HouseholdJoinSetting,
@@ -25,6 +33,21 @@ function resolveTelegramInitData() {
   }
   const telegram = (window as Window & { Telegram?: { WebApp?: { initData?: string } } }).Telegram;
   return telegram?.WebApp?.initData?.trim() || null;
+}
+
+function hasTelegramWebAppRuntime() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const telegram = (window as Window & { Telegram?: { WebApp?: unknown } }).Telegram;
+  return Boolean(telegram?.WebApp);
+}
+
+function hasTelegramUserAgentRuntime() {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+  return /Telegram/i.test(navigator.userAgent);
 }
 
 export default function SettingsPage() {
@@ -41,8 +64,35 @@ export default function SettingsPage() {
   const [membersLoading, setMembersLoading] = useState(false);
   const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
   const [removingMemberProfileId, setRemovingMemberProfileId] = useState<string | null>(null);
+  const [households, setHouseholds] = useState<HouseholdSummary[]>([]);
+  const [newHomeName, setNewHomeName] = useState("");
+  const [joinCode, setJoinCode] = useState("");
+  const [renameHomeId, setRenameHomeId] = useState<string | null>(null);
+  const [renameHomeInput, setRenameHomeInput] = useState("");
+  const [householdActionId, setHouseholdActionId] = useState<string | null>(null);
+  const [creatingHome, setCreatingHome] = useState(false);
+  const [joiningHome, setJoiningHome] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const ownerHomes = useMemo(() => joinSettings.filter((row) => row.is_owner), [joinSettings]);
+
+  const readErrorText = (error: unknown, fallback: string) =>
+    error instanceof Error ? error.message : fallback;
+
+  const refreshHouseholds = useCallback(async (initial = false) => {
+    const list = await listHouseholds(initData);
+    setHouseholds(list);
+    if (initial && list.length === 0) {
+      const user = await bootstrapUser(initData, null);
+      setHouseholds([
+        {
+          household_id: user.id,
+          household_name: user.name,
+          invite_code: user.invite_code,
+          is_active: true,
+        },
+      ]);
+    }
+  }, [initData]);
 
   useEffect(() => {
     const run = async () => {
@@ -53,17 +103,17 @@ export default function SettingsPage() {
         ]);
         setMode(taskSettings.taskMessageMode);
         setJoinSettings(settingsRows);
+        await refreshHouseholds(true);
         const ownerHome = settingsRows.find((row) => row.is_owner);
         setSelectedHouseholdId(ownerHome?.household_id ?? "");
       } catch (error) {
-        const text = error instanceof Error ? error.message : "Failed to load settings";
-        setMessage(text);
+        setMessage(readErrorText(error, "Failed to load settings"));
       } finally {
         setLoading(false);
       }
     };
     void run();
-  }, [initData]);
+  }, [initData, refreshHouseholds]);
 
   useEffect(() => {
     const ownerSetting = ownerHomes.find((row) => row.household_id === selectedHouseholdId);
@@ -86,8 +136,7 @@ export default function SettingsPage() {
         });
         setMembersByHousehold(nextMembersByHousehold);
       } catch (error) {
-        const text = error instanceof Error ? error.message : "Failed to load join requests";
-        setMessage(text);
+        setMessage(readErrorText(error, "Failed to load join requests"));
       } finally {
         setRequestsLoading(false);
         setMembersLoading(false);
@@ -104,8 +153,7 @@ export default function SettingsPage() {
       const saved = await setTaskSettings(initData, { taskMessageMode: nextMode });
       setMode(saved.taskMessageMode);
     } catch (error) {
-      const text = error instanceof Error ? error.message : "Failed to save settings";
-      setMessage(text);
+      setMessage(readErrorText(error, "Failed to save settings"));
     } finally {
       setSaving(false);
     }
@@ -128,8 +176,7 @@ export default function SettingsPage() {
           : `Join approval disabled for "${updated.household_name}"`,
       );
     } catch (error) {
-      const text = error instanceof Error ? error.message : "Failed to save join settings";
-      setMessage(text);
+      setMessage(readErrorText(error, "Failed to save join settings"));
     } finally {
       setJoinSettingsSavingHouseholdId(null);
     }
@@ -157,8 +204,7 @@ export default function SettingsPage() {
           : `Rejected join request for ${reviewed.household_name}`,
       );
     } catch (error) {
-      const text = error instanceof Error ? error.message : "Failed to review join request";
-      setMessage(text);
+      setMessage(readErrorText(error, "Failed to review join request"));
     } finally {
       setReviewingRequestId(null);
     }
@@ -185,10 +231,122 @@ export default function SettingsPage() {
         } from ${removed.household_name}`,
       );
     } catch (error) {
-      const text = error instanceof Error ? error.message : "Failed to remove member";
-      setMessage(text);
+      setMessage(readErrorText(error, "Failed to remove member"));
     } finally {
       setRemovingMemberProfileId(null);
+    }
+  };
+
+  const onSwitchActiveHome = async (householdId: string) => {
+    setHouseholdActionId(householdId);
+    setMessage(null);
+    try {
+      await setActiveHousehold(initData, householdId);
+      await refreshHouseholds();
+      setMessage("Active home updated");
+    } catch (error) {
+      setMessage(readErrorText(error, "Failed to switch active home"));
+    } finally {
+      setHouseholdActionId(null);
+    }
+  };
+
+  const onCreateHome = async () => {
+    setCreatingHome(true);
+    setMessage(null);
+    try {
+      const label = newHomeName.trim();
+      await createHousehold(initData, label.length > 0 ? label : undefined);
+      setNewHomeName("");
+      await refreshHouseholds();
+      setMessage("New home created");
+    } catch (error) {
+      setMessage(readErrorText(error, "Failed to create home"));
+    } finally {
+      setCreatingHome(false);
+    }
+  };
+
+  const onJoinHome = async () => {
+    const code = joinCode.trim().toUpperCase();
+    const isLegacyInviteException = code === "ZFXQSB";
+    if (!code) {
+      setMessage("Enter invite code");
+      return;
+    }
+    if (!/^[A-Z2-9]{10}$/.test(code) && !isLegacyInviteException) {
+      setMessage("Invite code must be 10 chars (A-Z, 2-9)");
+      return;
+    }
+    setJoiningHome(true);
+    setMessage(null);
+    try {
+      const joined = await joinHousehold(initData, code);
+      await refreshHouseholds();
+      setJoinCode("");
+      setMessage(
+        joined.join_status === "pending_approval"
+          ? `Join request sent to ${joined.household_name}`
+          : `Joined ${joined.household_name}`,
+      );
+    } catch (error) {
+      setMessage(readErrorText(error, "Failed to join home"));
+    } finally {
+      setJoiningHome(false);
+    }
+  };
+
+  const onRenameHome = async (householdId: string) => {
+    const label = renameHomeInput.trim();
+    if (!label) {
+      setMessage("Home name is required");
+      return;
+    }
+    setHouseholdActionId(householdId);
+    setMessage(null);
+    try {
+      await renameHousehold(initData, householdId, label);
+      await refreshHouseholds();
+      setRenameHomeId(null);
+      setRenameHomeInput("");
+      setMessage("Home renamed");
+    } catch (error) {
+      setMessage(readErrorText(error, "Failed to rename home"));
+    } finally {
+      setHouseholdActionId(null);
+    }
+  };
+
+  const onDeleteHome = async (householdId: string, homeName: string) => {
+    const confirmed = window.confirm(
+      `Delete home "${homeName}"? All rooms and plants in this home will be removed for every member.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+    setHouseholdActionId(householdId);
+    setMessage(null);
+    try {
+      await deleteHousehold(initData, householdId);
+      await refreshHouseholds();
+      setMessage("Home deleted");
+    } catch (error) {
+      setMessage(readErrorText(error, "Failed to delete home"));
+    } finally {
+      setHouseholdActionId(null);
+    }
+  };
+
+  const onCopyInviteCode = async (code: string | null | undefined) => {
+    if (!code) {
+      setMessage("No invite code yet");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(code);
+      setMessage("Invite code copied");
+    } catch {
+      setMessage("Cannot copy in this browser");
     }
   };
 
@@ -206,6 +364,159 @@ export default function SettingsPage() {
             </div>
           </header>
           <section className="rounded-[24px] bg-white p-6 shadow-[0_4px_20px_rgba(148,74,35,0.06)]">
+            <h2 className="text-sm font-bold text-[#1f1b17]">Home management</h2>
+            <p className="mt-1 text-xs text-[#6c7a71]">
+              Create, join, rename, delete homes and manage invite code from one place.
+            </p>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-xl border border-[#e7ddd6] p-3">
+                <label className="mb-1 block text-xs font-semibold text-[#3c4a42]">Create new home</label>
+                <input
+                  value={newHomeName}
+                  onChange={(event) => setNewHomeName(event.target.value)}
+                  placeholder="Optional name"
+                  className="w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onCreateHome();
+                  }}
+                  disabled={creatingHome}
+                  className="mt-2 rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                >
+                  {creatingHome ? "Creating..." : "Create"}
+                </button>
+              </div>
+              <div className="rounded-xl border border-[#e7ddd6] p-3">
+                <label className="mb-1 block text-xs font-semibold text-[#3c4a42]">Join by invite code</label>
+                <input
+                  value={joinCode}
+                  onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                  placeholder="XXXXXXXXXX"
+                  maxLength={10}
+                  className="w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm uppercase tracking-[0.2em] outline-none focus:border-[#006c49]"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onJoinHome();
+                  }}
+                  disabled={joiningHome}
+                  className="mt-2 rounded-lg border border-[#bbcabf] px-3 py-1.5 text-xs font-semibold text-[#1f1b17] disabled:opacity-60"
+                >
+                  {joiningHome ? "Joining..." : "Join"}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              {households.map((home) => (
+                <div key={home.household_id} className="rounded-xl border border-[#e7ddd6] p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="min-w-0 flex-1 break-words text-sm font-semibold text-[#1f1b17]">
+                      {home.household_name}
+                    </p>
+                    {home.is_active ? (
+                      <span className="rounded bg-[#e6f5ef] px-2 py-0.5 text-[11px] font-semibold text-[#006c49]">
+                        Active
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <p className="min-w-0 flex-1 break-all rounded-lg bg-[#f8f6f3] px-2.5 py-2 font-mono text-xs font-semibold tracking-[0.08em] text-[#1f1b17]">
+                      {home.invite_code ?? "—"}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void onCopyInviteCode(home.invite_code);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-[#d4e8df] bg-[#f4faf7] px-2.5 py-2 text-xs font-semibold text-[#006c49]"
+                    >
+                      <Copy className="h-4 w-4" />
+                      Copy
+                    </button>
+                  </div>
+                  {renameHomeId === home.household_id ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <input
+                        value={renameHomeInput}
+                        onChange={(event) => setRenameHomeInput(event.target.value)}
+                        className="min-w-[12rem] flex-1 rounded-lg border border-[#bbcabf] bg-white px-2.5 py-1.5 text-sm outline-none focus:border-[#006c49]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void onRenameHome(home.household_id);
+                        }}
+                        disabled={householdActionId === home.household_id}
+                        className="rounded-lg border border-[#bbcabf] px-2.5 py-1.5 text-xs font-semibold text-[#1f1b17] disabled:opacity-60"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRenameHomeId(null);
+                          setRenameHomeInput("");
+                        }}
+                        className="rounded-lg border border-[#eaded6] px-2.5 py-1.5 text-xs font-semibold text-[#6c7a71]"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void onSwitchActiveHome(home.household_id);
+                        }}
+                        disabled={home.is_active || householdActionId === home.household_id}
+                        className="rounded-lg border border-[#bbcabf] px-2.5 py-1.5 text-xs font-semibold text-[#1f1b17] disabled:opacity-60"
+                      >
+                        Make active
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRenameHomeId(home.household_id);
+                          setRenameHomeInput(home.household_name);
+                        }}
+                        className="rounded-lg border border-[#bbcabf] px-2.5 py-1.5 text-xs font-semibold text-[#1f1b17]"
+                      >
+                        Rename
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void onDeleteHome(home.household_id, home.household_name);
+                        }}
+                        disabled={householdActionId === home.household_id}
+                        className="rounded-lg border border-[#eaded6] px-2.5 py-1.5 text-xs font-semibold text-[#8a3b1c] disabled:opacity-60"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+          <section className="mt-4 rounded-[24px] bg-white p-6 shadow-[0_4px_20px_rgba(148,74,35,0.06)]">
+            <h2 className="text-sm font-bold text-[#1f1b17]">Debug info</h2>
+            <p className="mt-1 text-xs text-[#6c7a71]">
+              Telegram runtime diagnostics moved here from the home screen.
+            </p>
+            <div className="mt-3 rounded-xl border border-[#e7ddd6] bg-[#faf7f3] p-3 text-xs text-[#3c4a42]">
+              <p>Telegram WebApp: {hasTelegramWebAppRuntime() ? "yes" : "no"}</p>
+              <p>Init data: {initData ? "present" : "missing"}</p>
+              <p>Telegram user agent: {hasTelegramUserAgentRuntime() ? "yes" : "no"}</p>
+            </div>
+          </section>
+          <section className="mt-4 rounded-[24px] bg-white p-6 shadow-[0_4px_20px_rgba(148,74,35,0.06)]">
             <h2 className="text-sm font-bold text-[#1f1b17]">Bot task mode</h2>
             <p className="mt-1 text-xs text-[#6c7a71]">
               Choose how forwarded bot messages are turned into tasks.

@@ -6,11 +6,7 @@ import {
   ArrowLeft,
   Camera,
   CheckCircle2,
-  Copy,
-  DoorOpen,
-  HousePlus,
   ImagePlus,
-  KeyRound,
   Pencil,
   Plus,
   Settings,
@@ -154,11 +150,7 @@ export default function Home() {
   /** Sync source for API headers; React state updates too late for same-tick awaits after bootstrap. */
   const telegramInitDataRef = useRef<string | null>(null);
 
-  const [message, setMessage] = useState("No Telegram user detected");
-  const [isDebugMock, setIsDebugMock] = useState(false);
-  const [telegramInitData, setTelegramInitData] = useState<string | null>(null);
-  const [isTelegramWebAppDetected, setIsTelegramWebAppDetected] = useState(false);
-  const [isTelegramUserAgentDetected, setIsTelegramUserAgentDetected] = useState(false);
+  const [message, setMessage] = useState("");
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [currentHousehold, setCurrentHousehold] = useState<Household | null>(null);
   const [isJoinHomeOpen, setIsJoinHomeOpen] = useState(false);
@@ -367,7 +359,7 @@ export default function Home() {
   }
 
   function getCurrentInitData() {
-    return telegramInitDataRef.current ?? telegramInitData;
+    return telegramInitDataRef.current;
   }
 
   async function loadHouseholds() {
@@ -805,24 +797,14 @@ export default function Home() {
       const telegramInitDataValue =
         typeof rawInitData === "string" && rawInitData.length > 0 ? rawInitData : null;
       const telegramUser = tg?.initDataUnsafe?.user;
-      const shouldUseMockUser = !telegramInitDataValue;
-      const isTelegramUa = /telegram/i.test(window.navigator.userAgent);
 
       telegramInitDataRef.current = telegramInitDataValue;
-
-      if (isMounted) {
-        setIsDebugMock(shouldUseMockUser);
-        setTelegramInitData(telegramInitDataValue);
-        setIsTelegramWebAppDetected(Boolean(tg));
-        setIsTelegramUserAgentDetected(isTelegramUa);
-      }
 
       await bootstrapUser(telegramInitDataValue, telegramUser?.username ?? null);
 
       if (isMounted) {
         await loadHouseholds();
         await fetchRoomsForHousehold();
-        setMessage("User initialized");
       }
     }
 
@@ -1009,20 +991,6 @@ export default function Home() {
       "from-[#5c4d7d] to-[#8b7ab8]",
     ];
     return tints[index % tints.length]!;
-  }
-
-  async function copyInviteCode() {
-    const code = currentHousehold?.invite_code;
-    if (!code) {
-      setMessage("No invite code yet");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(code);
-      setMessage("Invite code copied");
-    } catch {
-      setMessage("Could not copy — select and copy manually");
-    }
   }
 
   async function handleCreatePlant() {
@@ -1415,10 +1383,6 @@ export default function Home() {
 
   function requestDeleteRoom(roomId: string, roomLabel: string) {
     setPendingDeleteTarget({ kind: "room", id: roomId, label: roomLabel });
-  }
-
-  function requestDeleteHousehold(targetHouseholdId: string, homeLabel: string) {
-    setPendingDeleteTarget({ kind: "household", id: targetHouseholdId, label: homeLabel });
   }
 
   function requestDeletePlant() {
@@ -2005,52 +1969,30 @@ export default function Home() {
         </div>
       ) : (
         <div className="mx-auto w-full max-w-5xl px-5 pt-6">
-          <header className="mb-7 flex items-center justify-between">
+          <header className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#e6f5ef] text-[#006c49] shadow-sm">
-                <Sprout className="h-6 w-6" />
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#e6f5ef] text-[#006c49] shadow-sm">
+                <Sprout className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-lg font-extrabold tracking-tight text-[#006c49]">GreenHouse</p>
-                <p className="text-[11px] font-medium text-[#6c7a71]">Care that stays visible</p>
+                <p className="text-base font-extrabold tracking-tight text-[#006c49]">GreenHouse</p>
+                <p className="text-[11px] font-medium text-[#6c7a71]">Select home</p>
               </div>
             </div>
             <Link
               href="/settings"
-              className="rounded-full bg-white/90 p-3 text-[#6c7a71] shadow-sm hover:text-[#006c49]"
+              className="rounded-full bg-white/90 p-2.5 text-[#6c7a71] shadow-sm hover:text-[#006c49]"
               aria-label="Settings"
             >
               <Settings className="h-5 w-5" />
             </Link>
           </header>
 
-          <section className="mb-8 rounded-[32px] border border-white/80 bg-white/70 p-5 shadow-[0_14px_36px_rgba(81,55,37,0.08)] backdrop-blur">
-            <div className="max-w-2xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#006c49]">
-                My Sanctuary
-              </p>
-              <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
-                Your plants, room by room
-              </h1>
-              <p className="mt-2 text-sm leading-6 text-[#6c7a71]">
-                See which spaces need attention, upload room photos, and place plant markers where
-                they live.
-              </p>
-              {message ? (
-                <p className="mt-4 rounded-2xl border border-[#e7ddd6] bg-white/85 px-3 py-2 text-xs font-medium text-[#3c4a42]">
-                  {message}
-                </p>
-              ) : null}
-              {isDebugMock ? (
-                <p className="mt-1 text-xs text-[#944a23]">Debug mode: mock Telegram user</p>
-              ) : null}
-              <p className="mt-2 text-[11px] text-[#6c7a71]">
-                Telegram WebApp: {isTelegramWebAppDetected ? "yes" : "no"} · initData:{" "}
-                {telegramInitData ? "present" : "missing"} · telegram user agent:{" "}
-                {isTelegramUserAgentDetected ? "yes" : "no"}
-              </p>
-            </div>
-          </section>
+          {message ? (
+            <p className="mb-4 rounded-2xl border border-[#e7ddd6] bg-white/85 px-3 py-2 text-xs font-medium text-[#3c4a42]">
+              {message}
+            </p>
+          ) : null}
 
           <section className="relative mb-6 overflow-hidden rounded-[28px] shadow-[0_8px_40px_rgba(0,108,73,0.12)] ring-1 ring-[#006c49]/10">
             <div
@@ -2064,15 +2006,8 @@ export default function Home() {
             <div className="relative bg-gradient-to-br from-white via-[#faf9f7] to-[#eef7f2] p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#006c49]">
-                    Your homes
-                  </p>
-                  <h2 className="mt-1 text-xl font-bold tracking-tight text-[#1f1b17]">
-                    Pick a space
-                  </h2>
-                  <p className="mt-0.5 text-xs text-[#6c7a71]">
-                    Switch anytime — rooms and plants follow the active home.
-                  </p>
+                  <h2 className="text-lg font-bold tracking-tight text-[#1f1b17]">Choose home</h2>
+                  <p className="mt-0.5 text-xs text-[#6c7a71]">Rooms and plants follow active home.</p>
                 </div>
                 {homesForPicker.length > 0 ? (
                   <div className="flex h-10 min-w-10 items-center justify-center rounded-2xl bg-[#006c49]/10 px-2.5 text-sm font-bold tabular-nums text-[#006c49]">
@@ -2088,22 +2023,14 @@ export default function Home() {
                   <p className="text-sm font-medium text-[#6c7a71]">Loading your homes…</p>
                 </div>
               ) : (
-              <div
-                className={`mt-4 flex gap-3 ${
-                  homesForPicker.length <= 1
-                    ? "flex-col"
-                    : "snap-x snap-mandatory overflow-x-auto pb-2 pt-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                }`}
-              >
+              <div className="mt-4 flex flex-col gap-2.5">
                 {homesForPicker.map((h, index) => {
                   const isCurrent = h.household_id === householdId;
                   const tint = householdCardTint(index);
                   return (
                     <div
                       key={h.household_id}
-                      className={`group flex transition ${
-                        homesForPicker.length <= 1 ? "w-full" : "w-[min(100%,11.5rem)] shrink-0 snap-start sm:w-44"
-                      } rounded-2xl border-2 focus-within:ring-2 focus-within:ring-[#006c49] focus-within:ring-offset-2 ${
+                      className={`group flex w-full transition rounded-2xl border-2 focus-within:ring-2 focus-within:ring-[#006c49] focus-within:ring-offset-2 ${
                         isCurrent
                           ? "border-[#006c49] bg-white shadow-[0_6px_24px_rgba(0,108,73,0.15)]"
                           : "border-transparent bg-white/70 shadow-sm hover:border-[#bbcabf]/80 hover:bg-white hover:shadow-md"
@@ -2127,7 +2054,7 @@ export default function Home() {
                             {householdInitials(h.household_name)}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate font-semibold leading-snug text-[#1f1b17]">
+                            <p className="break-words text-sm font-semibold leading-snug text-[#1f1b17]">
                               {h.household_name}
                             </p>
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -2145,74 +2072,11 @@ export default function Home() {
                           </div>
                         </div>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setRenameHomeId(h.household_id);
-                          setRenameHomeInput(h.household_name);
-                          setIsRenameHomeOpen(true);
-                        }}
-                        className="flex shrink-0 items-start justify-center px-1.5 pb-2 pt-3 text-[#6c7a71] transition hover:bg-[#e6f5ef]/80 hover:text-[#006c49] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#006c49]/30"
-                        aria-label={`Rename home ${h.household_name}`}
-                      >
-                        <Pencil className="h-5 w-5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          requestDeleteHousehold(h.household_id, h.household_name);
-                        }}
-                        className="flex shrink-0 items-start justify-center rounded-tr-2xl rounded-br-2xl px-2.5 pb-2 pt-3 text-[#6c7a71] transition hover:bg-[#ffdad6]/50 hover:text-[#93000a] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ba1a1a]/40"
-                        aria-label={`Delete home ${h.household_name}`}
-                      >
-                        <Trash2 className="h-5 w-5" />
-                      </button>
                     </div>
                   );
                 })}
               </div>
               )}
-
-              <div className="mt-4 rounded-2xl border border-[#e8e4e0] bg-white/80 p-3 backdrop-blur-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-[#6c7a71]">
-                    <KeyRound className="h-4 w-4 text-[#006c49]/80" />
-                    <span>Invite friends</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void runSafely(copyInviteCode);
-                    }}
-                    className="inline-flex items-center gap-1 rounded-full border border-[#d4e8df] bg-[#f4faf7] px-2.5 py-1 text-[11px] font-semibold text-[#006c49] transition hover:bg-[#e6f5ef]"
-                  >
-                    <Copy className="h-4 w-4" />
-                    Copy
-                  </button>
-                </div>
-                <p className="mt-2 break-all font-mono text-sm font-semibold tracking-[0.08em] text-[#1f1b17]">
-                  {currentHousehold?.invite_code ?? "—"}
-                </p>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateHomeOpen(true)}
-                  className="inline-flex flex-1 min-w-[9rem] items-center justify-center gap-2 rounded-2xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-3 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(0,108,73,0.35)] transition active:translate-y-px"
-                >
-                  <HousePlus className="h-5 w-5" />
-                  New home
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsJoinHomeOpen(true)}
-                  className="inline-flex flex-1 min-w-[9rem] items-center justify-center gap-2 rounded-2xl border border-[#d5ddd9] bg-white px-4 py-3 text-sm font-semibold text-[#3c4a42] shadow-sm transition hover:border-[#bbcabf] hover:bg-[#fafafa]"
-                >
-                  <DoorOpen className="h-5 w-5 text-[#6c7a71]" />
-                  Join with code
-                </button>
-              </div>
             </div>
           </section>
 
