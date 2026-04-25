@@ -223,31 +223,27 @@ begin
     from public.profiles p
     where p.id = v_profile_id;
 
-    insert into public.household_join_requests (
-      household_id,
-      requester_profile_id,
-      requester_telegram_id,
-      requester_username,
-      invite_code,
-      status,
-      updated_at
-    )
-    values (
-      v_target_household_id,
-      v_profile_id,
-      p_telegram_id::bigint,
-      v_username,
-      v_target_invite_code,
-      'pending',
-      now()
-    )
-    on conflict on constraint household_join_requests_pending_uidx
-    do update set
-      invite_code = excluded.invite_code,
-      requester_username = excluded.requester_username,
-      requester_telegram_id = excluded.requester_telegram_id,
-      updated_at = now()
-    returning id into v_request_id;
+    execute
+      'insert into public.household_join_requests (
+         household_id,
+         requester_profile_id,
+         requester_telegram_id,
+         requester_username,
+         invite_code,
+         status,
+         updated_at
+       )
+       values ($1, $2, $3, $4, $5, ''pending'', now())
+       on conflict (household_id, requester_profile_id)
+       where status = ''pending''
+       do update set
+         invite_code = excluded.invite_code,
+         requester_username = excluded.requester_username,
+         requester_telegram_id = excluded.requester_telegram_id,
+         updated_at = now()
+       returning id'
+    into v_request_id
+    using v_target_household_id, v_profile_id, p_telegram_id::bigint, v_username, v_target_invite_code;
 
     return query
     select 'pending_approval'::text, v_target_household_id, v_target_household_name, v_target_invite_code, v_request_id, v_owner_telegram_id;

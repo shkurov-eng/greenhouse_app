@@ -867,8 +867,13 @@ export default function Home() {
 
   async function handleJoinHome() {
     const code = joinCode.trim().toUpperCase();
+    setMessage("");
     if (!code) {
       setMessage("Enter invite code");
+      return;
+    }
+    if (!/^[A-Z2-9]{10}$/.test(code)) {
+      setMessage("Invite code must be 10 chars (A-Z, 2-9)");
       return;
     }
 
@@ -2486,8 +2491,10 @@ export default function Home() {
               onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
               placeholder="AB7D9K2Q4M"
               className="mt-4 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm uppercase outline-none focus:border-[#006c49]"
+              maxLength={10}
               autoFocus
             />
+            {message ? <p className="mt-2 text-xs text-[#8a3b1c]">{message}</p> : null}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
