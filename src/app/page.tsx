@@ -53,7 +53,6 @@ import {
 const DEFAULT_THIRSTY_AFTER_MINUTES = 5;
 const DEFAULT_OVERDUE_AFTER_MINUTES = 60;
 const MARKER_WATER_DELAY_MS = 3_000;
-const MARKER_DOUBLE_TAP_WINDOW_MS = 280;
 const MINUTES_IN_HOUR = 60;
 
 function wateringDerivedStatus(
@@ -260,8 +259,6 @@ export default function Home() {
     return window.localStorage.getItem("markerLongPressHintDismissed") !== "1";
   });
   const markerLongPressTimerRef = useRef<number | null>(null);
-  const markerSingleTapTimerRef = useRef<number | null>(null);
-  const markerLastTapRef = useRef<{ markerId: string; tappedAtMs: number } | null>(null);
   const pendingWateringTimersRef = useRef<Record<string, number>>({});
   const [pendingWateringStartedAtByMarkerId, setPendingWateringStartedAtByMarkerId] = useState<
     Record<string, number>
@@ -1237,13 +1234,6 @@ export default function Home() {
     clearMarkerLongPressTimer();
   }
 
-  function clearMarkerSingleTapTimer() {
-    if (markerSingleTapTimerRef.current !== null) {
-      window.clearTimeout(markerSingleTapTimerRef.current);
-      markerSingleTapTimerRef.current = null;
-    }
-  }
-
   function openEditPlantDialog(plant: Plant) {
     setEditingPlantId(plant.id);
     setEditPlantName(plant.name);
@@ -1701,7 +1691,6 @@ export default function Home() {
   useEffect(() => {
     return () => {
       clearMarkerLongPressTimer();
-      clearMarkerSingleTapTimer();
       if (markerPlacementFeedbackTimerRef.current !== null) {
         window.clearTimeout(markerPlacementFeedbackTimerRef.current);
       }
@@ -1884,34 +1873,9 @@ export default function Home() {
                         if (consumeLongPressHandled(marker.id)) {
                           return;
                         }
-                        const now = event.timeStamp;
-                        const lastTap = markerLastTapRef.current;
-                        const isDoubleTap =
-                          lastTap != null &&
-                          lastTap.markerId === marker.id &&
-                          now - lastTap.tappedAtMs <= MARKER_DOUBLE_TAP_WINDOW_MS;
-
-                        if (isDoubleTap) {
-                          markerLastTapRef.current = null;
-                          clearMarkerSingleTapTimer();
-                          if (markerPlant) {
-                            openEditPlantDialog(markerPlant);
-                          }
-                          return;
-                        }
-
-                        markerLastTapRef.current = { markerId: marker.id, tappedAtMs: now };
-                        clearMarkerSingleTapTimer();
-                        markerSingleTapTimerRef.current = window.setTimeout(() => {
-                          markerSingleTapTimerRef.current = null;
-                          const latestTap = markerLastTapRef.current;
-                          if (latestTap?.markerId === marker.id) {
-                            markerLastTapRef.current = null;
-                          }
-                          void runSafely(() =>
-                            handleMarkerTap(marker.plant_id, marker.id, selectedRoom.id, now),
-                          );
-                        }, MARKER_DOUBLE_TAP_WINDOW_MS);
+                        void runSafely(() =>
+                          handleMarkerTap(marker.plant_id, marker.id, selectedRoom.id, event.timeStamp),
+                        );
                       }}
                       title={markerPlant?.name ?? "Plant marker"}
                       aria-label={markerPlant?.name ?? "Plant marker"}

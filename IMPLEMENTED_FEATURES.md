@@ -54,6 +54,7 @@ This document summarizes what has already been implemented in the project.
   - max 30 AI photo requests per 1 hour
   - max 150 AI photo requests per 24 hours
   - applied for `POST /api/plants/upload` (AI mode), `POST /api/plants/analyze`, and `POST /api/rooms/analyze`
+  - temporary runtime fallback added: if Supabase reports missing `public.api_register_ai_photo_request(...)` in schema cache, endpoints continue without rate-limit check and log warning server-side (prevents user-facing hard failure on `AI detected` actions)
 - Bot task ingestion is protected with DB-backed rate limits via `api_register_bot_task_ingest` and `bot_task_ingest_events`:
   - max 40 bot-task ingests per 1 hour
   - max 200 bot-task ingests per 24 hours
@@ -262,6 +263,7 @@ Scope and plan:
 - `plants.sql` — plants + `plant_markers` + indexes.
 - `households_join.sql` — `invite_code` on `households` + unique index.
 - `security_hardening.sql` — RLS, revoke direct table access from anon/auth, `public.api_*` RPCs, private `rooms` storage, `rooms.background_path`, grants for RPC execution.
+- Migration caution: on databases that already use the newer `api_join_household` return shape (from `household_join_approval.sql`), rerunning full `security_hardening.sql` can fail with `cannot change return type of existing function`; use targeted patch SQL for missing objects instead.
 - `multi_household_delete_room.sql` — **run after** `security_hardening.sql`: `active_household_id` on `profiles`, relax single-home `household_members` uniqueness, replace `api_household_id_by_profile` / `api_bootstrap_user` / `api_join_household`, add `api_list_households`, `api_create_household`, `api_set_active_household`, `api_delete_room`, `api_rename_household`, `api_rename_room`, `api_delete_household` (optional tasks cleanup when `public.tasks` exists), and grants. Required for multi-home UI, renames, room/household delete. If the file was applied in parts, see incremental comments at the end of the SQL file for missing RPCs.
 - `watering_undo_history.sql` — persistent `plant_watering_events` history used by secure API to support global undo of the latest watering per plant.
 - `plant_photos.sql` — adds `plants.photo_path` and updates `api_room_details` payload to include plant photo metadata for signed URL rendering.
