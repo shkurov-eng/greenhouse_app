@@ -13,6 +13,7 @@ This document summarizes what has already been implemented in the project.
   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
   - `SUPABASE_SERVICE_ROLE_KEY` (server only)
   - `TELEGRAM_BOT_TOKEN` (production / real Mini App)
+  - `GEMINI_API_KEY` (Google AI Studio, optional; enables AI plant detection on photo upload)
   - Optional local browser debug: `DEV_BROWSER_MODE=true`, `DEV_TELEGRAM_ID` (only with `npm run dev`)
 - `src/lib/supabase.ts` remains for potential non-UI use; **main UI does not use it for data access**.
 - Current lint baseline is clean (`npm run lint` passes).
@@ -67,7 +68,12 @@ This document summarizes what has already been implemented in the project.
 
 - Plants: `household_id`, `room_id`, `name`, `species`, `status`, `last_watered_at`, etc.
 - Plant photos: add flow now supports either **taking a photo** or **uploading from gallery** in `Add Plant`; image is uploaded via `POST /api/plants/upload`, stored in Supabase Storage, and shown on plant cards and edit modal through signed URLs. `Edit Plant` also supports **Replace photo** and **Remove photo**.
-- Per-plant watering thresholds: each plant now stores **thirsty-after minutes** and **overdue-after minutes** (defaults 5/60). Values are shown in plant info and can be edited in add/edit plant dialogs.
+- AI auto-detection on plant photo upload: when `GEMINI_API_KEY` is configured, `POST /api/plants/upload` sends the photo to Google AI Studio (Gemini) and auto-updates plant name + per-plant watering thresholds from model output.
+- AI watering amount recommendation: photo analysis also stores suggested watering amount (`light` / `moderate` / `abundant`) and shows it in plant info.
+- AI watering summary: photo analysis also stores a short 2-3 sentence watering recommendation and shows it in plant card/edit info.
+- AI detection badge: inferred results are marked in DB (`plants.ai_inferred_at`) and shown in plant list / edit modal as `AI detected`.
+- Manual override behavior: saving plant edits manually (`api_update_plant`) clears `ai_inferred_at`, so the `AI detected` badge is removed after user override.
+- Per-plant watering thresholds: each plant now stores **thirsty-after minutes** and **overdue-after minutes** (defaults 5/60). In UI these values are shown/edited in **hours** and converted to minutes for storage.
 - `plant_markers`: normalized `x`, `y` in `0..1`, unique per `plant_id`
 - Marker coordinates are calculated against the **visible image content area** (for `object-contain`), so marker placement stays aligned both on real phones and in desktop mobile emulation (no offset from letterboxing).
 - Plant CRUD, marker placement, edit-from-plant-dialog flows as before (all via `/api/secure` + RPC).
@@ -86,10 +92,11 @@ This document summarizes what has already been implemented in the project.
 - Re-watering is allowed: tapping an already watered marker updates `last_watered_at` to the current time again (timer reset/restart).
 - **Marker long-press opens `Edit Plant`** for that exact marker's plant (tap behavior still waters as before).
 - **Edit Plant** includes **Undo last watering** with persistent DB history: restores `last_watered_at` to the value captured before the latest watering action, including after app reloads, and closes the edit modal right after undo.
-- **Client-side urgency** (`wateringDerivedStatus` in `page.tsx`), aligned with marker colors:
-  - **Green (`healthy`):** last watered less than **5 minutes** ago.
-  - **Yellow (`thirsty`):** **5 minutes** to **1 hour** since last water.
-  - **Red (`overdue`):** more than **1 hour** since last water, or **`last_watered_at` is null** (never watered).
+- **Client-side urgency** (`wateringDerivedStatus` in `page.tsx`), aligned with marker colors and calculated **per plant** from its own thresholds:
+  - **Green (`healthy`):** last watered less than `thirsty_after_minutes`.
+  - **Yellow (`thirsty`):** from `thirsty_after_minutes` up to `overdue_after_minutes`.
+  - **Red (`overdue`):** at/after `overdue_after_minutes`, or **`last_watered_at` is null** (never watered).
+- Plant info now shows full **date+time** for `last_watered_at` (`toLocaleString`), not date-only.
 - **Plants-in-room list:** the small uppercase status line uses the same derivation so it matches markers.
 - **Edit Plant** still reads/writes the DB `status` field; the list line and markers intentionally ignore that for display and use time since `last_watered_at` only.
 - While a room is open, a **30s `setInterval`** bumps React state so colors refresh without refetch; **closing the room** clears `selectedRoom`, runs effect cleanup (interval stopped), and **reopening** recomputes from the current clock and loaded `last_watered_at`.
@@ -117,6 +124,10 @@ This document summarizes what has already been implemented in the project.
 - `watering_undo_history.sql` — persistent `plant_watering_events` history used by secure API to support global undo of the latest watering per plant.
 - `plant_photos.sql` — adds `plants.photo_path` and updates `api_room_details` payload to include plant photo metadata for signed URL rendering.
 - `plant_watering_thresholds.sql` — adds `plants.thirsty_after_minutes` + `plants.overdue_after_minutes`, updates room details payload, and extends plant create/update RPCs to persist thresholds per plant.
+- `plant_ai_inference_flag.sql` — adds `plants.ai_inferred_at` and extends room details payload so UI can show `AI detected`.
+- `plant_ai_manual_override.sql` — updates `api_update_plant` to clear `ai_inferred_at` on manual save.
+- `plant_ai_watering_amount.sql` — adds `plants.watering_amount_recommendation` and extends room details payload.
+- `plant_ai_watering_summary.sql` — adds `plants.watering_summary` and extends room details payload.
 
 ## Current Behavior Summary
 

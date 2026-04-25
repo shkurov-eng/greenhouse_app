@@ -30,6 +30,9 @@ export type Plant = {
   last_watered_at: string | null;
   thirsty_after_minutes: number;
   overdue_after_minutes: number;
+  watering_amount_recommendation: "light" | "moderate" | "abundant" | null;
+  watering_summary: string | null;
+  ai_inferred_at: string | null;
   photo_path: string | null;
   signed_photo_url: string | null;
 };
