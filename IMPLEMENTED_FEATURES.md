@@ -36,7 +36,7 @@ This document summarizes what has already been implemented in the project.
 
 - Household bootstrap and join are done through RPC (`api_bootstrap_user`, `api_join_household`) invoked from `/api/secure`.
 - Invite codes are generated server-side in SQL where applicable.
-- Join-home in UI:
+- Join home in UI:
   - Homes section shows invite code with **copy to clipboard** action.
   - User can join another home via invite code modal (`Join with code`).
   - **Multi-household** (after `multi_household_delete_room.sql` on Supabase):
@@ -126,6 +126,13 @@ This document summarizes what has already been implemented in the project.
 - **Placeholder pages:** `src/app/tasks/page.tsx` (tasks / inbox stub), `src/app/settings/page.tsx` (settings stub), each with back link to `/`.
 - Overview header **settings** icon links to `/settings`.
 - **Fonts:** `next/font/google` (Plus Jakarta Sans) was removed so **production build does not depend on Google Fonts at fetch time**; app font stack is set in `src/app/globals.css` (system / web-safe stack under `--font-plus-jakarta`).
+- **Visual foundation refresh:** global UI polish in `src/app/globals.css` adds a softer layered background, improved font rendering, accessible link focus states, and shared form control typography inheritance.
+- **Bottom nav refresh:** `MobileShell` navigation got larger touch targets, clearer active/inactive states, stronger elevation/backdrop blur, and explicit `aria-label` for primary navigation.
+- **Overview UX refresh:** rooms overview now has a stronger hero/introduction block, clearer hierarchy, and status presented as a compact chip/card instead of competing with main headings.
+- **Room cards UX refresh:** room cards are now keyboard-openable (`role="button"`, `tabIndex`, Enter/Space handling), have better visual hierarchy, clearer “open room” affordance, and friendlier no-photo state.
+- **Room image upload affordance:** room cards now use a dedicated “Room photo” subpanel with `Choose photo` + `Upload` actions (instead of raw file input presentation), improving clarity and tap ergonomics.
+- **Empty states refresh:** both overview (no rooms) and room detail (no plants) now include guided copy and immediate primary actions to reduce first-use friction.
+- **Room detail visual refresh:** selected-room header/back button/add-plant CTA and plant list cards were updated with larger hit areas, improved spacing, and stronger contrast hierarchy.
 
 ## Known Technical Debt
 
@@ -175,7 +182,6 @@ Scope and plan:
 - `plant_ai_inference_flag.sql` — adds `plants.ai_inferred_at` and extends room details payload so UI can show `AI detected`.
 - `plant_ai_manual_override.sql` — updates `api_update_plant` to clear `ai_inferred_at` on manual save.
 - `plant_ai_watering_amount.sql` — adds `plants.watering_amount_recommendation`, migrates legacy values (`little`/`a_lot`), and extends room details payload.
-- `plant_ai_watering_summary.sql` — adds `plants.watering_summary` and extends room details payload.
 - `plant_ai_watering_summary.sql` — adds `plants.watering_summary` and extends room details payload.
 
 ## Current Behavior Summary

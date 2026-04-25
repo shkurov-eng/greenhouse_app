@@ -1550,6 +1550,19 @@ export default function Home() {
     }
   }
 
+  function openRoom(room: Room) {
+    setSelectedRoom(room);
+    void runSafely(() => fetchRoomDetails(room.id));
+  }
+
+  function handleRoomCardKeyDown(event: React.KeyboardEvent<HTMLElement>, room: Room) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    openRoom(room);
+  }
+
   const homesForPicker =
     householdSummaries.length > 0
       ? householdSummaries
@@ -1603,10 +1616,10 @@ export default function Home() {
 
   return (
     <MobileShell>
-    <main className="min-h-screen bg-[#fff8f5] pb-32 text-[#1f1b17]">
+    <main className="min-h-screen pb-32 text-[#1f1b17]">
       {selectedRoom ? (
         <div className="mx-auto flex w-full max-w-5xl flex-col">
-          <header className="fixed top-0 z-30 flex h-16 w-full items-center justify-between border-b border-[#eae1da] bg-[#fff8f5]/90 px-5 backdrop-blur-md">
+          <header className="fixed top-0 z-30 flex h-16 w-full items-center justify-between border-b border-white/70 bg-[#fbfaf6]/88 px-5 shadow-[0_8px_28px_rgba(31,27,23,0.06)] backdrop-blur-xl">
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -1614,9 +1627,10 @@ export default function Home() {
                   setSelectedRoom(null);
                   clearRoomDetailState();
                 }}
-                className="active:scale-95"
+                className="rounded-full bg-white/90 p-2 text-[#3c4a42] shadow-sm active:scale-95"
+                aria-label="Back to rooms"
               >
-                <ArrowLeft className="h-5 w-5 text-[#3c4a42]" />
+                <ArrowLeft className="h-5 w-5" />
               </button>
               <div className="flex items-center gap-2">
                 <Sprout className="h-5 w-5 text-[#006c49]" />
@@ -1650,7 +1664,7 @@ export default function Home() {
                   setPlantOverdueAfterHours(minutesToHours(DEFAULT_OVERDUE_AFTER_MINUTES));
                   setIsAddPlantOpen(true);
                 }}
-                className="shrink-0 rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-3 py-1 text-xs font-semibold text-white shadow-[0_4px_12px_rgba(0,108,73,0.28)]"
+                className="shrink-0 rounded-full border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-xs font-bold text-white shadow-[0_6px_16px_rgba(0,108,73,0.28)]"
               >
                 Add Plant
               </button>
@@ -1664,7 +1678,7 @@ export default function Home() {
               </div>
             ) : null}
             <div
-              className="relative overflow-hidden rounded-[24px] bg-[#f6ece6] shadow-[0_4px_20px_rgba(148,74,35,0.08)]"
+              className="relative overflow-hidden rounded-[28px] border border-white/80 bg-[#f6ece6] shadow-[0_16px_40px_rgba(81,55,37,0.10)]"
               ref={roomImageContainerRef}
               onClick={(event) => {
                 void runSafely(() => handleImageClick(event));
@@ -1837,10 +1851,25 @@ export default function Home() {
                 </div>
               ) : null}
             </div>
-            <div className="mt-4 rounded-[24px] bg-white p-4 shadow-[0_4px_20px_rgba(148,74,35,0.06)]">
-              <h3 className="text-sm font-semibold text-[#3c4a42]">Plants in this room</h3>
+            <div className="mt-4 rounded-[28px] border border-white/80 bg-white/92 p-4 shadow-[0_12px_32px_rgba(81,55,37,0.08)]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#006c49]">
+                    Room plants
+                  </p>
+                  <h3 className="mt-0.5 text-lg font-bold text-[#1f1b17]">Plants in this room</h3>
+                </div>
+                <span className="rounded-full bg-[#f4faf7] px-3 py-1 text-xs font-bold text-[#006c49]">
+                  {plants.length}
+                </span>
+              </div>
               {plants.length === 0 ? (
-                <p className="mt-2 text-sm text-[#6c7a71]">No plants yet</p>
+                <div className="mt-3 rounded-2xl border border-dashed border-[#c5d4cc] bg-[#fbfaf6] p-5 text-center">
+                  <p className="text-sm font-semibold text-[#3c4a42]">No plants here yet</p>
+                  <p className="mt-1 text-xs text-[#6c7a71]">
+                    Add your first plant, then tap the room photo to place its marker.
+                  </p>
+                </div>
               ) : (
                 <ul className="mt-2 space-y-2">
                   {plants.map((plant) => {
@@ -1848,7 +1877,7 @@ export default function Home() {
                     return (
                     <li
                       key={plant.id}
-                      className="rounded-xl bg-[#fcf2eb] px-3 py-2 text-sm text-[#1f1b17]"
+                      className="rounded-2xl border border-[#eee6dc] bg-[#fffaf5] px-3 py-3 text-sm text-[#1f1b17] shadow-sm"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex min-w-0 items-start gap-3">
@@ -1857,10 +1886,10 @@ export default function Home() {
                             <img
                               src={plant.signed_photo_url}
                               alt={plant.name}
-                              className="h-14 w-14 shrink-0 rounded-lg border border-[#e8ddd6] object-cover"
+                              className="h-16 w-16 shrink-0 rounded-2xl border border-[#e8ddd6] object-cover"
                             />
                           ) : (
-                            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-dashed border-[#d5ccc6] bg-[#fff8f5] text-[10px] font-semibold uppercase tracking-wide text-[#9b8a80]">
+                            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-dashed border-[#d5ccc6] bg-[#fff8f5] text-[10px] font-semibold uppercase tracking-wide text-[#9b8a80]">
                               no photo
                             </div>
                           )}
@@ -1922,14 +1951,14 @@ export default function Home() {
                             onClick={() => {
                               void runSafely(() => handleWaterPlant(plant.id, selectedRoom.id));
                             }}
-                            className="rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-[0_3px_10px_rgba(0,108,73,0.24)]"
+                            className="rounded-xl border-b-2 border-[#005236] bg-[#006c49] px-3 py-2 text-[11px] font-bold text-white shadow-[0_3px_10px_rgba(0,108,73,0.24)]"
                           >
                             Watered
                           </button>
                           <button
                             type="button"
                             onClick={() => openEditPlantDialog(plant)}
-                            className="rounded-lg border border-[#bbcabf] px-2.5 py-1.5 text-[11px] font-semibold text-[#3c4a42]"
+                            className="rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-[11px] font-bold text-[#3c4a42]"
                           >
                             Edit Plant
                           </button>
@@ -1945,27 +1974,42 @@ export default function Home() {
         </div>
       ) : (
         <div className="mx-auto w-full max-w-5xl px-5 pt-6">
-          <header className="mb-8 flex items-center justify-between">
+          <header className="mb-7 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Sprout className="h-6 w-6 text-[#006c49]" />
-              <p className="text-lg font-extrabold tracking-tight text-[#006c49]">GreenHouse</p>
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#e6f5ef] text-[#006c49] shadow-sm">
+                <Sprout className="h-6 w-6" />
+              </span>
+              <div>
+                <p className="text-lg font-extrabold tracking-tight text-[#006c49]">GreenHouse</p>
+                <p className="text-[11px] font-medium text-[#6c7a71]">Care that stays visible</p>
+              </div>
             </div>
             <Link
               href="/settings"
-              className="rounded-full bg-white p-2 text-[#6c7a71] shadow-sm"
+              className="rounded-full bg-white/90 p-3 text-[#6c7a71] shadow-sm hover:text-[#006c49]"
               aria-label="Settings"
             >
               <Settings className="h-5 w-5" />
             </Link>
           </header>
 
-          <section className="mb-8 flex items-end justify-between">
-            <div>
+          <section className="mb-8 rounded-[32px] border border-white/80 bg-white/70 p-5 shadow-[0_14px_36px_rgba(81,55,37,0.08)] backdrop-blur">
+            <div className="max-w-2xl">
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#006c49]">
                 My Sanctuary
               </p>
-              <h1 className="mt-1 text-3xl font-bold tracking-tight">Rooms Overview</h1>
-              <p className="mt-1 text-sm text-[#6c7a71]">{message}</p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
+                Your plants, room by room
+              </h1>
+              <p className="mt-2 text-sm leading-6 text-[#6c7a71]">
+                See which spaces need attention, upload room photos, and place plant markers where
+                they live.
+              </p>
+              {message ? (
+                <p className="mt-4 rounded-2xl border border-[#e7ddd6] bg-white/85 px-3 py-2 text-xs font-medium text-[#3c4a42]">
+                  {message}
+                </p>
+              ) : null}
               {isDebugMock ? (
                 <p className="mt-1 text-xs text-[#944a23]">Debug mode: mock Telegram user</p>
               ) : null}
@@ -2143,18 +2187,34 @@ export default function Home() {
 
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {rooms.length === 0 ? (
-              <div className="rounded-[24px] bg-white p-5 text-sm text-[#6c7a71] shadow-[0_4px_20px_rgba(148,74,35,0.06)]">
-                No rooms yet
+              <div className="rounded-[28px] border border-dashed border-[#c5d4cc] bg-white/80 p-8 text-center shadow-[0_10px_28px_rgba(81,55,37,0.07)] md:col-span-2">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#e6f5ef] text-[#006c49]">
+                  <Sprout className="h-7 w-7" />
+                </div>
+                <h2 className="mt-4 text-lg font-bold text-[#1f1b17]">Create your first room</h2>
+                <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#6c7a71]">
+                  Add a living room, balcony, or kitchen, then upload a photo so plant markers feel
+                  natural.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateRoomOpen(true)}
+                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-2xl border-b-2 border-[#005236] bg-[#006c49] px-5 py-3 text-sm font-bold text-white shadow-[0_6px_18px_rgba(0,108,73,0.28)]"
+                >
+                  <Plus className="h-5 w-5" />
+                  Add room
+                </button>
               </div>
             ) : (
               rooms.map((room) => (
                 <article
                   key={room.id}
-                  className="cursor-pointer overflow-hidden rounded-[24px] bg-white shadow-[0_4px_20px_rgba(148,74,35,0.06)] transition hover:shadow-[0_8px_30px_rgba(148,74,35,0.12)]"
-                  onClick={() => {
-                    setSelectedRoom(room);
-                    void runSafely(() => fetchRoomDetails(room.id));
-                  }}
+                  className="group cursor-pointer overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-[0_10px_28px_rgba(81,55,37,0.07)] transition hover:-translate-y-0.5 hover:shadow-[0_16px_36px_rgba(81,55,37,0.12)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#006c49]/35 focus-visible:ring-offset-2"
+                  onClick={() => openRoom(room)}
+                  onKeyDown={(event) => handleRoomCardKeyDown(event, room)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open ${room.name}`}
                 >
                   <div className="relative h-48 bg-[#f6ece6]">
                     {getRoomImageUrl(room) ? (
@@ -2162,16 +2222,18 @@ export default function Home() {
                       <img
                         src={getRoomImageUrl(room) ?? undefined}
                         alt={room.name}
-                        className="h-full w-full object-cover"
+                        className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
                       />
                     ) : (
-                      <div className="flex h-full items-center justify-center text-sm text-[#6c7a71]">
-                        No image
+                      <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-[#6c7a71]">
+                        <ImagePlus className="h-8 w-8 text-[#9b8a80]" />
+                        <span>No room photo yet</span>
                       </div>
                     )}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/40 to-transparent" />
                     <button
                       type="button"
-                      className="absolute left-2 top-2 rounded-full bg-white/95 p-1.5 text-[#006c49] shadow-md active:scale-95"
+                      className="absolute left-3 top-3 rounded-full bg-white/95 p-2 text-[#006c49] shadow-md active:scale-95"
                       aria-label={`Rename ${room.name}`}
                       onClick={(event) => {
                         event.stopPropagation();
@@ -2184,7 +2246,7 @@ export default function Home() {
                     </button>
                     <button
                       type="button"
-                      className="absolute right-2 top-2 rounded-full bg-white/95 p-1.5 text-[#93000a] shadow-md active:scale-95"
+                      className="absolute right-3 top-3 rounded-full bg-white/95 p-2 text-[#93000a] shadow-md active:scale-95"
                       aria-label={`Delete ${room.name}`}
                       onClick={(event) => {
                         event.stopPropagation();
@@ -2196,27 +2258,51 @@ export default function Home() {
                   </div>
 
                   <div className="p-4">
-                    <p className="text-lg font-semibold text-[#944a23]">{room.name}</p>
-                    <p className="mt-1 text-xs text-[#6c7a71]">Tap card to open detail</p>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-lg font-bold text-[#1f1b17]">{room.name}</p>
+                        <p className="mt-1 text-xs font-medium text-[#6c7a71]">
+                          Open room details and plant markers
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-[#e6f5ef] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#006c49]">
+                        Open
+                      </span>
+                    </div>
 
-                    <div className="mt-4 flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                    <div
+                      className="mt-4 rounded-2xl border border-[#eee6dc] bg-[#fbfaf6] p-3"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#6c7a71]">
+                        Room photo
+                      </p>
+                      <div className="flex items-center gap-2">
+                      <label
+                        htmlFor={`room-photo-${room.id}`}
+                        className="inline-flex min-h-10 flex-1 cursor-pointer items-center justify-center rounded-xl border border-[#d5ddd9] bg-white px-3 py-2 text-xs font-bold text-[#3c4a42] shadow-sm hover:border-[#bbcabf]"
+                      >
+                        Choose photo
+                      </label>
                       <input
+                        id={`room-photo-${room.id}`}
                         type="file"
                         accept="image/*"
                         onChange={(event) =>
                           handleRoomFileChange(room.id, event.target.files?.[0] ?? null)
                         }
-                        className="w-full text-xs"
+                        className="sr-only"
                       />
                       <button
                         type="button"
                         onClick={() => {
                           void runSafely(() => handleUploadImage(room.id));
                         }}
-                        className="whitespace-nowrap rounded-lg border border-[#bbcabf] px-3 py-2 text-xs font-medium"
+                        className="min-h-10 whitespace-nowrap rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-xs font-bold text-[#006c49]"
                       >
-                        Upload Image
+                        Upload
                       </button>
+                      </div>
                     </div>
 
                     {roomUploadStatus[room.id] ? (
@@ -2231,7 +2317,8 @@ export default function Home() {
           <button
             type="button"
             onClick={() => setIsCreateRoomOpen(true)}
-            className="fixed bottom-24 right-6 z-30 flex h-14 w-14 items-center justify-center rounded-2xl border-b-2 border-[#005236] bg-[#006c49] text-white shadow-xl"
+            className="fixed bottom-24 right-6 z-30 flex h-14 w-14 items-center justify-center rounded-2xl border-b-2 border-[#005236] bg-[#006c49] text-white shadow-[0_14px_30px_rgba(0,108,73,0.34)]"
+            aria-label="Add room"
           >
             <Plus className="h-6 w-6" />
           </button>
