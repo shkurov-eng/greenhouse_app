@@ -131,6 +131,37 @@ This document summarizes what has already been implemented in the project.
 
 - No icon-font technical debt at the moment: Material Symbols custom font link and related ESLint suppression were removed, and UI icons now render via local React SVG components (`lucide-react`).
 
+## Planned Work (Backlog)
+
+### Deterministic species watering catalog (planned)
+
+Goal: stop relying on generative AI to produce watering thresholds on every photo and make thresholds predictable for the same species.
+
+Scope and plan:
+
+1. Split AI responsibilities:
+   - Keep AI for vision/classification and short care text only.
+   - Return canonical species identity (`plant_id`, `plant_name`, `confidence`, `is_plant`) from AI.
+2. Add a deterministic species catalog:
+   - Create a versioned catalog source (`JSON` or DB table) with canonical `plant_id`, aliases, and baseline thresholds.
+   - Store `thirsty_after_hours`, `overdue_after_hours`, and default `water_volume` per species under standard indoor assumptions (living room, average humidity, ~20-22C).
+3. Resolve species IDs reliably:
+   - Add alias normalization (`peace lily`, `spathiphyllum`, etc. -> same canonical `plant_id`).
+   - Apply confidence gates for auto-apply vs. review-needed cases.
+4. Runtime decision flow:
+   - If species is found in catalog: apply deterministic thresholds from catalog.
+   - If species is unknown: use current AI threshold fallback + existing safety rails.
+5. Data model and observability:
+   - Track threshold source per plant (`catalog`, `ai_fallback`, `manual`).
+   - Track catalog version used for each applied threshold set.
+6. Catalog population process:
+   - Seed top frequently used species first (80/20 approach).
+   - Use AI suggestions only as draft input; finalize by human review.
+   - Periodically review unknown/fallback species and promote to catalog.
+7. Migration and UX:
+   - Keep existing plants unchanged by default.
+   - Optionally add a user action to re-apply catalog values to selected plants/species later.
+
 ## SQL / Migration Files Present
 
 - `rooms.sql` — initial rooms table, index, bucket creation, **historical** public storage policies (superseded by `security_hardening.sql` when applied).
