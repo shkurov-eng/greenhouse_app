@@ -14,6 +14,16 @@ type PlantAiProfile = {
   wateringSummary: string;
 };
 
+type DbError = { message: string } | null;
+type DbWriteResult = Promise<{ error: DbError }>;
+type LooseTableApi = {
+  from: (table: string) => {
+    update: (values: Record<string, unknown>) => {
+      eq: (column: string, value: string | number) => DbWriteResult;
+    };
+  };
+};
+
 function extractJsonObject(raw: string): string | null {
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
@@ -246,10 +256,8 @@ export async function POST(request: NextRequest) {
       updatePayload.ai_inferred_at = new Date().toISOString();
     }
 
-    const { error: updateError } = await supabaseAdmin
-      .from("plants")
-      .update(updatePayload)
-      .eq("id", plant.id);
+    const db = supabaseAdmin as unknown as LooseTableApi;
+    const { error: updateError } = await db.from("plants").update(updatePayload).eq("id", plant.id);
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 400 });
     }
