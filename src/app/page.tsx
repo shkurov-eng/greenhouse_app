@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { MobileShell } from "@/components/MobileShell";
 import {
@@ -114,7 +114,6 @@ export default function Home() {
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
-  const selectedRoomIdRef = useRef<string | null>(null);
   const [plants, setPlants] = useState<Plant[]>([]);
   const [markers, setMarkers] = useState<PlantMarker[]>([]);
   const [activeMarkerId, setActiveMarkerId] = useState<string | null>(null);
@@ -137,10 +136,18 @@ export default function Home() {
   /** Bumps on an interval so marker colors refresh from `last_watered_at` without refetch. */
   const [, setWateringUiTick] = useState(0);
   const [, setPendingWateringTick] = useState(0);
-  const [showMarkerLongPressHint, setShowMarkerLongPressHint] = useState(false);
+  const [showMarkerLongPressHint, setShowMarkerLongPressHint] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return window.localStorage.getItem("markerLongPressHintDismissed") !== "1";
+  });
   const markerLongPressTimerRef = useRef<number | null>(null);
   const pendingWateringTimersRef = useRef<Record<string, number>>({});
-  const pendingWateringStartedAtRef = useRef<Record<string, number>>({});
+  const [pendingWateringStartedAtByMarkerId, setPendingWateringStartedAtByMarkerId] = useState<
+    Record<string, number>
+  >({});
+  const [pendingWateringNowMs, setPendingWateringNowMs] = useState(0);
   const markerLongPressHandledRef = useRef<string | null>(null);
   const roomImageContainerRef = useRef<HTMLDivElement | null>(null);
   const roomImageRef = useRef<HTMLImageElement | null>(null);
@@ -154,7 +161,7 @@ export default function Home() {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
-  }, [selectedRoom?.id]);
+  }, [selectedRoom]);
 
   useEffect(() => {
     if (!selectedRoom) {
@@ -167,15 +174,12 @@ export default function Home() {
   }, [selectedRoom]);
 
   useEffect(() => {
-    selectedRoomIdRef.current = selectedRoom?.id ?? null;
-  }, [selectedRoom?.id]);
-
-  useEffect(() => {
     if (pendingWateringMarkerIds.length === 0) {
       return;
     }
     const intervalId = window.setInterval(() => {
       setPendingWateringTick((n) => n + 1);
+      setPendingWateringNowMs((now) => now + 200);
     }, 200);
     return () => window.clearInterval(intervalId);
   }, [pendingWateringMarkerIds.length]);
@@ -289,7 +293,7 @@ export default function Home() {
     return { left: 0, top, width, height };
   }
 
-  function measureRoomImageContentBox() {
+  const measureRoomImageContentBox = useCallback(() => {
     const container = roomImageContainerRef.current;
     const image = roomImageRef.current;
     if (!container || !image) {
@@ -303,7 +307,7 @@ export default function Home() {
       image.naturalHeight,
     );
     setRoomImageContentBox(box);
-  }
+  }, []);
 
   async function fetchRoomsForHousehold() {
     const nextRooms = await listRooms(getCurrentInitData());
@@ -422,6 +426,8 @@ export default function Home() {
     return () => {
       isMounted = false;
     };
+    // bootstrap is intentionally run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleCreateRoom() {
@@ -482,7 +488,7 @@ export default function Home() {
     setMessage("New home created");
   }
 
-  async function handleDeleteRoom(roomId: string, roomLabel: string) {
+  async function handleDeleteRoom(roomId: string) {
     await deleteRoom(getCurrentInitData(), roomId);
     if (selectedRoom?.id === roomId) {
       setSelectedRoom(null);
@@ -492,7 +498,7 @@ export default function Home() {
     setMessage("Room deleted");
   }
 
-  async function handleDeleteHousehold(targetHouseholdId: string, homeLabel: string) {
+  async function handleDeleteHousehold(targetHouseholdId: string) {
     await deleteHousehold(getCurrentInitData(), targetHouseholdId);
     if (householdId === targetHouseholdId) {
       setSelectedRoom(null);
@@ -615,9 +621,7 @@ export default function Home() {
       !Number.isNaN(new Date(plantBeforeWatering.last_watered_at).getTime());
 
     await waterPlant(getCurrentInitData(), plantId);
-    if (selectedRoomIdRef.current === roomId) {
-      await fetchRoomDetails(roomId);
-    }
+    await fetchRoomDetails(roomId);
     setMessage(hadRecentWatering ? "Timer reset" : "Plant marked as watered");
   }
 
@@ -635,7 +639,12 @@ export default function Home() {
     setMessage("Last watering undone");
   }
 
-  async function handleMarkerTap(plantId: string, markerId: string, roomId: string) {
+  async function handleMarkerTap(
+    plantId: string,
+    markerId: string,
+    roomId: string,
+    startedAtMs: number,
+  ) {
     if (pendingWateringTimersRef.current[markerId]) {
       return;
     }
@@ -643,10 +652,15 @@ export default function Home() {
     setPendingWateringMarkerIds((prev) =>
       prev.includes(markerId) ? prev : [...prev, markerId],
     );
-    pendingWateringStartedAtRef.current[markerId] = Date.now();
+    setPendingWateringNowMs((now) => Math.max(now, startedAtMs));
+    setPendingWateringStartedAtByMarkerId((prev) => ({ ...prev, [markerId]: startedAtMs }));
     pendingWateringTimersRef.current[markerId] = window.setTimeout(() => {
       delete pendingWateringTimersRef.current[markerId];
-      delete pendingWateringStartedAtRef.current[markerId];
+      setPendingWateringStartedAtByMarkerId((prev) => {
+        const next = { ...prev };
+        delete next[markerId];
+        return next;
+      });
       setPendingWateringMarkerIds((prev) => prev.filter((id) => id !== markerId));
       setJustWateredMarkerId(markerId);
       setTimeout(() => {
@@ -666,19 +680,31 @@ export default function Home() {
     }
     window.clearTimeout(timerId);
     delete pendingWateringTimersRef.current[markerId];
-    delete pendingWateringStartedAtRef.current[markerId];
+    setPendingWateringStartedAtByMarkerId((prev) => {
+      const next = { ...prev };
+      delete next[markerId];
+      return next;
+    });
     setPendingWateringMarkerIds((prev) => prev.filter((id) => id !== markerId));
     setActiveMarkerId((prev) => (prev === markerId ? null : prev));
   }
 
   function getPendingWateringSecondsLeft(markerId: string) {
-    const startedAt = pendingWateringStartedAtRef.current[markerId];
+    const startedAt = pendingWateringStartedAtByMarkerId[markerId];
     if (!startedAt) {
       return 0;
     }
-    const elapsedMs = Date.now() - startedAt;
+    const elapsedMs = Math.max(0, pendingWateringNowMs - startedAt);
     const remainingMs = Math.max(0, MARKER_WATER_DELAY_MS - elapsedMs);
     return Math.ceil(remainingMs / 1000);
+  }
+
+  function consumeLongPressHandled(markerId: string) {
+    if (markerLongPressHandledRef.current === markerId) {
+      markerLongPressHandledRef.current = null;
+      return true;
+    }
+    return false;
   }
 
   function clearMarkerLongPressTimer() {
@@ -777,9 +803,9 @@ export default function Home() {
       return;
     }
     if (target.kind === "room") {
-      await handleDeleteRoom(target.id, target.label);
+      await handleDeleteRoom(target.id);
     } else if (target.kind === "household") {
-      await handleDeleteHousehold(target.id, target.label);
+      await handleDeleteHousehold(target.id);
     } else {
       if (editingPlantId !== target.id) {
         const plantToEdit = plants.find((plant) => plant.id === target.id);
@@ -923,13 +949,7 @@ export default function Home() {
         window.clearTimeout(timerId);
       }
       pendingWateringTimersRef.current = {};
-      pendingWateringStartedAtRef.current = {};
     };
-  }, []);
-
-  useEffect(() => {
-    const isDismissed = window.localStorage.getItem("markerLongPressHintDismissed") === "1";
-    setShowMarkerLongPressHint(!isDismissed);
   }, []);
 
   useEffect(() => {
@@ -942,7 +962,7 @@ export default function Home() {
     return () => {
       window.removeEventListener("resize", onResize);
     };
-  }, [selectedRoom?.id]);
+  }, [measureRoomImageContentBox, selectedRoom]);
 
   return (
     <MobileShell>
@@ -1006,6 +1026,7 @@ export default function Home() {
                 </div>
               ) : null}
               {getRoomImageUrl(selectedRoom) ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={getRoomImageUrl(selectedRoom) ?? undefined}
                   alt={selectedRoom.name}
@@ -1065,12 +1086,11 @@ export default function Home() {
                       }}
                       onClick={(event) => {
                         event.stopPropagation();
-                        if (markerLongPressHandledRef.current === marker.id) {
-                          markerLongPressHandledRef.current = null;
+                        if (consumeLongPressHandled(marker.id)) {
                           return;
                         }
                         void runSafely(() =>
-                          handleMarkerTap(marker.plant_id, marker.id, selectedRoom.id),
+                          handleMarkerTap(marker.plant_id, marker.id, selectedRoom.id, event.timeStamp),
                         );
                       }}
                       title={markerPlant?.name ?? "Plant marker"}
@@ -1133,10 +1153,9 @@ export default function Home() {
                 <p className="mt-2 text-sm text-[#6c7a71]">No plants yet</p>
               ) : (
                 <ul className="mt-2 space-y-2">
-                  {plants.map((plant) => (
-                    (() => {
-                      const hasMarker = markers.some((marker) => marker.plant_id === plant.id);
-                      return (
+                  {plants.map((plant) => {
+                    const hasMarker = markers.some((marker) => marker.plant_id === plant.id);
+                    return (
                     <li
                       key={plant.id}
                       className="rounded-xl bg-[#fcf2eb] px-3 py-2 text-sm text-[#1f1b17]"
@@ -1181,9 +1200,8 @@ export default function Home() {
                         </div>
                       </div>
                     </li>
-                      );
-                    })()
-                  ))}
+                    );
+                  })}
                 </ul>
               )}
             </div>
@@ -1411,6 +1429,7 @@ export default function Home() {
                 >
                   <div className="relative h-48 bg-[#f6ece6]">
                     {getRoomImageUrl(room) ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={getRoomImageUrl(room) ?? undefined}
                         alt={room.name}

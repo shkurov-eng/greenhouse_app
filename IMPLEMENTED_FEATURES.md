@@ -15,6 +15,7 @@ This document summarizes what has already been implemented in the project.
   - `TELEGRAM_BOT_TOKEN` (production / real Mini App)
   - Optional local browser debug: `DEV_BROWSER_MODE=true`, `DEV_TELEGRAM_ID` (only with `npm run dev`)
 - `src/lib/supabase.ts` remains for potential non-UI use; **main UI does not use it for data access**.
+- Current lint baseline is clean (`npm run lint` passes); one targeted suppression remains in `src/app/layout.tsx` and is tracked as technical debt below.
 - Git repository initialized for the project.
 
 ## Stage 1 - Foundation
@@ -99,6 +100,10 @@ This document summarizes what has already been implemented in the project.
 - **Placeholder pages:** `src/app/tasks/page.tsx` (tasks / inbox stub), `src/app/settings/page.tsx` (settings stub), each with back link to `/`.
 - Overview header **settings** icon links to `/settings`.
 - **Fonts:** `next/font/google` (Plus Jakarta Sans) was removed so **production build does not depend on Google Fonts at fetch time**; app font stack is set in `src/app/globals.css` (system / web-safe stack under `--font-plus-jakarta`).
+
+## Known Technical Debt
+
+- Material Symbols are still loaded via a custom `<link>` in `src/app/layout.tsx` with a local ESLint suppression for `@next/next/no-page-custom-font`; keep for now, later migrate icons to a Next.js-friendly approach (e.g., SVG icon components or local self-hosted assets).
 
 ## SQL / Migration Files Present
 

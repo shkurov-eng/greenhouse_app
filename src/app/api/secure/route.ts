@@ -29,6 +29,36 @@ type RequestBody = {
   payload?: Record<string, unknown>;
 };
 
+type LooseTableApi = {
+  from: (table: string) => {
+    update: (values: Record<string, unknown>) => {
+      eq: (column: string, value: string) => Promise<{ error: { message: string } | null }>;
+      is?: (column: string, value: null) => Promise<{ error: { message: string } | null }>;
+    };
+    insert: (values: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
+    delete: () => {
+      eq: (column: string, value: string) => Promise<{ error: { message: string } | null }>;
+    };
+    select: (columns: string) => {
+      eq: (column: string, value: string) => {
+        is: (column: string, value: null) => {
+          order: (
+            column: string,
+            options: { ascending: boolean },
+          ) => {
+            limit: (count: number) => {
+              maybeSingle: () => Promise<{
+                data: unknown;
+                error: { message: string } | null;
+              }>;
+            };
+          };
+        };
+      };
+    };
+  };
+};
+
 function unwrapSingleRow<T>(data: unknown): T {
   if (Array.isArray(data)) {
     if (data.length === 0) {
@@ -387,14 +417,6 @@ export async function POST(request: NextRequest) {
           plantId,
         );
         const nextWateredAt = new Date().toISOString();
-        type LooseTableApi = {
-          from: (table: string) => {
-            update: (values: Record<string, unknown>) => {
-              eq: (column: string, value: string) => Promise<{ error: { message: string } | null }>;
-            };
-            insert: (values: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
-          };
-        };
         const db = supabaseAdmin as unknown as LooseTableApi;
         const { error: waterUpdateError } = await db
           .from("plants")
@@ -426,8 +448,8 @@ export async function POST(request: NextRequest) {
       case "revertLastWatering": {
         const plantId = asUuid(payload.plantId, "plantId");
         const { supabaseAdmin } = await getScopedPlantForActiveHousehold(telegramId, plantId);
-        const dbAny = supabaseAdmin as any;
-        const { data: latestEvent, error: latestEventError } = await dbAny
+        const db = supabaseAdmin as unknown as LooseTableApi;
+        const { data: latestEvent, error: latestEventError } = await db
           .from("plant_watering_events")
           .select("id,previous_last_watered_at")
           .eq("plant_id", plantId)
@@ -446,14 +468,14 @@ export async function POST(request: NextRequest) {
           latestEventRow.previous_last_watered_at == null
             ? null
             : String(latestEventRow.previous_last_watered_at);
-        const { error: updateError } = await dbAny
+        const { error: updateError } = await db
           .from("plants")
           .update({ last_watered_at: previousLastWateredAt })
           .eq("id", plantId);
         if (updateError) {
           throw new Error(updateError.message);
         }
-        const { error: markUndoneError } = await dbAny
+        const { error: markUndoneError } = await db
           .from("plant_watering_events")
           .update({ undone_at: new Date().toISOString() })
           .eq("id", String(latestEventRow.id))
@@ -472,15 +494,15 @@ export async function POST(request: NextRequest) {
       case "deletePlant": {
         const plantId = asUuid(payload.plantId, "plantId");
         const { supabaseAdmin } = await getScopedPlantForActiveHousehold(telegramId, plantId);
-        const dbAny = supabaseAdmin as any;
-        const { error: deleteMarkersError } = await dbAny
+        const db = supabaseAdmin as unknown as LooseTableApi;
+        const { error: deleteMarkersError } = await db
           .from("plant_markers")
           .delete()
           .eq("plant_id", plantId);
         if (deleteMarkersError) {
           throw new Error(deleteMarkersError.message);
         }
-        const { error: deletePlantError } = await dbAny.from("plants").delete().eq("id", plantId);
+        const { error: deletePlantError } = await db.from("plants").delete().eq("id", plantId);
         if (deletePlantError) {
           throw new Error(deletePlantError.message);
         }
