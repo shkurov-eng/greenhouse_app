@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Inbox, LayoutGrid, Settings } from "lucide-react";
 
 type TabId = "rooms" | "tasks" | "settings";
 
@@ -31,20 +32,11 @@ export function MobileShell({ children }: { children: React.ReactNode }) {
       {children}
       <nav className="fixed bottom-0 left-0 z-40 flex w-full items-center justify-around rounded-t-2xl bg-white/90 px-4 pb-6 pt-3 shadow-[0_-4px_20px_rgba(27,67,50,0.05)] backdrop-blur-lg">
         <Link href="/" className={tabClass("rooms")} aria-current={active === "rooms" ? "page" : undefined}>
-          <span
-            className="material-symbols-outlined"
-            style={
-              active === "rooms"
-                ? { fontVariationSettings: '"FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24' }
-                : undefined
-            }
-          >
-            grid_view
-          </span>
+          <LayoutGrid className="h-6 w-6" strokeWidth={active === "rooms" ? 2.4 : 2} />
           <span className="mt-1 text-[11px] font-semibold uppercase tracking-wider">Rooms</span>
         </Link>
         <Link href="/tasks" className={tabClass("tasks")} aria-current={active === "tasks" ? "page" : undefined}>
-          <span className="material-symbols-outlined">all_inbox</span>
+          <Inbox className="h-6 w-6" strokeWidth={active === "tasks" ? 2.4 : 2} />
           <span className="mt-1 text-[11px] font-semibold uppercase tracking-wider">Inbox</span>
         </Link>
         <Link
@@ -52,7 +44,7 @@ export function MobileShell({ children }: { children: React.ReactNode }) {
           className={tabClass("settings")}
           aria-current={active === "settings" ? "page" : undefined}
         >
-          <span className="material-symbols-outlined">settings</span>
+          <Settings className="h-6 w-6" strokeWidth={active === "settings" ? 2.4 : 2} />
           <span className="mt-1 text-[11px] font-semibold uppercase tracking-wider">Settings</span>
         </Link>
       </nav>

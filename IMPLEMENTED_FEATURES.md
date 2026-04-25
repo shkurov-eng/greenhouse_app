@@ -15,7 +15,7 @@ This document summarizes what has already been implemented in the project.
   - `TELEGRAM_BOT_TOKEN` (production / real Mini App)
   - Optional local browser debug: `DEV_BROWSER_MODE=true`, `DEV_TELEGRAM_ID` (only with `npm run dev`)
 - `src/lib/supabase.ts` remains for potential non-UI use; **main UI does not use it for data access**.
-- Current lint baseline is clean (`npm run lint` passes); one targeted suppression remains in `src/app/layout.tsx` and is tracked as technical debt below.
+- Current lint baseline is clean (`npm run lint` passes).
 - Git repository initialized for the project.
 
 ## Stage 1 - Foundation
@@ -94,7 +94,7 @@ This document summarizes what has already been implemented in the project.
 
 ## UI / Design System Work
 
-- Stitch-style layout, Material Symbols, cards, mobile shell (unchanged intent).
+- Stitch-style layout, Lucide SVG icons, cards, mobile shell (unchanged intent).
 - **Home cards** are a `div` with two side actions (rename / delete) so icon buttons are not nested inside the main “switch home” control (valid HTML, clearer hit targets).
 - **Bottom navigation** (`src/components/MobileShell.tsx`): `Link` routes — **Rooms** `/`, **Inbox** `/tasks`, **Settings** `/settings` (active tab from pathname). Main rooms experience stays on `/`.
 - **Placeholder pages:** `src/app/tasks/page.tsx` (tasks / inbox stub), `src/app/settings/page.tsx` (settings stub), each with back link to `/`.
@@ -103,7 +103,7 @@ This document summarizes what has already been implemented in the project.
 
 ## Known Technical Debt
 
-- Material Symbols are still loaded via a custom `<link>` in `src/app/layout.tsx` with a local ESLint suppression for `@next/next/no-page-custom-font`; keep for now, later migrate icons to a Next.js-friendly approach (e.g., SVG icon components or local self-hosted assets).
+- No icon-font technical debt at the moment: Material Symbols custom font link and related ESLint suppression were removed, and UI icons now render via local React SVG components (`lucide-react`).
 
 ## SQL / Migration Files Present
 

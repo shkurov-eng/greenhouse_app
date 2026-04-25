@@ -2,6 +2,19 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Copy,
+  DoorOpen,
+  HousePlus,
+  KeyRound,
+  Pencil,
+  Plus,
+  Settings,
+  Sprout,
+  Trash2,
+} from "lucide-react";
 
 import { MobileShell } from "@/components/MobileShell";
 import {
@@ -979,10 +992,10 @@ export default function Home() {
                 }}
                 className="active:scale-95"
               >
-                <span className="material-symbols-outlined text-[#3c4a42]">arrow_back</span>
+                <ArrowLeft className="h-5 w-5 text-[#3c4a42]" />
               </button>
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#006c49]">potted_plant</span>
+                <Sprout className="h-5 w-5 text-[#006c49]" />
                 <p className="text-sm font-semibold text-[#006c49]">GreenHouse</p>
               </div>
             </div>
@@ -999,7 +1012,7 @@ export default function Home() {
                   className="shrink-0 rounded-md p-1 text-[#6c7a71] transition hover:bg-[#e6f5ef] hover:text-[#006c49]"
                   aria-label="Rename room"
                 >
-                  <span className="material-symbols-outlined text-[18px]">edit</span>
+                  <Pencil className="h-[18px] w-[18px]" />
                 </button>
               </div>
               <button
@@ -1211,7 +1224,7 @@ export default function Home() {
         <div className="mx-auto w-full max-w-5xl px-5 pt-6">
           <header className="mb-8 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="material-symbols-outlined text-[#006c49]">potted_plant</span>
+              <Sprout className="h-6 w-6 text-[#006c49]" />
               <p className="text-lg font-extrabold tracking-tight text-[#006c49]">GreenHouse</p>
             </div>
             <Link
@@ -1219,7 +1232,7 @@ export default function Home() {
               className="rounded-full bg-white p-2 text-[#6c7a71] shadow-sm"
               aria-label="Settings"
             >
-              <span className="material-symbols-outlined">settings</span>
+              <Settings className="h-5 w-5" />
             </Link>
           </header>
 
@@ -1322,14 +1335,7 @@ export default function Home() {
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
                               {isCurrent ? (
                                 <span className="inline-flex items-center gap-0.5 rounded-full bg-[#e6f5ef] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#006c49]">
-                                  <span
-                                    className="material-symbols-outlined text-[12px]"
-                                    style={{
-                                      fontVariationSettings: '"FILL" 1, "wght" 600, "GRAD" 0, "opsz" 20',
-                                    }}
-                                  >
-                                    check_circle
-                                  </span>
+                                  <CheckCircle2 className="h-3 w-3" />
                                   Active
                                 </span>
                               ) : (
@@ -1351,7 +1357,7 @@ export default function Home() {
                         className="flex shrink-0 items-start justify-center px-1.5 pb-2 pt-3 text-[#6c7a71] transition hover:bg-[#e6f5ef]/80 hover:text-[#006c49] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#006c49]/30"
                         aria-label={`Rename home ${h.household_name}`}
                       >
-                        <span className="material-symbols-outlined text-[20px]">edit</span>
+                        <Pencil className="h-5 w-5" />
                       </button>
                       <button
                         type="button"
@@ -1361,7 +1367,7 @@ export default function Home() {
                         className="flex shrink-0 items-start justify-center rounded-tr-2xl rounded-br-2xl px-2.5 pb-2 pt-3 text-[#6c7a71] transition hover:bg-[#ffdad6]/50 hover:text-[#93000a] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ba1a1a]/40"
                         aria-label={`Delete home ${h.household_name}`}
                       >
-                        <span className="material-symbols-outlined text-[20px]">delete</span>
+                        <Trash2 className="h-5 w-5" />
                       </button>
                     </div>
                   );
@@ -1372,7 +1378,7 @@ export default function Home() {
               <div className="mt-4 rounded-2xl border border-[#e8e4e0] bg-white/80 p-3 backdrop-blur-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-xs font-semibold text-[#6c7a71]">
-                    <span className="material-symbols-outlined text-base text-[#006c49]/80">key</span>
+                    <KeyRound className="h-4 w-4 text-[#006c49]/80" />
                     <span>Invite friends</span>
                   </div>
                   <button
@@ -1382,7 +1388,7 @@ export default function Home() {
                     }}
                     className="inline-flex items-center gap-1 rounded-full border border-[#d4e8df] bg-[#f4faf7] px-2.5 py-1 text-[11px] font-semibold text-[#006c49] transition hover:bg-[#e6f5ef]"
                   >
-                    <span className="material-symbols-outlined text-sm">content_copy</span>
+                    <Copy className="h-4 w-4" />
                     Copy
                   </button>
                 </div>
@@ -1397,7 +1403,7 @@ export default function Home() {
                   onClick={() => setIsCreateHomeOpen(true)}
                   className="inline-flex flex-1 min-w-[9rem] items-center justify-center gap-2 rounded-2xl border-b-2 border-[#005236] bg-[#006c49] px-4 py-3 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(0,108,73,0.35)] transition active:translate-y-px"
                 >
-                  <span className="material-symbols-outlined text-lg">add_home_work</span>
+                  <HousePlus className="h-5 w-5" />
                   New home
                 </button>
                 <button
@@ -1405,7 +1411,7 @@ export default function Home() {
                   onClick={() => setIsJoinHomeOpen(true)}
                   className="inline-flex flex-1 min-w-[9rem] items-center justify-center gap-2 rounded-2xl border border-[#d5ddd9] bg-white px-4 py-3 text-sm font-semibold text-[#3c4a42] shadow-sm transition hover:border-[#bbcabf] hover:bg-[#fafafa]"
                 >
-                  <span className="material-symbols-outlined text-lg text-[#6c7a71]">door_front</span>
+                  <DoorOpen className="h-5 w-5 text-[#6c7a71]" />
                   Join with code
                 </button>
               </div>
@@ -1451,7 +1457,7 @@ export default function Home() {
                         setIsRenameRoomOpen(true);
                       }}
                     >
-                      <span className="material-symbols-outlined text-lg">edit</span>
+                      <Pencil className="h-[18px] w-[18px]" />
                     </button>
                     <button
                       type="button"
@@ -1462,7 +1468,7 @@ export default function Home() {
                         requestDeleteRoom(room.id, room.name);
                       }}
                     >
-                      <span className="material-symbols-outlined text-lg">delete</span>
+                      <Trash2 className="h-[18px] w-[18px]" />
                     </button>
                   </div>
 
@@ -1504,7 +1510,7 @@ export default function Home() {
             onClick={() => setIsCreateRoomOpen(true)}
             className="fixed bottom-24 right-6 z-30 flex h-14 w-14 items-center justify-center rounded-2xl border-b-2 border-[#005236] bg-[#006c49] text-white shadow-xl"
           >
-            <span className="material-symbols-outlined">add</span>
+            <Plus className="h-6 w-6" />
           </button>
         </div>
       )}

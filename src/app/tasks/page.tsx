@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowLeft, Inbox } from "lucide-react";
 
 import { MobileShell } from "@/components/MobileShell";
 
@@ -11,10 +12,10 @@ export default function TasksPage() {
         <div className="mx-auto w-full max-w-5xl px-5 pt-6">
           <header className="mb-8 flex items-center gap-3">
             <Link href="/" className="rounded-full bg-white p-2 text-[#6c7a71] shadow-sm" aria-label="Back to rooms">
-              <span className="material-symbols-outlined">arrow_back</span>
+              <ArrowLeft className="h-5 w-5" />
             </Link>
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#006c49]">all_inbox</span>
+              <Inbox className="h-5 w-5 text-[#006c49]" />
               <h1 className="text-lg font-extrabold tracking-tight text-[#006c49]">Tasks</h1>
             </div>
           </header>

@@ -29,33 +29,28 @@ type RequestBody = {
   payload?: Record<string, unknown>;
 };
 
+type DbError = { message: string } | null;
+type DbWriteResult = Promise<{ error: DbError }>;
+type DbSingleResult = Promise<{ data: unknown; error: DbError }>;
+
+type SelectQueryBuilder = {
+  eq: (column: string, value: string | number) => SelectQueryBuilder;
+  is: (column: string, value: null) => SelectQueryBuilder;
+  order: (column: string, options: { ascending: boolean }) => SelectQueryBuilder;
+  limit: (count: number) => SelectQueryBuilder;
+  maybeSingle: () => DbSingleResult;
+};
+
 type LooseTableApi = {
   from: (table: string) => {
     update: (values: Record<string, unknown>) => {
-      eq: (column: string, value: string) => Promise<{ error: { message: string } | null }>;
-      is?: (column: string, value: null) => Promise<{ error: { message: string } | null }>;
+      eq: (column: string, value: string | number) => DbWriteResult;
     };
-    insert: (values: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
+    insert: (values: Record<string, unknown>) => DbWriteResult;
     delete: () => {
-      eq: (column: string, value: string) => Promise<{ error: { message: string } | null }>;
+      eq: (column: string, value: string | number) => DbWriteResult;
     };
-    select: (columns: string) => {
-      eq: (column: string, value: string) => {
-        is: (column: string, value: null) => {
-          order: (
-            column: string,
-            options: { ascending: boolean },
-          ) => {
-            limit: (count: number) => {
-              maybeSingle: () => Promise<{
-                data: unknown;
-                error: { message: string } | null;
-              }>;
-            };
-          };
-        };
-      };
-    };
+    select: (columns: string) => SelectQueryBuilder;
   };
 };
 
@@ -478,8 +473,7 @@ export async function POST(request: NextRequest) {
         const { error: markUndoneError } = await db
           .from("plant_watering_events")
           .update({ undone_at: new Date().toISOString() })
-          .eq("id", String(latestEventRow.id))
-          .is("undone_at", null);
+          .eq("id", String(latestEventRow.id));
         if (markUndoneError) {
           throw new Error(markUndoneError.message);
         }
