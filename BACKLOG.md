@@ -97,3 +97,58 @@ Goal: improve incoming task quality for forwarded content, including URLs.
 - [ ] AI fallback is used only for species missing in catalog.
 - [ ] Threshold source and version are visible in data and debuggable.
 - [ ] First catalog release covers majority of common user plants.
+
+## Epic: Admin Panel Hardening and Operations
+
+Status: Planned  
+Priority: P0
+
+Goal: move current admin MVP to production-grade security, reliability, and operator ergonomics.
+
+### P0 - Security hardening
+
+- [ ] **Replace password-only login with Supabase Auth**
+  - Add magic link or OAuth login for admins.
+  - Keep `admin_users` allowlist as second gate after auth.
+- [ ] **Add optional 2FA for privileged roles**
+  - Require step-up auth for `owner` and `security`.
+- [ ] **Add account lockout/rate limit for admin login**
+  - Throttle by IP/email fingerprint and log all failed attempts.
+- [ ] **Rotate and version admin session secrets**
+  - Support active/previous `ADMIN_SESSION_SECRET` during rotation window.
+
+### P0 - Platform safety and controls
+
+- [ ] **Extend block model beyond temporary/permanent**
+  - Add `readonly` and feature-scoped blocks (`ai`, `bot`, `join`).
+- [ ] **Add admin notes and escalation workflow**
+  - Structured notes on profile blocks and incident context.
+- [ ] **Require mandatory reason taxonomy**
+  - Standard reasons (spam, abuse, compromised account, etc.) for analytics quality.
+
+### P1 - Observability and incident response
+
+- [ ] **Security events filters and saved views**
+  - Filter by severity/source/action/profile and persist common views.
+- [ ] **Add simple alerting pipeline**
+  - Trigger alerts for spikes in blocked requests, login failures, and critical events.
+- [ ] **Incident timeline view**
+  - Per user timeline that merges API events, blocks, and admin actions.
+
+### P1 - Admin UX and governance
+
+- [ ] **Manage admin users from UI**
+  - Invite/deactivate admins and change roles with owner-only permissions.
+- [ ] **Audit log viewer in admin panel**
+  - Read/search/export `admin_audit_log` without direct SQL.
+- [ ] **Safer block/unblock UX**
+  - Confirmation dialogs, expiry presets, and undo window for accidental actions.
+
+### P2 - Data quality and retention
+
+- [ ] **Retention policy for telemetry tables**
+  - Define TTL/archival for `api_request_events`, `security_events`, and `admin_audit_log`.
+- [ ] **PII minimization review**
+  - Re-validate hashed metadata strategy and remove unnecessary fields.
+- [ ] **Materialized KPI views**
+  - Add daily/hourly rollups for low-cost dashboard rendering at scale.

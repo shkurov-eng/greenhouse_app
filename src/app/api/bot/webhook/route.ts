@@ -5,7 +5,9 @@ import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
 import {
   assertNotBlocked,
   getRequestClientHashes,
+  isLikelyRateLimitError,
   logApiRequestEvent,
+  logRateLimitHit,
   logSecurityEvent,
   resolveProfileByTelegramId,
 } from "@/lib/server/adminSecurity";
@@ -556,6 +558,17 @@ export async function POST(request: NextRequest) {
       p_source_message_id: messageId,
     });
     if (ingestLimitError) {
+      await logRateLimitHit({
+        source: "bot_webhook",
+        telegramId: telegramIdForLog,
+        profileId: profileIdForLog,
+        endpoint: request.nextUrl.pathname,
+        action: "api_register_bot_task_ingest",
+        message: ingestLimitError.message,
+        limitName: "api_register_bot_task_ingest",
+        ipHash,
+        userAgentHash,
+      });
       await telegramApiCall("sendMessage", {
         chat_id: chatId,
         text:
@@ -691,6 +704,18 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Webhook failed";
     statusCode = 400;
     errorMessage = message;
+    if (isLikelyRateLimitError(message)) {
+      await logRateLimitHit({
+        source: "bot_webhook",
+        telegramId: telegramIdForLog,
+        profileId: profileIdForLog,
+        endpoint: request.nextUrl.pathname,
+        action: "bot_webhook",
+        message,
+        ipHash,
+        userAgentHash,
+      });
+    }
     await logSecurityEvent({
       eventType: "bot_webhook_error",
       severity: "warning",

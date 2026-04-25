@@ -5,7 +5,9 @@ import { getRequestTelegramId } from "@/lib/server/telegramAuth";
 import {
   assertNotBlocked,
   getRequestClientHashes,
+  isLikelyRateLimitError,
   logApiRequestEvent,
+  logRateLimitHit,
   logSecurityEvent,
   resolveProfileByTelegramId,
 } from "@/lib/server/adminSecurity";
@@ -96,6 +98,19 @@ export async function POST(request: NextRequest) {
 
     if (prepError) {
       statusCode = 400;
+      if (isLikelyRateLimitError(prepError.message)) {
+        await logRateLimitHit({
+          source: "rooms_upload",
+          telegramId: telegramIdForLog,
+          profileId: profileIdForLog,
+          endpoint: request.nextUrl.pathname,
+          action: "uploadRoomImage",
+          message: prepError.message,
+          limitName: "api_prepare_room_image_upload",
+          ipHash,
+          userAgentHash,
+        });
+      }
       return NextResponse.json({ error: prepError.message }, { status: 400 });
     }
 
@@ -140,6 +155,18 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Upload failed";
     statusCode = 400;
     errorMessage = message;
+    if (isLikelyRateLimitError(message)) {
+      await logRateLimitHit({
+        source: "rooms_upload",
+        telegramId: telegramIdForLog,
+        profileId: profileIdForLog,
+        endpoint: request.nextUrl.pathname,
+        action: "uploadRoomImage",
+        message,
+        ipHash,
+        userAgentHash,
+      });
+    }
     await logSecurityEvent({
       eventType: "rooms_upload_error",
       severity: "warning",

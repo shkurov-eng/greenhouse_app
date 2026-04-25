@@ -5,7 +5,9 @@ import { getRequestTelegramId } from "@/lib/server/telegramAuth";
 import {
   assertNotBlocked,
   getRequestClientHashes,
+  isLikelyRateLimitError,
   logApiRequestEvent,
+  logRateLimitHit,
   logSecurityEvent,
   resolveProfileByTelegramId,
 } from "@/lib/server/adminSecurity";
@@ -388,6 +390,17 @@ export async function POST(request: NextRequest) {
         });
       } else {
         statusCode = 429;
+        await logRateLimitHit({
+          source: "rooms_analyze",
+          telegramId: telegramIdForLog,
+          profileId: profileIdForLog,
+          endpoint: request.nextUrl.pathname,
+          action: "analyzeRoomPlants",
+          message: aiRateError.message,
+          limitName: "api_register_ai_photo_request",
+          ipHash,
+          userAgentHash,
+        });
         return NextResponse.json({ error: aiRateError.message }, { status: 429 });
       }
     }
@@ -474,6 +487,18 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Analyze room plants failed";
     statusCode = 400;
     errorMessage = message;
+    if (isLikelyRateLimitError(message)) {
+      await logRateLimitHit({
+        source: "rooms_analyze",
+        telegramId: telegramIdForLog,
+        profileId: profileIdForLog,
+        endpoint: request.nextUrl.pathname,
+        action: "analyzeRoomPlants",
+        message,
+        ipHash,
+        userAgentHash,
+      });
+    }
     await logSecurityEvent({
       eventType: "rooms_analyze_error",
       severity: "warning",

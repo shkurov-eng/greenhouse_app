@@ -146,6 +146,48 @@ type SecurityEventInput = {
   userAgentHash?: string | null;
 };
 
+export function isLikelyRateLimitError(message: string) {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("rate limit") ||
+    normalized.includes("too many requests") ||
+    normalized.includes("too many failed attempts") ||
+    normalized.includes("try again in") ||
+    normalized.includes("limit exceeded") ||
+    normalized.includes("quota exceeded")
+  );
+}
+
+type RateLimitHitInput = {
+  source: string;
+  telegramId: string | null;
+  profileId: string | null;
+  endpoint: string | null;
+  action: string | null;
+  message: string;
+  limitName?: string;
+  ipHash?: string | null;
+  userAgentHash?: string | null;
+};
+
+export async function logRateLimitHit(input: RateLimitHitInput) {
+  await logSecurityEvent({
+    eventType: "rate_limit_hit",
+    severity: "warning",
+    source: input.source,
+    telegramId: input.telegramId,
+    profileId: input.profileId,
+    endpoint: input.endpoint,
+    action: input.action,
+    details: {
+      message: input.message,
+      limit_name: input.limitName ?? null,
+    },
+    ipHash: input.ipHash ?? null,
+    userAgentHash: input.userAgentHash ?? null,
+  });
+}
+
 export async function logSecurityEvent(input: SecurityEventInput) {
   const supabaseAdmin = getSupabaseAdmin();
   const rpcAny = supabaseAdmin.rpc.bind(supabaseAdmin) as unknown as (

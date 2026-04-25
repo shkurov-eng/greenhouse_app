@@ -6,7 +6,9 @@ import {
   assertNotBlocked,
   getRequestClientHashes,
   logApiRequestEvent,
+  logRateLimitHit,
   logSecurityEvent,
+  isLikelyRateLimitError,
   resolveProfileByTelegramId,
 } from "@/lib/server/adminSecurity";
 
@@ -1251,6 +1253,18 @@ export async function POST(request: NextRequest) {
       path: request.nextUrl.pathname,
       message,
     });
+    if (isLikelyRateLimitError(message)) {
+      await logRateLimitHit({
+        source: "secure_api",
+        telegramId: telegramIdForLog,
+        profileId: profileIdForLog,
+        endpoint: request.nextUrl.pathname,
+        action: actionForLog,
+        message,
+        ipHash,
+        userAgentHash,
+      });
+    }
     await logSecurityEvent({
       eventType: "secure_api_error",
       severity: "warning",
