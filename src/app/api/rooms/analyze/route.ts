@@ -2,6 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
 import { getRequestTelegramId } from "@/lib/server/telegramAuth";
+import {
+  assertNotBlocked,
+  getRequestClientHashes,
+  logApiRequestEvent,
+  logSecurityEvent,
+  resolveProfileByTelegramId,
+} from "@/lib/server/adminSecurity";
 
 const DEFAULT_THIRSTY_AFTER_MINUTES = 6 * 60;
 const DEFAULT_OVERDUE_AFTER_MINUTES = 12 * 60;
@@ -318,8 +325,43 @@ async function detectRoomPlantsWithAiStudio(
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
+  let statusCode = 200;
+  let blocked = false;
+  let errorMessage: string | null = null;
+  let telegramIdForLog: string | null = null;
+  let profileIdForLog: string | null = null;
+  const { ipHash, userAgentHash } = getRequestClientHashes(request);
   try {
     const telegramId = getRequestTelegramId(request);
+    telegramIdForLog = String(telegramId);
+    const profile = await resolveProfileByTelegramId(String(telegramId));
+    profileIdForLog = profile.profileId;
+    const blockState = await assertNotBlocked(String(telegramId));
+    if (blockState.isBlocked) {
+      blocked = true;
+      statusCode = 403;
+      await logSecurityEvent({
+        eventType: "blocked_request_denied",
+        severity: "warning",
+        source: "rooms_analyze",
+        telegramId: telegramIdForLog,
+        profileId: profileIdForLog,
+        endpoint: request.nextUrl.pathname,
+        action: "analyzeRoomPlants",
+        details: {
+          blockType: blockState.blockType,
+          reason: blockState.reason,
+          endsAt: blockState.endsAt,
+        },
+        ipHash,
+        userAgentHash,
+      });
+      return NextResponse.json(
+        { error: blockState.reason ?? "Your account is blocked. Please contact support." },
+        { status: 403 },
+      );
+    }
     const supabaseAdmin = getSupabaseAdmin();
     type RpcResponse = { data: unknown; error: { message: string } | null };
     const rpcAny = supabaseAdmin.rpc.bind(supabaseAdmin) as unknown as (
@@ -332,6 +374,7 @@ export async function POST(request: NextRequest) {
     const roomId = typeof roomIdRaw === "string" ? roomIdRaw.trim() : "";
     const mode = body.mode === "create" ? "create" : "preview";
     if (!roomId) {
+      statusCode = 400;
       return NextResponse.json({ error: "Missing roomId" }, { status: 400 });
     }
 
@@ -344,6 +387,7 @@ export async function POST(request: NextRequest) {
           message: aiRateError.message,
         });
       } else {
+        statusCode = 429;
         return NextResponse.json({ error: aiRateError.message }, { status: 429 });
       }
     }
@@ -352,15 +396,18 @@ export async function POST(request: NextRequest) {
       p_telegram_id: telegramId,
     });
     if (roomsError) {
+      statusCode = 400;
       return NextResponse.json({ error: roomsError.message }, { status: 400 });
     }
 
     const rooms = Array.isArray(roomsData) ? (roomsData as RoomRow[]) : [];
     const room = rooms.find((row) => row.id === roomId);
     if (!room) {
+      statusCode = 404;
       return NextResponse.json({ error: "Room not found" }, { status: 404 });
     }
     if (!room.background_path) {
+      statusCode = 400;
       return NextResponse.json({ error: "Room has no photo. Upload room image first." }, { status: 400 });
     }
 
@@ -368,6 +415,7 @@ export async function POST(request: NextRequest) {
       .from("rooms")
       .download(room.background_path);
     if (downloadError || !imageBlob) {
+      statusCode = 400;
       return NextResponse.json(
         { error: downloadError?.message ?? "Failed to read room image" },
         { status: 400 },
@@ -424,6 +472,35 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Analyze room plants failed";
+    statusCode = 400;
+    errorMessage = message;
+    await logSecurityEvent({
+      eventType: "rooms_analyze_error",
+      severity: "warning",
+      source: "rooms_analyze",
+      telegramId: telegramIdForLog,
+      profileId: profileIdForLog,
+      endpoint: request.nextUrl.pathname,
+      action: "analyzeRoomPlants",
+      details: { message },
+      ipHash,
+      userAgentHash,
+    });
     return NextResponse.json({ error: message }, { status: 400 });
+  } finally {
+    await logApiRequestEvent({
+      source: "rooms_analyze",
+      endpoint: request.nextUrl.pathname,
+      action: "analyzeRoomPlants",
+      method: request.method,
+      statusCode,
+      durationMs: Date.now() - startedAt,
+      telegramId: telegramIdForLog,
+      profileId: profileIdForLog,
+      isBlocked: blocked,
+      errorMessage,
+      ipHash,
+      userAgentHash,
+    });
   }
 }

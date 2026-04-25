@@ -43,7 +43,7 @@ Maintenance guidelines:
 
 - Household bootstrap and join are done through RPC (`api_bootstrap_user`, `api_join_household`) invoked from `/api/secure`.
 - Invite codes are generated server-side in SQL where applicable.
-- Current invite-code generator (`api_generate_invite_code`) produces 10-character uppercase codes from a non-ambiguous alphabet (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`).
+- Current invite-code generator (`api_generate_invite_code`) produces 10-character uppercase codes from a non-ambiguous alphabet (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`) using `pgcrypto` randomness.
 - Join by invite code is protected from brute-force attempts via persistent DB-backed rate limiting (`api_check_join_invite_rate_limit`, `api_register_join_invite_failure`, `api_clear_join_invite_failures`): 5 failed attempts per 15 minutes -> 15-minute block.
 - Household creation is protected with DB-backed rate limits via `api_assert_household_create_allowed` and `household_create_events`:
   - max 3 home creations per 1 hour
@@ -70,6 +70,7 @@ Maintenance guidelines:
   - Household owner can enable `require_join_approval` in Settings.
   - Default policy is enabled: homes require owner approval for joins unless owner disables it.
   - Join attempts create pending requests instead of instant membership.
+  - Legacy homes with `require_join_approval = true` but missing `created_by_profile_id` are repaired deterministically from the first existing member before creating a pending request.
   - Owner sees pending requests in Settings (`Telegram ID`, `username`, home name, invite code) and can approve/reject.
   - Bot notifies owner about each pending request and provides inline `Approve` / `Reject` buttons in Telegram.
   - Owner sees household members grouped by each owned home in Settings and can remove participants.
@@ -296,6 +297,7 @@ Scope and plan:
 - `tasks_scope_and_bot_choice.sql` — adds personal/shared task scope, bot drafts, and task visibility logic for multi-home users.
 - `task_message_mode_settings.sql` — adds per-profile bot task ingestion mode (`single`/`combine`).
 - `household_join_approval.sql` — adds owner-approval flow for invite joins (enabled by default), pending join requests, bot approval callbacks, and owner-only members management RPCs (`api_list_household_members`, `api_remove_household_member`).
+- `supabase_sql_hardening_patch.sql` — consolidated SQL Editor patch for already-migrated Supabase projects. It applies the current RPC hardening without rerunning historical migrations: `pgcrypto` invite-code generation, no create-rate limiter on `api_list_rooms`, legacy owner repair for join approval, task membership helper reuse, and explicit `grant`/`revoke` hygiene for `SECURITY DEFINER` functions. Run this after the existing migration sequence when production needs the hardening changes as a single copy/paste script.
 
 ## Current Behavior Summary
 

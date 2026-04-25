@@ -2,6 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
 import { getRequestTelegramId } from "@/lib/server/telegramAuth";
+import {
+  assertNotBlocked,
+  getRequestClientHashes,
+  logApiRequestEvent,
+  logSecurityEvent,
+  resolveProfileByTelegramId,
+} from "@/lib/server/adminSecurity";
 
 type SecureAction =
   | "bootstrap"
@@ -404,18 +411,54 @@ async function enrichPlantsWithSignedUrls(rows: Array<Record<string, unknown>>) 
 
 export async function POST(request: NextRequest) {
   let actionForLog = "unknown";
+  const startedAt = Date.now();
+  let statusCode = 200;
+  let blocked = false;
+  let errorMessage: string | null = null;
+  let telegramIdForLog: string | null = null;
+  let profileIdForLog: string | null = null;
   const userAgent = request.headers.get("user-agent") ?? "";
   const hasInitDataHeader = Boolean(request.headers.get("x-telegram-init-data"));
   const isTelegramUserAgent = /telegram/i.test(userAgent);
+  const { ipHash, userAgentHash } = getRequestClientHashes(request);
 
   try {
     const telegramId = getRequestTelegramId(request);
+    telegramIdForLog = String(telegramId);
+    const profile = await resolveProfileByTelegramId(String(telegramId));
+    profileIdForLog = profile.profileId;
+    const blockState = await assertNotBlocked(String(telegramId));
+    if (blockState.isBlocked) {
+      blocked = true;
+      statusCode = 403;
+      await logSecurityEvent({
+        eventType: "blocked_request_denied",
+        severity: "warning",
+        source: "secure_api",
+        telegramId: telegramIdForLog,
+        profileId: profileIdForLog,
+        endpoint: request.nextUrl.pathname,
+        action: actionForLog,
+        details: {
+          blockType: blockState.blockType,
+          reason: blockState.reason,
+          endsAt: blockState.endsAt,
+        },
+        ipHash,
+        userAgentHash,
+      });
+      return NextResponse.json(
+        { error: blockState.reason ?? "Your account is blocked. Please contact support." },
+        { status: 403 },
+      );
+    }
     const body = (await request.json()) as RequestBody;
     const action = body.action;
     actionForLog = action ?? "unknown";
     const payload = body.payload ?? {};
 
     if (!action) {
+      statusCode = 400;
       return NextResponse.json({ error: "Missing action" }, { status: 400 });
     }
 
@@ -1193,10 +1236,13 @@ export async function POST(request: NextRequest) {
       }
 
       default:
+        statusCode = 400;
         return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown secure API error";
+    statusCode = 400;
+    errorMessage = message;
     console.warn("[secure-api] request failed", {
       action: actionForLog,
       hasInitDataHeader,
@@ -1205,6 +1251,33 @@ export async function POST(request: NextRequest) {
       path: request.nextUrl.pathname,
       message,
     });
+    await logSecurityEvent({
+      eventType: "secure_api_error",
+      severity: "warning",
+      source: "secure_api",
+      telegramId: telegramIdForLog,
+      profileId: profileIdForLog,
+      endpoint: request.nextUrl.pathname,
+      action: actionForLog,
+      details: { message },
+      ipHash,
+      userAgentHash,
+    });
     return NextResponse.json({ error: message }, { status: 400 });
+  } finally {
+    await logApiRequestEvent({
+      source: "secure_api",
+      endpoint: request.nextUrl.pathname,
+      action: actionForLog,
+      method: request.method,
+      statusCode,
+      durationMs: Date.now() - startedAt,
+      telegramId: telegramIdForLog,
+      profileId: profileIdForLog,
+      isBlocked: blocked,
+      errorMessage,
+      ipHash,
+      userAgentHash,
+    });
   }
 }

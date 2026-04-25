@@ -2,6 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { parseTaskTextWithAi } from "@/lib/server/taskAiParser";
 import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
+import {
+  assertNotBlocked,
+  getRequestClientHashes,
+  logApiRequestEvent,
+  logSecurityEvent,
+  resolveProfileByTelegramId,
+} from "@/lib/server/adminSecurity";
 
 type DbError = { message: string } | null;
 type DbWriteResult = Promise<{ error: DbError }>;
@@ -140,16 +147,48 @@ async function listHouseholdsByTelegramId(telegramId: number) {
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
+  let statusCode = 200;
+  let blocked = false;
+  let errorMessage: string | null = null;
+  let telegramIdForLog: string | null = null;
+  let profileIdForLog: string | null = null;
+  const { ipHash, userAgentHash } = getRequestClientHashes(request);
   try {
     const configuredSecret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || null;
     const suppliedSecret = request.headers.get("x-telegram-bot-api-secret-token");
     if (configuredSecret && suppliedSecret !== configuredSecret) {
+      statusCode = 401;
       return NextResponse.json({ error: "Unauthorized webhook request" }, { status: 401 });
     }
 
     const update = (await request.json()) as TelegramUpdate;
     const callbackQuery = update.callback_query;
     if (callbackQuery?.id && callbackQuery.data && callbackQuery.from?.id) {
+      telegramIdForLog = String(callbackQuery.from.id);
+      const profile = await resolveProfileByTelegramId(telegramIdForLog);
+      profileIdForLog = profile.profileId;
+      const blockState = await assertNotBlocked(telegramIdForLog);
+      if (blockState.isBlocked) {
+        blocked = true;
+        statusCode = 403;
+        await logSecurityEvent({
+          eventType: "blocked_request_denied",
+          severity: "warning",
+          source: "bot_webhook",
+          telegramId: telegramIdForLog,
+          profileId: profileIdForLog,
+          endpoint: request.nextUrl.pathname,
+          action: "bot_callback",
+          details: {
+            reason: blockState.reason,
+            blockType: blockState.blockType,
+          },
+          ipHash,
+          userAgentHash,
+        });
+        return NextResponse.json({ data: { ok: true, skipped: "blocked_user" } });
+      }
       await telegramApiCall("answerCallbackQuery", {
         callback_query_id: callbackQuery.id,
         text: "Обрабатываю...",
@@ -450,6 +489,32 @@ export async function POST(request: NextRequest) {
     const chatId = message.chat?.id ?? null;
     const messageId = message.message_id ?? null;
     const fromTelegramId = message.from?.id ?? null;
+    if (fromTelegramId != null) {
+      telegramIdForLog = String(fromTelegramId);
+      const profile = await resolveProfileByTelegramId(telegramIdForLog);
+      profileIdForLog = profile.profileId;
+      const blockState = await assertNotBlocked(telegramIdForLog);
+      if (blockState.isBlocked) {
+        blocked = true;
+        statusCode = 403;
+        await logSecurityEvent({
+          eventType: "blocked_request_denied",
+          severity: "warning",
+          source: "bot_webhook",
+          telegramId: telegramIdForLog,
+          profileId: profileIdForLog,
+          endpoint: request.nextUrl.pathname,
+          action: "bot_message",
+          details: {
+            reason: blockState.reason,
+            blockType: blockState.blockType,
+          },
+          ipHash,
+          userAgentHash,
+        });
+        return NextResponse.json({ data: { ok: true, skipped: "blocked_user" } });
+      }
+    }
     if (chatId == null || messageId == null || fromTelegramId == null) {
       return NextResponse.json({ data: { ok: true, skipped: "missing_message_fields" } });
     }
@@ -624,6 +689,35 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Webhook failed";
+    statusCode = 400;
+    errorMessage = message;
+    await logSecurityEvent({
+      eventType: "bot_webhook_error",
+      severity: "warning",
+      source: "bot_webhook",
+      telegramId: telegramIdForLog,
+      profileId: profileIdForLog,
+      endpoint: request.nextUrl.pathname,
+      action: "bot_webhook",
+      details: { message },
+      ipHash,
+      userAgentHash,
+    });
     return NextResponse.json({ error: message }, { status: 400 });
+  } finally {
+    await logApiRequestEvent({
+      source: "bot_webhook",
+      endpoint: request.nextUrl.pathname,
+      action: "bot_webhook",
+      method: request.method,
+      statusCode,
+      durationMs: Date.now() - startedAt,
+      telegramId: telegramIdForLog,
+      profileId: profileIdForLog,
+      isBlocked: blocked,
+      errorMessage,
+      ipHash,
+      userAgentHash,
+    });
   }
 }
