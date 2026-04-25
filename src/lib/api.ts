@@ -28,6 +28,10 @@ export type Plant = {
   species: string | null;
   status: PlantStatus;
   last_watered_at: string | null;
+  thirsty_after_minutes: number;
+  overdue_after_minutes: number;
+  photo_path: string | null;
+  signed_photo_url: string | null;
 };
 
 export type PlantMarker = {
@@ -193,7 +197,14 @@ export async function listRoomDetails(initData: string | null, roomId: string) {
 
 export async function createPlant(
   initData: string | null,
-  payload: { roomId: string; name: string; species: string | null; status: PlantStatus },
+  payload: {
+    roomId: string;
+    name: string;
+    species: string | null;
+    status: PlantStatus;
+    thirstyAfterMinutes: number;
+    overdueAfterMinutes: number;
+  },
 ) {
   return secureRequest<{ id: string }>({
     action: "createPlant",
@@ -231,7 +242,14 @@ export async function deletePlant(initData: string | null, plantId: string) {
 
 export async function updatePlant(
   initData: string | null,
-  payload: { plantId: string; name: string; species: string | null; status: PlantStatus },
+  payload: {
+    plantId: string;
+    name: string;
+    species: string | null;
+    status: PlantStatus;
+    thirstyAfterMinutes: number;
+    overdueAfterMinutes: number;
+  },
 ) {
   return secureRequest<{ id: string }>({
     action: "updatePlant",
@@ -268,4 +286,31 @@ export async function uploadRoomImage(
   });
 
   return readApiPayload<Room>(response);
+}
+
+export async function uploadPlantImage(
+  initData: string | null,
+  payload: { plantId: string; file: File },
+) {
+  const formData = new FormData();
+  formData.set("plantId", payload.plantId);
+  formData.set("file", payload.file);
+
+  const response = await fetch("/api/plants/upload", {
+    method: "POST",
+    headers: {
+      ...(initData ? { "x-telegram-init-data": initData } : {}),
+    },
+    body: formData,
+  });
+
+  return readApiPayload<{ id: string; photo_path: string | null; signed_photo_url: string | null }>(response);
+}
+
+export async function removePlantPhoto(initData: string | null, plantId: string) {
+  return secureRequest<{ id: string; photo_path: null; signed_photo_url: null }>({
+    action: "removePlantPhoto",
+    initData,
+    payload: { plantId },
+  });
 }

@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
+  Camera,
   CheckCircle2,
   Copy,
   DoorOpen,
   HousePlus,
+  ImagePlus,
   KeyRound,
   Pencil,
   Plus,
@@ -31,9 +33,11 @@ import {
   listRooms,
   renameHousehold,
   renameRoom,
+  removePlantPhoto,
   revertLastWatering,
   setActiveHousehold,
   updatePlant,
+  uploadPlantImage,
   uploadRoomImage,
   upsertMarker,
   waterPlant,
@@ -45,12 +49,16 @@ import {
   type Room,
 } from "@/lib/api";
 
-/** UI watering urgency from clock: green under 5 min, yellow 5 min–1 h, red after 1 h (or never watered). */
-const THIRSTY_AFTER_MS = 5 * 60 * 1000;
-const OVERDUE_AFTER_MS = 60 * 60 * 1000;
+/** Per-plant defaults: green under 5 min, yellow 5 min–1 h, red after 1 h (or never watered). */
+const DEFAULT_THIRSTY_AFTER_MINUTES = 5;
+const DEFAULT_OVERDUE_AFTER_MINUTES = 60;
 const MARKER_WATER_DELAY_MS = 3_000;
 
-function wateringDerivedStatus(lastWateredAt: string | null): PlantStatus {
+function wateringDerivedStatus(
+  lastWateredAt: string | null,
+  thirstyAfterMinutes: number,
+  overdueAfterMinutes: number,
+): PlantStatus {
   if (!lastWateredAt) {
     return "overdue";
   }
@@ -59,10 +67,12 @@ function wateringDerivedStatus(lastWateredAt: string | null): PlantStatus {
     return "overdue";
   }
   const elapsed = Date.now() - t;
-  if (elapsed < THIRSTY_AFTER_MS) {
+  const thirstyAfterMs = Math.max(1, thirstyAfterMinutes) * 60 * 1000;
+  const overdueAfterMs = Math.max(thirstyAfterMinutes, overdueAfterMinutes) * 60 * 1000;
+  if (elapsed < thirstyAfterMs) {
     return "healthy";
   }
-  if (elapsed < OVERDUE_AFTER_MS) {
+  if (elapsed < overdueAfterMs) {
     return "thirsty";
   }
   return "overdue";
@@ -129,7 +139,7 @@ export default function Home() {
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [plants, setPlants] = useState<Plant[]>([]);
   const [markers, setMarkers] = useState<PlantMarker[]>([]);
-  const [activeMarkerId, setActiveMarkerId] = useState<string | null>(null);
+  const [, setActiveMarkerId] = useState<string | null>(null);
   const [pendingWateringMarkerIds, setPendingWateringMarkerIds] = useState<string[]>([]);
   const [justWateredMarkerId, setJustWateredMarkerId] = useState<string | null>(null);
   const [selectedPlantIdForMarker, setSelectedPlantIdForMarker] = useState<string>("");
@@ -138,11 +148,28 @@ export default function Home() {
   const [isEditPlantOpen, setIsEditPlantOpen] = useState(false);
   const [editingPlantId, setEditingPlantId] = useState<string | null>(null);
   const [plantName, setPlantName] = useState("");
+  const [addPlantNameError, setAddPlantNameError] = useState<string | null>(null);
   const [plantSpecies, setPlantSpecies] = useState("");
   const [plantStatus, setPlantStatus] = useState<PlantStatus>("healthy");
+  const [plantThirstyAfterMinutes, setPlantThirstyAfterMinutes] = useState(
+    DEFAULT_THIRSTY_AFTER_MINUTES,
+  );
+  const [plantOverdueAfterMinutes, setPlantOverdueAfterMinutes] = useState(
+    DEFAULT_OVERDUE_AFTER_MINUTES,
+  );
+  const [newPlantPhotoFile, setNewPlantPhotoFile] = useState<File | null>(null);
+  const [newPlantPhotoPreviewUrl, setNewPlantPhotoPreviewUrl] = useState<string | null>(null);
   const [editPlantName, setEditPlantName] = useState("");
   const [editPlantSpecies, setEditPlantSpecies] = useState("");
   const [editPlantStatus, setEditPlantStatus] = useState<PlantStatus>("healthy");
+  const [editPlantThirstyAfterMinutes, setEditPlantThirstyAfterMinutes] = useState(
+    DEFAULT_THIRSTY_AFTER_MINUTES,
+  );
+  const [editPlantOverdueAfterMinutes, setEditPlantOverdueAfterMinutes] = useState(
+    DEFAULT_OVERDUE_AFTER_MINUTES,
+  );
+  const [isReplacingPlantPhoto, setIsReplacingPlantPhoto] = useState(false);
+  const [isRemovingPlantPhoto, setIsRemovingPlantPhoto] = useState(false);
   const [roomFiles, setRoomFiles] = useState<Record<string, File | null>>({});
   const [roomUploadStatus, setRoomUploadStatus] = useState<Record<string, string>>({});
   const [pendingDeleteTarget, setPendingDeleteTarget] = useState<PendingDeleteTarget | null>(null);
@@ -165,6 +192,9 @@ export default function Home() {
   const roomImageContainerRef = useRef<HTMLDivElement | null>(null);
   const roomImageRef = useRef<HTMLImageElement | null>(null);
   const [roomImageContentBox, setRoomImageContentBox] = useState<ImageContentBox | null>(null);
+  const addPlantCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const addPlantUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const editPlantPhotoInputRef = useRef<HTMLInputElement | null>(null);
 
   /** Opening a room reuses the same document scroll as the overview; reset so the photo + markers are in view. */
   useLayoutEffect(() => {
@@ -269,6 +299,37 @@ export default function Home() {
     setIsAddPlantOpen(false);
     setIsEditPlantOpen(false);
     setEditingPlantId(null);
+    if (newPlantPhotoPreviewUrl) {
+      URL.revokeObjectURL(newPlantPhotoPreviewUrl);
+    }
+    setNewPlantPhotoFile(null);
+    setNewPlantPhotoPreviewUrl(null);
+  }
+
+  function clearNewPlantPhotoSelection() {
+    if (newPlantPhotoPreviewUrl) {
+      URL.revokeObjectURL(newPlantPhotoPreviewUrl);
+    }
+    setNewPlantPhotoFile(null);
+    setNewPlantPhotoPreviewUrl(null);
+    if (addPlantCameraInputRef.current) {
+      addPlantCameraInputRef.current.value = "";
+    }
+    if (addPlantUploadInputRef.current) {
+      addPlantUploadInputRef.current.value = "";
+    }
+  }
+
+  function handleNewPlantPhotoSelected(file: File | null) {
+    if (!file) {
+      clearNewPlantPhotoSelection();
+      return;
+    }
+    if (newPlantPhotoPreviewUrl) {
+      URL.revokeObjectURL(newPlantPhotoPreviewUrl);
+    }
+    setNewPlantPhotoFile(file);
+    setNewPlantPhotoPreviewUrl(URL.createObjectURL(file));
   }
 
   function getRoomImageUrl(room: Room) {
@@ -599,20 +660,46 @@ export default function Home() {
 
     const newPlantName = plantName.trim();
     if (!newPlantName) {
-      setMessage("Enter plant name");
+      const errorText = "Cannot save plant: name is required";
+      setAddPlantNameError(errorText);
+      setMessage(errorText);
+      return;
+    }
+    setAddPlantNameError(null);
+    if (
+      !Number.isFinite(plantThirstyAfterMinutes) ||
+      !Number.isFinite(plantOverdueAfterMinutes) ||
+      plantThirstyAfterMinutes <= 0 ||
+      plantOverdueAfterMinutes <= 0 ||
+      plantOverdueAfterMinutes < plantThirstyAfterMinutes
+    ) {
+      setMessage("Cannot save plant: invalid watering thresholds");
       return;
     }
 
+    const photoToUpload = newPlantPhotoFile;
     const createdPlant = await createPlant(getCurrentInitData(), {
       roomId: selectedRoom.id,
       name: newPlantName,
       species: plantSpecies.trim() || null,
       status: plantStatus,
+      thirstyAfterMinutes: plantThirstyAfterMinutes,
+      overdueAfterMinutes: plantOverdueAfterMinutes,
     });
+
+    if (createdPlant?.id && photoToUpload) {
+      await uploadPlantImage(getCurrentInitData(), {
+        plantId: createdPlant.id,
+        file: photoToUpload,
+      });
+    }
 
     setPlantName("");
     setPlantSpecies("");
     setPlantStatus("healthy");
+    setPlantThirstyAfterMinutes(DEFAULT_THIRSTY_AFTER_MINUTES);
+    setPlantOverdueAfterMinutes(DEFAULT_OVERDUE_AFTER_MINUTES);
+    clearNewPlantPhotoSelection();
     setIsAddPlantOpen(false);
     await fetchRoomDetails(selectedRoom.id);
     if (createdPlant?.id) {
@@ -751,6 +838,8 @@ export default function Home() {
     setEditPlantName(plant.name);
     setEditPlantSpecies(plant.species ?? "");
     setEditPlantStatus(plant.status);
+    setEditPlantThirstyAfterMinutes(plant.thirsty_after_minutes ?? DEFAULT_THIRSTY_AFTER_MINUTES);
+    setEditPlantOverdueAfterMinutes(plant.overdue_after_minutes ?? DEFAULT_OVERDUE_AFTER_MINUTES);
     setIsEditPlantOpen(true);
   }
 
@@ -761,7 +850,17 @@ export default function Home() {
 
     const nextName = editPlantName.trim();
     if (!nextName) {
-      setMessage("Enter plant name");
+      setMessage("Cannot save plant: name is required");
+      return;
+    }
+    if (
+      !Number.isFinite(editPlantThirstyAfterMinutes) ||
+      !Number.isFinite(editPlantOverdueAfterMinutes) ||
+      editPlantThirstyAfterMinutes <= 0 ||
+      editPlantOverdueAfterMinutes <= 0 ||
+      editPlantOverdueAfterMinutes < editPlantThirstyAfterMinutes
+    ) {
+      setMessage("Cannot save plant: invalid watering thresholds");
       return;
     }
 
@@ -770,6 +869,8 @@ export default function Home() {
       name: nextName,
       species: editPlantSpecies.trim() || null,
       status: editPlantStatus,
+      thirstyAfterMinutes: editPlantThirstyAfterMinutes,
+      overdueAfterMinutes: editPlantOverdueAfterMinutes,
     });
 
     setIsEditPlantOpen(false);
@@ -788,6 +889,40 @@ export default function Home() {
     setEditingPlantId(null);
     await fetchRoomDetails(selectedRoom.id);
     setMessage("Plant deleted");
+  }
+
+  async function handleReplacePlantPhoto(file: File | null) {
+    if (!selectedRoom || !editingPlantId || !file) {
+      return;
+    }
+    setIsReplacingPlantPhoto(true);
+    try {
+      await uploadPlantImage(getCurrentInitData(), {
+        plantId: editingPlantId,
+        file,
+      });
+      if (editPlantPhotoInputRef.current) {
+        editPlantPhotoInputRef.current.value = "";
+      }
+      await fetchRoomDetails(selectedRoom.id);
+      setMessage("Plant photo updated");
+    } finally {
+      setIsReplacingPlantPhoto(false);
+    }
+  }
+
+  async function handleRemovePlantPhoto() {
+    if (!selectedRoom || !editingPlantId) {
+      return;
+    }
+    setIsRemovingPlantPhoto(true);
+    try {
+      await removePlantPhoto(getCurrentInitData(), editingPlantId);
+      await fetchRoomDetails(selectedRoom.id);
+      setMessage("Plant photo removed");
+    } finally {
+      setIsRemovingPlantPhoto(false);
+    }
   }
 
   function requestDeleteRoom(roomId: string, roomLabel: string) {
@@ -977,6 +1112,14 @@ export default function Home() {
     };
   }, [measureRoomImageContentBox, selectedRoom]);
 
+  useEffect(() => {
+    return () => {
+      if (newPlantPhotoPreviewUrl) {
+        URL.revokeObjectURL(newPlantPhotoPreviewUrl);
+      }
+    };
+  }, [newPlantPhotoPreviewUrl]);
+
   return (
     <MobileShell>
     <main className="min-h-screen bg-[#fff8f5] pb-32 text-[#1f1b17]">
@@ -1017,7 +1160,13 @@ export default function Home() {
               </div>
               <button
                 type="button"
-                onClick={() => setIsAddPlantOpen(true)}
+                onClick={() => {
+                  clearNewPlantPhotoSelection();
+                  setAddPlantNameError(null);
+                  setPlantThirstyAfterMinutes(DEFAULT_THIRSTY_AFTER_MINUTES);
+                  setPlantOverdueAfterMinutes(DEFAULT_OVERDUE_AFTER_MINUTES);
+                  setIsAddPlantOpen(true);
+                }}
                 className="shrink-0 rounded-lg border-b-2 border-[#005236] bg-[#006c49] px-3 py-1 text-xs font-semibold text-white"
               >
                 Add Plant
@@ -1056,11 +1205,14 @@ export default function Home() {
               )}
               {markers.map((marker) => {
                 const markerPlant = plants.find((plant) => plant.id === marker.plant_id);
-                const isActive = activeMarkerId === marker.id;
                 const isPendingWatering = pendingWateringMarkerIds.includes(marker.id);
                 const isJustWatered = justWateredMarkerId === marker.id;
                 const secondsLeft = getPendingWateringSecondsLeft(marker.id);
-                const status = wateringDerivedStatus(markerPlant?.last_watered_at ?? null);
+                const status = wateringDerivedStatus(
+                  markerPlant?.last_watered_at ?? null,
+                  markerPlant?.thirsty_after_minutes ?? DEFAULT_THIRSTY_AFTER_MINUTES,
+                  markerPlant?.overdue_after_minutes ?? DEFAULT_OVERDUE_AFTER_MINUTES,
+                );
                 const colors = getMarkerColorClasses(status);
                 return (
                   <div
@@ -1161,7 +1313,20 @@ export default function Home() {
                       className="rounded-xl bg-[#fcf2eb] px-3 py-2 text-sm text-[#1f1b17]"
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div>
+                        <div className="flex min-w-0 items-start gap-3">
+                          {plant.signed_photo_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={plant.signed_photo_url}
+                              alt={plant.name}
+                              className="h-14 w-14 shrink-0 rounded-lg border border-[#e8ddd6] object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-dashed border-[#d5ccc6] bg-[#fff8f5] text-[10px] font-semibold uppercase tracking-wide text-[#9b8a80]">
+                              no photo
+                            </div>
+                          )}
+                          <div className="min-w-0">
                           <p className="font-semibold">
                             {plant.name}
                             {!hasMarker ? (
@@ -1174,11 +1339,21 @@ export default function Home() {
                             <p className="text-xs text-[#6c7a71]">{plant.species}</p>
                           ) : null}
                           <p className="mt-1 text-[10px] uppercase tracking-wide text-[#6c7a71]">
-                            {wateringDerivedStatus(plant.last_watered_at)}
+                            {wateringDerivedStatus(
+                              plant.last_watered_at,
+                              plant.thirsty_after_minutes ?? DEFAULT_THIRSTY_AFTER_MINUTES,
+                              plant.overdue_after_minutes ?? DEFAULT_OVERDUE_AFTER_MINUTES,
+                            )}
                           </p>
                           <p className="text-[10px] text-[#6c7a71]">
                             Last watered: {formatLastWatered(plant.last_watered_at)}
                           </p>
+                          <p className="text-[10px] text-[#6c7a71]">
+                            Thresholds: thirsty after{" "}
+                            {plant.thirsty_after_minutes ?? DEFAULT_THIRSTY_AFTER_MINUTES}m, overdue after{" "}
+                            {plant.overdue_after_minutes ?? DEFAULT_OVERDUE_AFTER_MINUTES}m
+                          </p>
+                          </div>
                         </div>
                         <div className="flex flex-col gap-2">
                           <button
@@ -1687,11 +1862,23 @@ export default function Home() {
             <p className="mt-1 text-sm text-[#6c7a71]">{selectedRoom.name}</p>
             <input
               value={plantName}
-              onChange={(event) => setPlantName(event.target.value)}
+              onChange={(event) => {
+                setPlantName(event.target.value);
+                if (addPlantNameError) {
+                  setAddPlantNameError(null);
+                }
+              }}
               placeholder="Plant name"
-              className="mt-4 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+              className={`mt-4 w-full rounded-xl bg-white px-3 py-2 text-sm outline-none ${
+                addPlantNameError
+                  ? "border border-[#ba1a1a] focus:border-[#ba1a1a]"
+                  : "border border-[#bbcabf] focus:border-[#006c49]"
+              }`}
               autoFocus
             />
+            {addPlantNameError ? (
+              <p className="mt-1 text-xs font-medium text-[#ba1a1a]">{addPlantNameError}</p>
+            ) : null}
             <input
               value={plantSpecies}
               onChange={(event) => setPlantSpecies(event.target.value)}
@@ -1707,10 +1894,100 @@ export default function Home() {
               <option value="thirsty">thirsty</option>
               <option value="overdue">overdue</option>
             </select>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <label className="text-xs text-[#6c7a71]">
+                Thirsty after (min)
+                <input
+                  type="number"
+                  min={1}
+                  value={plantThirstyAfterMinutes}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    setPlantThirstyAfterMinutes(Number.isFinite(next) ? next : 0);
+                  }}
+                  className="mt-1 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+                />
+              </label>
+              <label className="text-xs text-[#6c7a71]">
+                Overdue after (min)
+                <input
+                  type="number"
+                  min={1}
+                  value={plantOverdueAfterMinutes}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    setPlantOverdueAfterMinutes(Number.isFinite(next) ? next : 0);
+                  }}
+                  className="mt-1 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+                />
+              </label>
+            </div>
+            <div className="mt-3 rounded-xl border border-[#e7ddd6] bg-[#fffaf7] p-3">
+              <p className="text-xs font-semibold text-[#3c4a42]">Plant photo</p>
+              <p className="mt-0.5 text-[11px] text-[#6c7a71]">
+                Take a new photo or pick one from gallery.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => addPlantCameraInputRef.current?.click()}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[#bbcabf] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4a42]"
+                >
+                  <Camera className="h-4 w-4" />
+                  Take photo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addPlantUploadInputRef.current?.click()}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[#bbcabf] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4a42]"
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  Upload photo
+                </button>
+                {newPlantPhotoFile ? (
+                  <button
+                    type="button"
+                    onClick={clearNewPlantPhotoSelection}
+                    className="inline-flex items-center rounded-lg border border-[#ba1a1a]/30 px-3 py-1.5 text-xs font-semibold text-[#93000a]"
+                  >
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+              <input
+                ref={addPlantCameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(event) => handleNewPlantPhotoSelected(event.target.files?.[0] ?? null)}
+                className="hidden"
+              />
+              <input
+                ref={addPlantUploadInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(event) => handleNewPlantPhotoSelected(event.target.files?.[0] ?? null)}
+                className="hidden"
+              />
+              {newPlantPhotoPreviewUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={newPlantPhotoPreviewUrl}
+                  alt="New plant preview"
+                  className="mt-3 h-28 w-full rounded-lg border border-[#e8ddd6] object-cover"
+                />
+              ) : null}
+            </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setIsAddPlantOpen(false)}
+                onClick={() => {
+                  clearNewPlantPhotoSelection();
+                  setAddPlantNameError(null);
+                  setPlantThirstyAfterMinutes(DEFAULT_THIRSTY_AFTER_MINUTES);
+                  setPlantOverdueAfterMinutes(DEFAULT_OVERDUE_AFTER_MINUTES);
+                  setIsAddPlantOpen(false);
+                }}
                 className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-medium text-[#3c4a42]"
               >
                 Cancel
@@ -1734,6 +2011,22 @@ export default function Home() {
           <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
             <h3 className="text-base font-semibold text-[#1f1b17]">Edit Plant</h3>
             <p className="mt-1 text-sm text-[#6c7a71]">{selectedRoom.name}</p>
+            {editingPlantId ? (
+              (() => {
+                const editingPlant = plants.find((plant) => plant.id === editingPlantId);
+                if (!editingPlant?.signed_photo_url) {
+                  return null;
+                }
+                return (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={editingPlant.signed_photo_url}
+                    alt={editingPlant.name}
+                    className="mt-3 h-32 w-full rounded-xl border border-[#e8ddd6] object-cover"
+                  />
+                );
+              })()
+            ) : null}
             <input
               value={editPlantName}
               onChange={(event) => setEditPlantName(event.target.value)}
@@ -1756,6 +2049,67 @@ export default function Home() {
               <option value="thirsty">thirsty</option>
               <option value="overdue">overdue</option>
             </select>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <label className="text-xs text-[#6c7a71]">
+                Thirsty after (min)
+                <input
+                  type="number"
+                  min={1}
+                  value={editPlantThirstyAfterMinutes}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    setEditPlantThirstyAfterMinutes(Number.isFinite(next) ? next : 0);
+                  }}
+                  className="mt-1 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+                />
+              </label>
+              <label className="text-xs text-[#6c7a71]">
+                Overdue after (min)
+                <input
+                  type="number"
+                  min={1}
+                  value={editPlantOverdueAfterMinutes}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    setEditPlantOverdueAfterMinutes(Number.isFinite(next) ? next : 0);
+                  }}
+                  className="mt-1 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+                />
+              </label>
+            </div>
+            <div className="mt-3 rounded-xl border border-[#e7ddd6] bg-[#fffaf7] p-3">
+              <p className="text-xs font-semibold text-[#3c4a42]">Plant photo</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => editPlantPhotoInputRef.current?.click()}
+                  disabled={isReplacingPlantPhoto || isRemovingPlantPhoto}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[#bbcabf] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4a42]"
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  {isReplacingPlantPhoto ? "Uploading..." : "Replace photo"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void runSafely(handleRemovePlantPhoto);
+                  }}
+                  disabled={isReplacingPlantPhoto || isRemovingPlantPhoto}
+                  className="inline-flex items-center rounded-lg border border-[#ba1a1a]/30 px-3 py-1.5 text-xs font-semibold text-[#93000a]"
+                >
+                  {isRemovingPlantPhoto ? "Removing..." : "Remove photo"}
+                </button>
+              </div>
+              <input
+                ref={editPlantPhotoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(event) => {
+                  void runSafely(() => handleReplacePlantPhoto(event.target.files?.[0] ?? null));
+                }}
+                className="hidden"
+              />
+            </div>
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
                 type="button"

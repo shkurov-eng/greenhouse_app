@@ -6,6 +6,8 @@ create table if not exists public.plants (
   species text,
   status text not null default 'healthy' check (status in ('healthy', 'thirsty', 'overdue')),
   last_watered_at timestamp with time zone,
+  thirsty_after_minutes integer not null default 5 check (thirsty_after_minutes > 0),
+  overdue_after_minutes integer not null default 60 check (overdue_after_minutes > 0),
   created_at timestamp with time zone default now()
 );
 
@@ -16,6 +18,12 @@ alter table public.plants
 alter table public.plants
   add column if not exists last_watered_at timestamp with time zone;
 
+alter table public.plants
+  add column if not exists thirsty_after_minutes integer not null default 5;
+
+alter table public.plants
+  add column if not exists overdue_after_minutes integer not null default 60;
+
 update public.plants
 set status = 'healthy'
 where status is null;
@@ -23,6 +31,13 @@ where status is null;
 update public.plants
 set last_watered_at = created_at
 where last_watered_at is null and status = 'healthy';
+
+alter table public.plants
+  drop constraint if exists plants_overdue_after_minutes_check;
+
+alter table public.plants
+  add constraint plants_overdue_after_minutes_check
+  check (overdue_after_minutes > 0 and overdue_after_minutes >= thirsty_after_minutes);
 
 create table if not exists public.plant_markers (
   id uuid primary key default gen_random_uuid(),

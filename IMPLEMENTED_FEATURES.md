@@ -66,6 +66,8 @@ This document summarizes what has already been implemented in the project.
 ## Stage 4 - Plants and Markers
 
 - Plants: `household_id`, `room_id`, `name`, `species`, `status`, `last_watered_at`, etc.
+- Plant photos: add flow now supports either **taking a photo** or **uploading from gallery** in `Add Plant`; image is uploaded via `POST /api/plants/upload`, stored in Supabase Storage, and shown on plant cards and edit modal through signed URLs. `Edit Plant` also supports **Replace photo** and **Remove photo**.
+- Per-plant watering thresholds: each plant now stores **thirsty-after minutes** and **overdue-after minutes** (defaults 5/60). Values are shown in plant info and can be edited in add/edit plant dialogs.
 - `plant_markers`: normalized `x`, `y` in `0..1`, unique per `plant_id`
 - Marker coordinates are calculated against the **visible image content area** (for `object-contain`), so marker placement stays aligned both on real phones and in desktop mobile emulation (no offset from letterboxing).
 - Plant CRUD, marker placement, edit-from-plant-dialog flows as before (all via `/api/secure` + RPC).
@@ -78,7 +80,7 @@ This document summarizes what has already been implemented in the project.
 - Watering updates `last_watered_at` and `status` via secure API / RPC.
 - Marker tap starts a **3-second delayed watering** (instead of instant watering).
 - Delayed watering supports **multi-tap batching**: tapping another marker does not cancel already scheduled markers; each marker keeps its own timer.
-- Marker popup shows **live countdown** (`Watering in 3s/2s/1s`) and a **Cancel** action to abort watering for that specific marker.
+- Marker popup (during delayed watering only) shows **live countdown** (`Watering in 3s/2s/1s`) and a **Cancel** action to abort watering for that specific marker; plant name/status are hidden in this popup.
 - Multiple marker popups can be visible at the same time while their independent countdowns are running.
 - Closing a room does **not** cancel already scheduled marker waterings; they continue server-side and appear on next room open.
 - Re-watering is allowed: tapping an already watered marker updates `last_watered_at` to the current time again (timer reset/restart).
@@ -113,6 +115,8 @@ This document summarizes what has already been implemented in the project.
 - `security_hardening.sql` — RLS, revoke direct table access from anon/auth, `public.api_*` RPCs, private `rooms` storage, `rooms.background_path`, grants for RPC execution.
 - `multi_household_delete_room.sql` — **run after** `security_hardening.sql`: `active_household_id` on `profiles`, relax single-home `household_members` uniqueness, replace `api_household_id_by_profile` / `api_bootstrap_user` / `api_join_household`, add `api_list_households`, `api_create_household`, `api_set_active_household`, `api_delete_room`, `api_rename_household`, `api_rename_room`, `api_delete_household` (optional tasks cleanup when `public.tasks` exists), and grants. Required for multi-home UI, renames, room/household delete. If the file was applied in parts, see incremental comments at the end of the SQL file for missing RPCs.
 - `watering_undo_history.sql` — persistent `plant_watering_events` history used by secure API to support global undo of the latest watering per plant.
+- `plant_photos.sql` — adds `plants.photo_path` and updates `api_room_details` payload to include plant photo metadata for signed URL rendering.
+- `plant_watering_thresholds.sql` — adds `plants.thirsty_after_minutes` + `plants.overdue_after_minutes`, updates room details payload, and extends plant create/update RPCs to persist thresholds per plant.
 
 ## Current Behavior Summary
 

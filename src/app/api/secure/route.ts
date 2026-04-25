@@ -20,6 +20,7 @@ type SecureAction =
   | "waterPlant"
   | "revertLastWatering"
   | "deletePlant"
+  | "removePlantPhoto"
   | "updatePlant"
   | "upsertMarker"
   | "createRoomImageSignedUrl";
@@ -90,6 +91,14 @@ function asPlantStatus(value: unknown) {
     return value;
   }
   throw new Error("Invalid plant status");
+}
+
+function asThresholdMinutes(value: unknown, fieldName: string) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  return n;
 }
 
 function asUuid(value: unknown, fieldName: string) {
@@ -231,6 +240,38 @@ async function enrichRoomsWithSignedUrls(rows: Array<Record<string, unknown>>) {
     return {
       ...room,
       signed_background_url: signed,
+    };
+  });
+}
+
+async function enrichPlantsWithSignedUrls(rows: Array<Record<string, unknown>>) {
+  const supabaseAdmin = getSupabaseAdmin();
+  const paths = rows
+    .map((row) => row.photo_path)
+    .filter((path): path is string => typeof path === "string" && path.trim().length > 0);
+  const uniquePaths = [...new Set(paths)];
+
+  if (uniquePaths.length === 0) {
+    return rows.map((row) => ({ ...row, signed_photo_url: null }));
+  }
+
+  const { data, error } = await supabaseAdmin.storage.from("rooms").createSignedUrls(uniquePaths, 60 * 15);
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const signedByPath = new Map<string, string>();
+  for (const item of data ?? []) {
+    if (item.path && item.signedUrl) {
+      signedByPath.set(item.path, item.signedUrl);
+    }
+  }
+
+  return rows.map((row) => {
+    const path = typeof row.photo_path === "string" && row.photo_path.trim() ? row.photo_path.trim() : null;
+    return {
+      ...row,
+      signed_photo_url: path ? signedByPath.get(path) ?? null : null,
     };
   });
 }
@@ -382,10 +423,15 @@ export async function POST(request: NextRequest) {
 
       case "listRoomDetails": {
         const roomId = asString(payload.roomId, "roomId");
-        const data = await rpc("api_room_details", {
+        const details = (await rpc("api_room_details", {
           p_telegram_id: telegramId,
           p_room_id: roomId,
-        });
+        })) as { plants?: Array<Record<string, unknown>>; markers?: Array<Record<string, unknown>> } | null;
+        const plants = await enrichPlantsWithSignedUrls(details?.plants ?? []);
+        const data = {
+          plants,
+          markers: details?.markers ?? [],
+        };
         return NextResponse.json({ data });
       }
 
@@ -394,12 +440,25 @@ export async function POST(request: NextRequest) {
         const name = asString(payload.name, "name");
         const species = asOptionalString(payload.species);
         const status = asPlantStatus(payload.status);
+        const thirstyAfterMinutes = asThresholdMinutes(
+          payload.thirstyAfterMinutes,
+          "thirstyAfterMinutes",
+        );
+        const overdueAfterMinutes = asThresholdMinutes(
+          payload.overdueAfterMinutes,
+          "overdueAfterMinutes",
+        );
+        if (overdueAfterMinutes < thirstyAfterMinutes) {
+          throw new Error("Invalid watering thresholds");
+        }
         const result = await rpc("api_create_plant", {
           p_telegram_id: telegramId,
           p_room_id: roomId,
           p_name: name,
           p_species: species,
           p_status: status,
+          p_thirsty_after_minutes: thirstyAfterMinutes,
+          p_overdue_after_minutes: overdueAfterMinutes,
         });
         const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });
@@ -503,17 +562,75 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ data: { ok: true as const } });
       }
 
+      case "removePlantPhoto": {
+        const plantId = asUuid(payload.plantId, "plantId");
+        const { supabaseAdmin } = await getScopedPlantForActiveHousehold(telegramId, plantId);
+        const { data: plantRow, error: plantReadError } = await supabaseAdmin
+          .from("plants")
+          .select("photo_path")
+          .eq("id", plantId)
+          .single();
+        if (plantReadError) {
+          throw new Error(plantReadError.message);
+        }
+        const existingPhotoPath =
+          (plantRow as { photo_path?: string | null } | null)?.photo_path ?? null;
+
+        const db = supabaseAdmin as unknown as LooseTableApi;
+        const { error: updateError } = await db
+          .from("plants")
+          .update({ photo_path: null })
+          .eq("id", plantId);
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+
+        if (existingPhotoPath) {
+          const { error: storageError } = await supabaseAdmin
+            .storage
+            .from("rooms")
+            .remove([existingPhotoPath]);
+          if (storageError) {
+            console.warn("[secure-api] failed to remove old plant photo from storage", {
+              plantId,
+              message: storageError.message,
+            });
+          }
+        }
+
+        return NextResponse.json({
+          data: {
+            id: plantId,
+            photo_path: null,
+            signed_photo_url: null,
+          },
+        });
+      }
+
       case "updatePlant": {
         const plantId = asString(payload.plantId, "plantId");
         const name = asString(payload.name, "name");
         const species = asOptionalString(payload.species);
         const status = asPlantStatus(payload.status);
+        const thirstyAfterMinutes = asThresholdMinutes(
+          payload.thirstyAfterMinutes,
+          "thirstyAfterMinutes",
+        );
+        const overdueAfterMinutes = asThresholdMinutes(
+          payload.overdueAfterMinutes,
+          "overdueAfterMinutes",
+        );
+        if (overdueAfterMinutes < thirstyAfterMinutes) {
+          throw new Error("Invalid watering thresholds");
+        }
         const result = await rpc("api_update_plant", {
           p_telegram_id: telegramId,
           p_plant_id: plantId,
           p_name: name,
           p_species: species,
           p_status: status,
+          p_thirsty_after_minutes: thirstyAfterMinutes,
+          p_overdue_after_minutes: overdueAfterMinutes,
         });
         const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });
