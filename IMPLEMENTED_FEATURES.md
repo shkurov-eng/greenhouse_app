@@ -73,7 +73,7 @@ This document summarizes what has already been implemented in the project.
     - `api_list_households`, `api_create_household`, `api_set_active_household`; `api_join_household` **adds** membership and sets the joined home active (user can belong to several homes).
     - Legacy unique-on-`user_id` alone on `household_members` must be dropped in favor of `UNIQUE (household_id, user_id)` (script attempts common constraint/index names, including `household_members_user_id_unique`).
     - `INSERT ... ON CONFLICT` in PL/pgSQL uses **dynamic `EXECUTE ... USING`** where needed so `RETURNS TABLE (household_id, ...)` output names do not shadow column names.
-    - UI: card-style **home picker** (horizontal scroll when multiple homes), **Create new home** modal, **rename home** (pencil → modal; `api_rename_household`), **delete home** (trash on each card; custom warning modal with **Continue/Cancel**; owner-only in RPC and removes the household for all members), same secure API patterns. If the user deletes their last home, `loadHouseholds` runs `bootstrapUser` again so a default home is recreated.
+    - UI: card-style **home picker** (horizontal scroll when multiple homes), **Create new home** modal, **rename home** (pencil → modal; `api_rename_household`), **delete/leave home** (trash action: owner deletes via `api_delete_household`, non-owner leaves via secure action `leaveHousehold`; custom warning modal with **Continue/Cancel**), same secure API patterns. If the user deletes/leaves their last home, `loadHouseholds` runs `bootstrapUser` again so a default home is recreated.
 
 ## Stage 3 - Rooms
 
@@ -271,7 +271,7 @@ Scope and plan:
 - **Production:** open only from Telegram Mini App (menu / `web_app` button). Server requires valid `initData` + `TELEGRAM_BOT_TOKEN`.
 - **Local browser debug:** `npm run dev` + `DEV_BROWSER_MODE=true` + `DEV_TELEGRAM_ID` + `SUPABASE_SERVICE_ROLE_KEY` (not available on deployed Vercel preview/prod by design).
 - All data access: `POST /api/secure`, `POST /api/rooms/upload`, `POST /api/plants/upload`, `POST /api/plants/analyze`; RLS + RPC enforce household scope (active household from `profiles.active_household_id` when migration applied).
-- **Households:** members can **rename** (`api_rename_household`) a home they belong to, but only the owner can **delete** (`api_delete_household`) it; delete removes shared data for everyone; empty membership after deletes is healed by **`bootstrapUser`** inside `loadHouseholds` (default home again).
+- **Households:** members can **rename** (`api_rename_household`) a home they belong to; owner can **delete** (`api_delete_household`) it, while non-owner can only **leave** (`leaveHousehold` secure action). Delete removes shared data for everyone; leave removes only current member access. Empty membership after delete/leave is healed by **`bootstrapUser`** inside `loadHouseholds` (default home again).
 - Room thumbnails and detail images use **signed URLs**; legacy public URLs are supported via path extraction when needed.
 - **Opening a room** scrolls the page to the **top** before paint (`useLayoutEffect` in `src/app/page.tsx`) so watering markers on the image are usable without scrolling up from the list position.
 - Deletions (home, room, plant) use an in-app warning modal with explicit **Continue** / **Cancel** actions instead of browser `confirm()`.

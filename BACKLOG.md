@@ -1,5 +1,11 @@
 # Project Backlog
 
+## Notes (Current Behavior Alignment)
+
+- Household action label/behavior in `Settings` is intentionally role-based:
+  - owner: `Delete` -> deletes household
+  - non-owner: `Leave` -> leaves household without deleting it
+
 ## Epic: Deterministic Species Watering Catalog
 
 Status: Planned  

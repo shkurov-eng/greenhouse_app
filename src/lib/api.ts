@@ -274,6 +274,14 @@ export async function deleteHousehold(initData: string | null, householdId: stri
   });
 }
 
+export async function leaveHousehold(initData: string | null, householdId: string) {
+  return secureRequest<{ ok: true }>({
+    action: "leaveHousehold",
+    initData,
+    payload: { householdId },
+  });
+}
+
 export async function renameHousehold(initData: string | null, householdId: string, name: string) {
   return secureRequest<{
     household_id: string;

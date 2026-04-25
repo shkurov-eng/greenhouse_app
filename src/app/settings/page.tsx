@@ -9,6 +9,7 @@ import {
   bootstrapUser,
   createHousehold,
   deleteHousehold,
+  leaveHousehold,
   getHouseholdJoinSettings,
   getTaskSettings,
   joinHousehold,
@@ -85,8 +86,8 @@ export default function SettingsPage() {
       const user = await bootstrapUser(initData, null);
       setHouseholds([
         {
-          household_id: user.id,
-          household_name: user.name,
+          household_id: user.household_id,
+          household_name: user.household_name,
           invite_code: user.invite_code,
           is_active: true,
         },
@@ -318,8 +319,11 @@ export default function SettingsPage() {
   };
 
   const onDeleteHome = async (householdId: string, homeName: string) => {
+    const isOwner = ownerHomes.some((home) => home.household_id === householdId);
     const confirmed = window.confirm(
-      `Delete home "${homeName}"? All rooms and plants in this home will be removed for every member.`,
+      isOwner
+        ? `Delete home "${homeName}"? All rooms and plants in this home will be removed for every member.`
+        : `Leave home "${homeName}"? You will lose access to this home.`,
     );
     if (!confirmed) {
       return;
@@ -327,11 +331,15 @@ export default function SettingsPage() {
     setHouseholdActionId(householdId);
     setMessage(null);
     try {
-      await deleteHousehold(initData, householdId);
+      if (isOwner) {
+        await deleteHousehold(initData, householdId);
+      } else {
+        await leaveHousehold(initData, householdId);
+      }
       await refreshHouseholds();
-      setMessage("Home deleted");
+      setMessage(isOwner ? "Home deleted" : "Left home");
     } catch (error) {
-      setMessage(readErrorText(error, "Failed to delete home"));
+      setMessage(readErrorText(error, isOwner ? "Failed to delete home" : "Failed to leave home"));
     } finally {
       setHouseholdActionId(null);
     }
@@ -413,6 +421,9 @@ export default function SettingsPage() {
 
             <div className="mt-4 space-y-2">
               {households.map((home) => (
+                (() => {
+                  const isOwner = ownerHomes.some((ownerHome) => ownerHome.household_id === home.household_id);
+                  return (
                 <div key={home.household_id} className="rounded-xl border border-[#e7ddd6] p-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="min-w-0 flex-1 break-words text-sm font-semibold text-[#1f1b17]">
@@ -497,11 +508,13 @@ export default function SettingsPage() {
                         disabled={householdActionId === home.household_id}
                         className="rounded-lg border border-[#eaded6] px-2.5 py-1.5 text-xs font-semibold text-[#8a3b1c] disabled:opacity-60"
                       >
-                        Delete
+                        {isOwner ? "Delete" : "Leave"}
                       </button>
                     </div>
                   )}
                 </div>
+                  );
+                })()
               ))}
             </div>
           </section>

@@ -10,6 +10,7 @@ type SecureAction =
   | "createHousehold"
   | "setActiveHousehold"
   | "deleteHousehold"
+  | "leaveHousehold"
   | "renameHousehold"
   | "getHouseholdJoinSettings"
   | "setHouseholdJoinSetting"
@@ -663,6 +664,69 @@ export async function POST(request: NextRequest) {
           p_telegram_id: telegramId,
           p_household_id: householdId,
         });
+        return NextResponse.json({ data: { ok: true as const } });
+      }
+
+      case "leaveHousehold": {
+        const householdId = asUuid(payload.householdId, "householdId");
+        const supabaseAdmin = getSupabaseAdmin();
+
+        const { data: profileRow, error: profileError } = await supabaseAdmin
+          .from("profiles")
+          .select("id,active_household_id")
+          .eq("telegram_id", telegramId)
+          .single();
+        if (profileError) {
+          throw new Error(profileError.message);
+        }
+
+        const profileId = String((profileRow as { id?: string } | null)?.id ?? "");
+        if (!profileId) {
+          throw new Error("Profile not found");
+        }
+
+        const { data: householdRow, error: householdError } = await supabaseAdmin
+          .from("households")
+          .select("created_by_profile_id")
+          .eq("id", householdId)
+          .single();
+        if (householdError) {
+          throw new Error(householdError.message);
+        }
+        const ownerProfileId =
+          (householdRow as { created_by_profile_id?: string | null } | null)?.created_by_profile_id ?? null;
+        if (ownerProfileId === profileId) {
+          throw new Error("Household owner cannot leave this home. Delete it instead.");
+        }
+
+        const dbAny = supabaseAdmin as unknown as {
+          from: (table: string) => {
+            delete: () => {
+              match: (values: Record<string, unknown>) => Promise<{ error: DbError }>;
+            };
+          };
+        };
+        const { error: removeMembershipError } = await dbAny
+          .from("household_members")
+          .delete()
+          .match({ household_id: householdId, user_id: profileId });
+        if (removeMembershipError) {
+          throw new Error(removeMembershipError.message);
+        }
+
+        const db = supabaseAdmin as unknown as LooseTableApi;
+        const activeHouseholdId =
+          (profileRow as { active_household_id?: string | null } | null)?.active_household_id ?? null;
+        if (activeHouseholdId === householdId) {
+          const { error: clearActiveError } = await db
+            .from("profiles")
+            .update({ active_household_id: null })
+            .eq("id", profileId);
+          if (clearActiveError) {
+            throw new Error(clearActiveError.message);
+          }
+        }
+
         return NextResponse.json({ data: { ok: true as const } });
       }
 
