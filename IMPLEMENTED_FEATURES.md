@@ -68,6 +68,8 @@ This document summarizes what has already been implemented in the project.
 
 - Plants: `household_id`, `room_id`, `name`, `species`, `status`, `last_watered_at`, etc.
 - Plant photos: add flow now supports either **taking a photo** or **uploading from gallery** in `Add Plant`; image is uploaded via `POST /api/plants/upload`, stored in Supabase Storage, and shown on plant cards and edit modal through signed URLs. `Edit Plant` also supports **Replace photo** and **Remove photo**.
+- **Edit Plant photo actions:** in `Edit Plant`, user can also **take a new photo** directly (camera capture) in addition to gallery replacement.
+- **Edit Plant AI analyze action:** in `Edit Plant`, user can run **Analyze with AI** on the current plant photo to refresh editable fields (name + watering thresholds) even if the plant was initially filled manually.
 - **Android camera fallback:** `Add Plant` includes in-app camera capture via `getUserMedia` + frame capture, so Telegram Android/WebView `file input` quirks no longer block taking photos.
 - **Photo compression before AI/upload:** client compresses selected/captured images (downscale + JPEG quality) before sending to AI Studio and storage upload; UI shows compression result (`Compressed: X -> Y` or `No compression gain`).
 - **AI analyze flow in Add Plant:** after photo selection, user can run a single explicit **Analyze with AI** action; UI shows `Analyzing...`, success autofill, precise error messages, retry, and **Apply anyway** for low-confidence suggestions.

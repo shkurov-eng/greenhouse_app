@@ -242,6 +242,7 @@ export default function Home() {
   );
   const [isReplacingPlantPhoto, setIsReplacingPlantPhoto] = useState(false);
   const [isRemovingPlantPhoto, setIsRemovingPlantPhoto] = useState(false);
+  const [isAnalyzingEditPlantPhoto, setIsAnalyzingEditPlantPhoto] = useState(false);
   const [roomFiles, setRoomFiles] = useState<Record<string, File | null>>({});
   const [roomUploadStatus, setRoomUploadStatus] = useState<Record<string, string>>({});
   const [pendingDeleteTarget, setPendingDeleteTarget] = useState<PendingDeleteTarget | null>(null);
@@ -271,6 +272,7 @@ export default function Home() {
     useState<OptimisticMarkerPlacement | null>(null);
   const addPlantCameraInputRef = useRef<HTMLInputElement | null>(null);
   const addPlantUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const editPlantCameraInputRef = useRef<HTMLInputElement | null>(null);
   const editPlantPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const cameraPreviewVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
@@ -1271,6 +1273,9 @@ export default function Home() {
       if (editPlantPhotoInputRef.current) {
         editPlantPhotoInputRef.current.value = "";
       }
+      if (editPlantCameraInputRef.current) {
+        editPlantCameraInputRef.current.value = "";
+      }
       await fetchRoomDetails(selectedRoom.id);
       if (uploadResult.ai_status === "ok") {
         setMessage("Plant photo updated. AI profile applied.");
@@ -1301,6 +1306,54 @@ export default function Home() {
       setMessage("Plant photo removed");
     } finally {
       setIsRemovingPlantPhoto(false);
+    }
+  }
+
+  async function handleAnalyzeEditPlantPhotoWithAi() {
+    if (!editingPlantId) {
+      return;
+    }
+    const editingPlant = plants.find((plant) => plant.id === editingPlantId);
+    if (!editingPlant?.signed_photo_url) {
+      setMessage("Add a plant photo first, then run AI analysis.");
+      return;
+    }
+    setIsAnalyzingEditPlantPhoto(true);
+    try {
+      const response = await fetch(editingPlant.signed_photo_url, { cache: "no-store" });
+      if (!response.ok) {
+        setMessage("Could not load current plant photo for AI analysis.");
+        return;
+      }
+      const blob = await response.blob();
+      const sourceType = blob.type || "image/jpeg";
+      const sourceFile = new File([blob], `edit-plant-${editingPlantId}.jpg`, {
+        type: sourceType,
+      });
+      const compressedResult = await compressImageIfNeeded(sourceFile);
+      const result = await analyzePlantImage(getCurrentInitData(), { file: compressedResult.file });
+      if (result.ai_status === "ok" && result.ai_profile) {
+        setEditPlantName(result.ai_profile.plant_name);
+        setEditPlantThirstyAfterHours(minutesToHours(result.ai_profile.thirsty_after_minutes));
+        setEditPlantOverdueAfterHours(minutesToHours(result.ai_profile.overdue_after_minutes));
+        setMessage("AI analysis complete. Edit fields updated.");
+        return;
+      }
+      if (result.ai_status === "disabled_missing_api_key") {
+        setMessage("AI is disabled on server (missing GEMINI_API_KEY).");
+      } else if (result.ai_status === "not_plant") {
+        setMessage("This photo does not look like a plant. Use another photo.");
+      } else if (result.ai_status === "low_confidence") {
+        setMessage("AI is not confident enough. Try another photo.");
+      } else if (result.ai_status === "request_failed") {
+        setMessage("AI request failed. Please try again.");
+      } else {
+        setMessage("AI returned invalid response. Please try again.");
+      }
+    } catch {
+      setMessage("AI analysis failed. Try again.");
+    } finally {
+      setIsAnalyzingEditPlantPhoto(false);
     }
   }
 
@@ -2676,8 +2729,17 @@ export default function Home() {
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
+                  onClick={() => editPlantCameraInputRef.current?.click()}
+                  disabled={isReplacingPlantPhoto || isRemovingPlantPhoto || isAnalyzingEditPlantPhoto}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[#bbcabf] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4a42]"
+                >
+                  <Camera className="h-4 w-4" />
+                  Take photo
+                </button>
+                <button
+                  type="button"
                   onClick={() => editPlantPhotoInputRef.current?.click()}
-                  disabled={isReplacingPlantPhoto || isRemovingPlantPhoto}
+                  disabled={isReplacingPlantPhoto || isRemovingPlantPhoto || isAnalyzingEditPlantPhoto}
                   className="inline-flex items-center gap-1 rounded-lg border border-[#bbcabf] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4a42]"
                 >
                   <ImagePlus className="h-4 w-4" />
@@ -2686,14 +2748,34 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => {
+                    void runSafely(handleAnalyzeEditPlantPhotoWithAi);
+                  }}
+                  disabled={isReplacingPlantPhoto || isRemovingPlantPhoto || isAnalyzingEditPlantPhoto}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[#006c49] bg-[#e6f5ef] px-3 py-1.5 text-xs font-semibold text-[#006c49]"
+                >
+                  {isAnalyzingEditPlantPhoto ? "Analyzing..." : "Analyze with AI"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
                     void runSafely(handleRemovePlantPhoto);
                   }}
-                  disabled={isReplacingPlantPhoto || isRemovingPlantPhoto}
+                  disabled={isReplacingPlantPhoto || isRemovingPlantPhoto || isAnalyzingEditPlantPhoto}
                   className="inline-flex items-center rounded-lg border border-[#ba1a1a]/30 px-3 py-1.5 text-xs font-semibold text-[#93000a]"
                 >
                   {isRemovingPlantPhoto ? "Removing..." : "Remove photo"}
                 </button>
               </div>
+              <input
+                ref={editPlantCameraInputRef}
+                type="file"
+                accept="image/*;capture=camera"
+                capture="environment"
+                onChange={(event) => {
+                  void runSafely(() => handleReplacePlantPhoto(event.target.files?.[0] ?? null));
+                }}
+                className="sr-only"
+              />
               <input
                 ref={editPlantPhotoInputRef}
                 type="file"
