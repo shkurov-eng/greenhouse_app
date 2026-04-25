@@ -25,6 +25,14 @@ type PlantAiStatus =
   | "request_failed"
   | "invalid_response";
 
+function isMissingAiRateLimitRpc(message: string) {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("could not find the function public.api_register_ai_photo_request") ||
+    normalized.includes("function public.api_register_ai_photo_request")
+  );
+}
+
 function extractJsonObject(raw: string): string | null {
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
@@ -243,7 +251,13 @@ export async function POST(request: NextRequest) {
       p_telegram_id: String(telegramId),
     });
     if (aiRateError) {
-      return NextResponse.json({ error: aiRateError.message }, { status: 429 });
+      if (isMissingAiRateLimitRpc(aiRateError.message)) {
+        console.warn("[plants-analyze] missing ai rate limit RPC, continuing without limit", {
+          message: aiRateError.message,
+        });
+      } else {
+        return NextResponse.json({ error: aiRateError.message }, { status: 429 });
+      }
     }
     const formData = await request.formData();
     const fileValue = formData.get("file");
