@@ -84,7 +84,7 @@ This document summarizes what has already been implemented in the project.
 - `plant_markers`: normalized `x`, `y` in `0..1`, unique per `plant_id`
 - Marker coordinates are calculated against the **visible image content area** (for `object-contain`), so marker placement stays aligned both on real phones and in desktop mobile emulation (no offset from letterboxing).
 - Plant CRUD, marker placement, edit-from-plant-dialog flows as before (all via `/api/secure` + RPC).
-- **Post-add marker guidance:** after `Add Plant`, UI enters marker edit mode with a clear top banner (`Place marker`), selected plant name, center-screen instruction (`Tap on room photo to place marker`), and explicit cancel action.
+- **Post-add marker guidance:** after `Add Plant`, UI enters marker edit mode with a compact semi-transparent top banner (`Place marker` + selected plant name), a minimal bottom hint (`Tap on photo to place marker`), and explicit cancel action.
 - **Marker placement instant feedback:** on tap, UI shows a short tap ripple plus an optimistic temporary marker with `Saving...` until RPC completes.
 - Plant deletion is available from **Edit Plant** with a warning modal (**Continue/Cancel**); room markers are removed together with the plant.
 - In **Plants in this room**, plants without a marker display a `no marker` badge next to the plant name.

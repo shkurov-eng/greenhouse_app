@@ -1719,14 +1719,14 @@ export default function Home() {
                 </div>
               ) : null}
               {isMarkerEditMode ? (
-                <div className="absolute inset-0 z-20">
-                  <div className="absolute left-3 right-3 top-3 flex items-center justify-between gap-2 rounded-xl border border-[#d4e8df] bg-white/95 px-3 py-2 text-xs shadow-md">
+                <div className="pointer-events-none absolute inset-0 z-20">
+                  <div className="pointer-events-auto absolute left-3 right-3 top-3 flex items-center justify-between gap-2 rounded-lg border border-[#d4e8df]/70 bg-white/70 px-2.5 py-1.5 text-xs shadow-sm backdrop-blur-[2px]">
                     <div className="min-w-0">
-                      <p className="font-bold uppercase tracking-wide text-[#006c49]">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-[#006c49]">
                         Place marker
                       </p>
-                      <p className="truncate text-[11px] text-[#3c4a42]">
-                        Tap on room photo for{" "}
+                      <p className="truncate text-[10px] text-[#3c4a42]">
+                        Tap photo for{" "}
                         <span className="font-semibold">
                           {markerPlantForEdit?.name ?? "selected plant"}
                         </span>
@@ -1738,21 +1738,13 @@ export default function Home() {
                         event.stopPropagation();
                         setIsMarkerEditMode(false);
                       }}
-                      className="pointer-events-auto rounded-md bg-[#ffdad6] px-2 py-1 text-[10px] font-semibold text-[#93000a]"
+                      className="rounded-md bg-[#ffdad6]/85 px-1.5 py-0.5 text-[10px] font-semibold text-[#93000a]"
                     >
                       Cancel
                     </button>
                   </div>
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
-                    <div className="rounded-2xl border border-[#d4e8df] bg-white/88 px-4 py-3 text-center shadow-lg backdrop-blur-sm">
-                      <div className="mx-auto mb-2 h-3 w-3 animate-ping rounded-full bg-[#006c49]" />
-                      <p className="text-sm font-semibold text-[#006c49]">
-                        Tap on room photo to place marker
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-[#3c4a42]">
-                        Marker will be saved at tap position
-                      </p>
-                    </div>
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-[#d4e8df]/70 bg-white/65 px-3 py-1 text-[10px] font-semibold text-[#006c49] shadow-sm backdrop-blur-[2px]">
+                    Tap on photo to place marker
                   </div>
                 </div>
               ) : null}
