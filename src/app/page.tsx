@@ -190,7 +190,9 @@ export default function Home() {
   const [roomStylizationPreset, setRoomStylizationPreset] = useState<RoomStylizationPreset>("strong");
   const [plants, setPlants] = useState<Plant[]>([]);
   const [markers, setMarkers] = useState<PlantMarker[]>([]);
-  const [activeMarkerId, setActiveMarkerId] = useState<string | null>(null);
+  /** Internal id while tap-to-water countdown runs (must not control the long-press popover). */
+  const [, setWateringFocusMarkerId] = useState<string | null>(null);
+  const [markerQuickMenuMarkerId, setMarkerQuickMenuMarkerId] = useState<string | null>(null);
   const [pendingWateringMarkerIds, setPendingWateringMarkerIds] = useState<string[]>([]);
   const [justWateredMarkerId, setJustWateredMarkerId] = useState<string | null>(null);
   const [selectedPlantIdForMarker, setSelectedPlantIdForMarker] = useState<string>("");
@@ -399,7 +401,8 @@ export default function Home() {
   function clearRoomDetailState() {
     setPlants([]);
     setMarkers([]);
-    setActiveMarkerId(null);
+    setWateringFocusMarkerId(null);
+    setMarkerQuickMenuMarkerId(null);
     setSelectedPlantIdForMarker("");
     setIsMarkerEditMode(false);
     setIsAddPlantOpen(false);
@@ -883,7 +886,13 @@ export default function Home() {
     });
     const nextMarkers = details.markers;
     setMarkers(nextMarkers);
-    setActiveMarkerId((prev) => {
+    setWateringFocusMarkerId((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      return nextMarkers.some((marker) => marker.id === prev) ? prev : null;
+    });
+    setMarkerQuickMenuMarkerId((prev) => {
       if (!prev) {
         return prev;
       }
@@ -1237,7 +1246,8 @@ export default function Home() {
     if (pendingWateringTimersRef.current[markerId]) {
       return;
     }
-    setActiveMarkerId(markerId);
+    setMarkerQuickMenuMarkerId(null);
+    setWateringFocusMarkerId(markerId);
     setPendingWateringMarkerIds((prev) =>
       prev.includes(markerId) ? prev : [...prev, markerId],
     );
@@ -1257,7 +1267,7 @@ export default function Home() {
       }, 700);
       void runSafely(async () => {
         await handleWaterPlant(plantId, roomId);
-        setActiveMarkerId((prev) => (prev === markerId ? null : prev));
+        setWateringFocusMarkerId((prev) => (prev === markerId ? null : prev));
       });
     }, MARKER_WATER_DELAY_MS);
   }
@@ -1275,7 +1285,7 @@ export default function Home() {
       return next;
     });
     setPendingWateringMarkerIds((prev) => prev.filter((id) => id !== markerId));
-    setActiveMarkerId((prev) => (prev === markerId ? null : prev));
+    setWateringFocusMarkerId((prev) => (prev === markerId ? null : prev));
   }
 
   function getPendingWateringSecondsLeft(markerId: string) {
@@ -1313,7 +1323,7 @@ export default function Home() {
       markerLongPressHandledRef.current = markerId;
       setShowMarkerLongPressHint(false);
       window.localStorage.setItem("markerLongPressHintDismissed", "1");
-      setActiveMarkerId(markerId);
+      setMarkerQuickMenuMarkerId(markerId);
     }, 550);
   }
 
@@ -1322,7 +1332,8 @@ export default function Home() {
   }
 
   function openEditPlantDialog(plant: Plant) {
-    setActiveMarkerId(null);
+    setMarkerQuickMenuMarkerId(null);
+    setWateringFocusMarkerId(null);
     setEditingPlantId(plant.id);
     setEditPlantName(plant.name);
     setEditPlantSpecies(plant.species ?? "");
@@ -1539,7 +1550,8 @@ export default function Home() {
       return;
     }
     if (!isMarkerEditMode) {
-      setActiveMarkerId(null);
+      setMarkerQuickMenuMarkerId(null);
+      setWateringFocusMarkerId(null);
       return;
     }
     if (!selectedPlantIdForMarker) {
@@ -2128,7 +2140,7 @@ export default function Home() {
                         if (consumeLongPressHandled(marker.id)) {
                           return;
                         }
-                        setActiveMarkerId(null);
+                        setMarkerQuickMenuMarkerId(null);
                         void runSafely(() =>
                           handleMarkerTap(marker.plant_id, marker.id, selectedRoom.id, event.timeStamp),
                         );
@@ -2147,7 +2159,7 @@ export default function Home() {
                         className={`pointer-events-none relative h-2.5 w-2.5 rounded-full border border-white/90 shadow-sm ${colors.dot}`}
                       />
                     </button>
-                    {activeMarkerId === marker.id && markerPlant ? (
+                    {markerQuickMenuMarkerId === marker.id && markerPlant ? (
                       <div
                         className={`absolute bottom-14 z-20 min-w-32 max-w-[min(15rem,calc(100vw-1.25rem))] rounded-2xl border border-white/80 bg-white/95 px-2.5 py-2 text-[#1f1b17] shadow-[0_10px_28px_rgba(31,27,23,0.16)] backdrop-blur-md ${
                           popoverAlign === "right"
@@ -2169,7 +2181,7 @@ export default function Home() {
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation();
-                              setActiveMarkerId(null);
+                              setMarkerQuickMenuMarkerId(null);
                               openEditPlantDialog(markerPlant);
                             }}
                             className="shrink-0 rounded-full border border-[#d5ddd9] bg-[#f8fcfa] p-1.5 text-[#006c49] shadow-sm active:scale-95"
