@@ -99,6 +99,7 @@ async function handleReminderJob(request: NextRequest) {
     const tasks = (data ?? []) as CandidateTask[];
     let sent = 0;
     let skipped = 0;
+    let failed = 0;
 
     for (const task of tasks) {
       if (!task.due_at || !task.created_by_profile_id) {
@@ -141,7 +142,20 @@ async function handleReminderJob(request: NextRequest) {
 
       const dueText = new Date(task.due_at).toLocaleString();
       const prefix = kind === "overdue" ? "Overdue task" : "Task reminder";
-      await sendTelegramMessage(telegramId, `${prefix}: ${task.title}\nDue: ${dueText}`);
+      try {
+        await sendTelegramMessage(telegramId, `${prefix}: ${task.title}\nDue: ${dueText}`);
+      } catch (sendError) {
+        failed += 1;
+        const message =
+          sendError instanceof Error ? sendError.message : "Unknown Telegram sendMessage error";
+        console.warn("[send-reminders] failed to send telegram reminder", {
+          taskId: task.id,
+          reminderType: kind,
+          telegramId,
+          message,
+        });
+        continue;
+      }
       sent += 1;
 
       const db = supabaseAdmin as unknown as LooseInsertApi;
@@ -159,7 +173,7 @@ async function handleReminderJob(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ data: { ok: true, sent, skipped, scanned: tasks.length } });
+    return NextResponse.json({ data: { ok: true, sent, skipped, failed, scanned: tasks.length } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Reminder job failed";
     return NextResponse.json({ error: message }, { status: 400 });
