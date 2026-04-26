@@ -2087,6 +2087,8 @@ export default function Home() {
                 );
                 const colors = getPlantGlowClasses(status);
                 const shouldPulseMarker = isPendingWatering || status !== "healthy";
+                const popoverAlign =
+                  marker.x >= 0.67 ? "right" : marker.x <= 0.33 ? "left" : "center";
                 return (
                   <div
                     key={marker.id}
@@ -2142,14 +2144,18 @@ export default function Home() {
                         } ${colors.pulse}`}
                       />
                       <span
-                        className={`pointer-events-none relative flex h-6 w-6 items-center justify-center rounded-full border border-white/90 shadow-sm ${colors.dot}`}
-                      >
-                        <Sprout className="h-3.5 w-3.5" />
-                      </span>
+                        className={`pointer-events-none relative h-2.5 w-2.5 rounded-full border border-white/90 shadow-sm ${colors.dot}`}
+                      />
                     </button>
                     {activeMarkerId === marker.id && markerPlant ? (
                       <div
-                        className="absolute bottom-14 left-1/2 z-20 min-w-32 -translate-x-1/2 rounded-2xl border border-white/80 bg-white/95 px-2.5 py-2 text-[#1f1b17] shadow-[0_10px_28px_rgba(31,27,23,0.16)] backdrop-blur-md"
+                        className={`absolute bottom-14 z-20 min-w-32 max-w-[min(15rem,calc(100vw-1.25rem))] rounded-2xl border border-white/80 bg-white/95 px-2.5 py-2 text-[#1f1b17] shadow-[0_10px_28px_rgba(31,27,23,0.16)] backdrop-blur-md ${
+                          popoverAlign === "right"
+                            ? "right-0 left-auto"
+                            : popoverAlign === "left"
+                              ? "left-0 right-auto"
+                              : "left-1/2 -translate-x-1/2"
+                        }`}
                         onClick={(event) => event.stopPropagation()}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -2172,7 +2178,15 @@ export default function Home() {
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
                         </div>
-                        <span className="absolute left-1/2 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1 rotate-45 border-b border-r border-white/80 bg-white/95" />
+                        <span
+                          className={`absolute top-full h-2.5 w-2.5 -translate-y-1 rotate-45 border-b border-r border-white/80 bg-white/95 ${
+                            popoverAlign === "right"
+                              ? "right-5"
+                              : popoverAlign === "left"
+                                ? "left-5"
+                                : "left-1/2 -translate-x-1/2"
+                          }`}
+                        />
                       </div>
                     ) : null}
                     {isPendingWatering ? (
@@ -2217,10 +2231,8 @@ export default function Home() {
                       className={`pointer-events-none absolute -inset-1 animate-pulse rounded-full border-2 bg-transparent opacity-90 ${savingMarkerGlow.pulse}`}
                     />
                     <span
-                      className={`pointer-events-none relative flex h-6 w-6 items-center justify-center rounded-full border border-white/90 shadow-sm ${savingMarkerGlow.dot}`}
-                    >
-                      <Sprout className="h-3.5 w-3.5" />
-                    </span>
+                      className={`pointer-events-none relative h-2.5 w-2.5 rounded-full border border-white/90 shadow-sm ${savingMarkerGlow.dot}`}
+                    />
                   </div>
                   <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 rounded-md bg-white/95 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#006c49] shadow">
                     Saving...
@@ -2246,10 +2258,8 @@ export default function Home() {
                       className={`pointer-events-none absolute -inset-1 animate-ping rounded-full border-2 bg-transparent opacity-80 ${savingMarkerGlow.pulse}`}
                     />
                     <span
-                      className={`pointer-events-none relative flex h-6 w-6 items-center justify-center rounded-full border border-white/90 shadow-sm ${savingMarkerGlow.dot}`}
-                    >
-                      <Sprout className="h-3.5 w-3.5" />
-                    </span>
+                      className={`pointer-events-none relative h-2.5 w-2.5 rounded-full border border-white/90 shadow-sm ${savingMarkerGlow.dot}`}
+                    />
                   </div>
                 </div>
               ) : null}
