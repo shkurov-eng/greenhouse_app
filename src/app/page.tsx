@@ -190,7 +190,7 @@ export default function Home() {
   const [roomStylizationPreset, setRoomStylizationPreset] = useState<RoomStylizationPreset>("strong");
   const [plants, setPlants] = useState<Plant[]>([]);
   const [markers, setMarkers] = useState<PlantMarker[]>([]);
-  const [, setActiveMarkerId] = useState<string | null>(null);
+  const [activeMarkerId, setActiveMarkerId] = useState<string | null>(null);
   const [pendingWateringMarkerIds, setPendingWateringMarkerIds] = useState<string[]>([]);
   const [justWateredMarkerId, setJustWateredMarkerId] = useState<string | null>(null);
   const [selectedPlantIdForMarker, setSelectedPlantIdForMarker] = useState<string>("");
@@ -339,22 +339,22 @@ export default function Home() {
   function getPlantGlowClasses(status: PlantStatus) {
     if (status === "healthy") {
       return {
-        glow: "border-[#10b981]/80 bg-white/5 shadow-[0_0_14px_rgba(16,185,129,0.36)]",
-        pulse: "border-[#10b981]/55 shadow-[0_0_12px_rgba(16,185,129,0.30)]",
-        dot: "bg-[#10b981]",
+        glow: "border-[#10b981]/75 bg-white/10 shadow-[0_0_12px_rgba(16,185,129,0.28)]",
+        pulse: "border-[#10b981]/45 shadow-[0_0_10px_rgba(16,185,129,0.24)]",
+        dot: "bg-[#10b981] text-white",
       };
     }
     if (status === "thirsty") {
       return {
-        glow: "border-[#f59e0b]/80 bg-white/5 shadow-[0_0_16px_rgba(245,158,11,0.40)]",
+        glow: "border-[#f59e0b]/80 bg-white/10 shadow-[0_0_16px_rgba(245,158,11,0.40)]",
         pulse: "border-[#f59e0b]/60 shadow-[0_0_14px_rgba(245,158,11,0.34)]",
-        dot: "bg-[#f59e0b]",
+        dot: "bg-[#f59e0b] text-white",
       };
     }
     return {
-      glow: "border-[#ef4444]/80 bg-white/5 shadow-[0_0_18px_rgba(239,68,68,0.42)]",
+      glow: "border-[#ef4444]/80 bg-white/10 shadow-[0_0_18px_rgba(239,68,68,0.42)]",
       pulse: "border-[#ef4444]/60 shadow-[0_0_16px_rgba(239,68,68,0.36)]",
-      dot: "bg-[#ef4444]",
+      dot: "bg-[#ef4444] text-white",
     };
   }
 
@@ -1314,7 +1314,6 @@ export default function Home() {
       setShowMarkerLongPressHint(false);
       window.localStorage.setItem("markerLongPressHintDismissed", "1");
       setActiveMarkerId(markerId);
-      openEditPlantDialog(plant);
     }, 550);
   }
 
@@ -1323,6 +1322,7 @@ export default function Home() {
   }
 
   function openEditPlantDialog(plant: Plant) {
+    setActiveMarkerId(null);
     setEditingPlantId(plant.id);
     setEditPlantName(plant.name);
     setEditPlantSpecies(plant.species ?? "");
@@ -1539,6 +1539,7 @@ export default function Home() {
       return;
     }
     if (!isMarkerEditMode) {
+      setActiveMarkerId(null);
       return;
     }
     if (!selectedPlantIdForMarker) {
@@ -2085,6 +2086,7 @@ export default function Home() {
                   markerPlant?.overdue_after_hours ?? DEFAULT_OVERDUE_AFTER_HOURS,
                 );
                 const colors = getPlantGlowClasses(status);
+                const shouldPulseMarker = isPendingWatering || status !== "healthy";
                 return (
                   <div
                     key={marker.id}
@@ -2124,6 +2126,7 @@ export default function Home() {
                         if (consumeLongPressHandled(marker.id)) {
                           return;
                         }
+                        setActiveMarkerId(null);
                         void runSafely(() =>
                           handleMarkerTap(marker.plant_id, marker.id, selectedRoom.id, event.timeStamp),
                         );
@@ -2133,13 +2136,45 @@ export default function Home() {
                     >
                       <span
                         className={`pointer-events-none absolute -inset-1 rounded-full border-2 bg-transparent transition ${
-                          isPendingWatering ? "animate-pulse opacity-95" : "opacity-80 group-hover:opacity-100"
+                          shouldPulseMarker
+                            ? "animate-pulse opacity-90"
+                            : "opacity-45 group-hover:opacity-90"
                         } ${colors.pulse}`}
                       />
                       <span
-                        className={`pointer-events-none relative h-2.5 w-2.5 rounded-full border border-white/90 shadow-sm ${colors.dot}`}
-                      />
+                        className={`pointer-events-none relative flex h-6 w-6 items-center justify-center rounded-full border border-white/90 shadow-sm ${colors.dot}`}
+                      >
+                        <Sprout className="h-3.5 w-3.5" />
+                      </span>
                     </button>
+                    {activeMarkerId === marker.id && markerPlant ? (
+                      <div
+                        className="absolute bottom-14 left-1/2 z-20 min-w-32 -translate-x-1/2 rounded-2xl border border-white/80 bg-white/95 px-2.5 py-2 text-[#1f1b17] shadow-[0_10px_28px_rgba(31,27,23,0.16)] backdrop-blur-md"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-bold">{markerPlant.name}</p>
+                            <p className="text-[9px] font-semibold uppercase tracking-wide text-[#6c7a71]">
+                              {status}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setActiveMarkerId(null);
+                              openEditPlantDialog(markerPlant);
+                            }}
+                            className="shrink-0 rounded-full border border-[#d5ddd9] bg-[#f8fcfa] p-1.5 text-[#006c49] shadow-sm active:scale-95"
+                            aria-label={`Edit ${markerPlant.name}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <span className="absolute left-1/2 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1 rotate-45 border-b border-r border-white/80 bg-white/95" />
+                      </div>
+                    ) : null}
                     {isPendingWatering ? (
                       <div
                         className="absolute bottom-10 left-1/2 -translate-x-1/2 rounded-lg bg-white px-2 py-1 text-[10px] font-semibold text-[#3c4a42] shadow-md"
@@ -2182,8 +2217,10 @@ export default function Home() {
                       className={`pointer-events-none absolute -inset-1 animate-pulse rounded-full border-2 bg-transparent opacity-90 ${savingMarkerGlow.pulse}`}
                     />
                     <span
-                      className={`pointer-events-none relative h-2.5 w-2.5 rounded-full border border-white/90 shadow-sm ${savingMarkerGlow.dot}`}
-                    />
+                      className={`pointer-events-none relative flex h-6 w-6 items-center justify-center rounded-full border border-white/90 shadow-sm ${savingMarkerGlow.dot}`}
+                    >
+                      <Sprout className="h-3.5 w-3.5" />
+                    </span>
                   </div>
                   <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 rounded-md bg-white/95 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#006c49] shadow">
                     Saving...
@@ -2209,8 +2246,10 @@ export default function Home() {
                       className={`pointer-events-none absolute -inset-1 animate-ping rounded-full border-2 bg-transparent opacity-80 ${savingMarkerGlow.pulse}`}
                     />
                     <span
-                      className={`pointer-events-none relative h-2.5 w-2.5 rounded-full border border-white/90 shadow-sm ${savingMarkerGlow.dot}`}
-                    />
+                      className={`pointer-events-none relative flex h-6 w-6 items-center justify-center rounded-full border border-white/90 shadow-sm ${savingMarkerGlow.dot}`}
+                    >
+                      <Sprout className="h-3.5 w-3.5" />
+                    </span>
                   </div>
                 </div>
               ) : null}
