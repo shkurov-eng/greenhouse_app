@@ -1,4 +1,5 @@
 export type PlantStatus = "healthy" | "thirsty" | "overdue";
+export type RoomStylizationPreset = "soft" | "medium" | "strong";
 
 export type Household = {
   id: string;
@@ -431,7 +432,10 @@ export async function uploadRoomImage(
   return readApiPayload<Room>(response);
 }
 
-export async function stylizeRoomImage(initData: string | null, payload: { roomId: string }) {
+export async function stylizeRoomImage(
+  initData: string | null,
+  payload: { roomId: string; force?: boolean; preset?: RoomStylizationPreset },
+) {
   const response = await fetch("/api/rooms/stylize", {
     method: "POST",
     headers: {
@@ -440,6 +444,8 @@ export async function stylizeRoomImage(initData: string | null, payload: { roomI
     },
     body: JSON.stringify({
       roomId: payload.roomId,
+      force: payload.force === true,
+      preset: payload.preset ?? "strong",
     }),
   });
 

@@ -9,6 +9,7 @@ import {
   ImagePlus,
   Pencil,
   Plus,
+  RefreshCw,
   Sparkles,
   Settings,
   Sprout,
@@ -47,6 +48,7 @@ import {
   type Plant,
   type PlantMarker,
   type PlantStatus,
+  type RoomStylizationPreset,
   type RoomPlantDetectionDraft,
   type Room,
 } from "@/lib/api";
@@ -176,6 +178,8 @@ export default function Home() {
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [roomVisualMode, setRoomVisualMode] = useState<RoomVisualMode>("photo");
   const [isStylizingRoom, setIsStylizingRoom] = useState(false);
+  const [roomStylizeNonce, setRoomStylizeNonce] = useState(0);
+  const [roomStylizationPreset, setRoomStylizationPreset] = useState<RoomStylizationPreset>("strong");
   const [plants, setPlants] = useState<Plant[]>([]);
   const [markers, setMarkers] = useState<PlantMarker[]>([]);
   const [, setActiveMarkerId] = useState<string | null>(null);
@@ -389,6 +393,7 @@ export default function Home() {
     setIsEditPlantOpen(false);
     setRoomVisualMode("photo");
     setIsStylizingRoom(false);
+    setRoomStylizeNonce(0);
     setEditingPlantId(null);
     if (newPlantPhotoPreviewUrl) {
       URL.revokeObjectURL(newPlantPhotoPreviewUrl);
@@ -760,7 +765,11 @@ export default function Home() {
 
   function getRoomImageUrl(room: Room) {
     if (roomVisualMode === "cartoon" && room.signed_stylized_background_url) {
-      return room.signed_stylized_background_url;
+      const base = room.signed_stylized_background_url;
+      if (roomStylizeNonce > 0) {
+        return base.includes("?") ? `${base}&cb=${roomStylizeNonce}` : `${base}?cb=${roomStylizeNonce}`;
+      }
+      return base;
     }
     return room.signed_background_url ?? room.background_url;
   }
@@ -1633,7 +1642,10 @@ export default function Home() {
     if (roomVisualMode === "cartoon") {
       return;
     }
-    if (selectedRoom.signed_stylized_background_url) {
+    const hasStylized =
+      Boolean(selectedRoom.stylized_background_path?.trim()) ||
+      Boolean(selectedRoom.signed_stylized_background_url);
+    if (hasStylized) {
       setRoomVisualMode("cartoon");
       setMessage("Cartoon mode enabled");
       return;
@@ -1649,11 +1661,45 @@ export default function Home() {
     setIsStylizingRoom(true);
     setMessage("Generating cartoon room with AI...");
     try {
-      const stylizedRoom = await stylizeRoomImage(getCurrentInitData(), { roomId: selectedRoom.id });
+      const stylizedRoom = await stylizeRoomImage(getCurrentInitData(), {
+        roomId: selectedRoom.id,
+        force: false,
+        preset: roomStylizationPreset,
+      });
       setRooms((prev) => prev.map((room) => (room.id === stylizedRoom.id ? stylizedRoom : room)));
       setSelectedRoom((prev) => (prev?.id === stylizedRoom.id ? { ...prev, ...stylizedRoom } : prev));
       setRoomVisualMode("cartoon");
       setMessage("Cartoon room generated");
+    } finally {
+      setIsStylizingRoom(false);
+    }
+  }
+
+  async function handleRegenerateCartoonRoom() {
+    if (!selectedRoom) {
+      return;
+    }
+    if (!selectedRoom.background_path && !selectedRoom.background_url) {
+      setMessage("Upload a room photo first, then regenerate cartoon mode.");
+      return;
+    }
+    if (isStylizingRoom) {
+      return;
+    }
+
+    setIsStylizingRoom(true);
+    setMessage("Regenerating cartoon room with AI...");
+    try {
+      const stylizedRoom = await stylizeRoomImage(getCurrentInitData(), {
+        roomId: selectedRoom.id,
+        force: true,
+        preset: roomStylizationPreset,
+      });
+      setRooms((prev) => prev.map((room) => (room.id === stylizedRoom.id ? stylizedRoom : room)));
+      setSelectedRoom((prev) => (prev?.id === stylizedRoom.id ? { ...prev, ...stylizedRoom } : prev));
+      setRoomStylizeNonce((n) => n + 1);
+      setRoomVisualMode("cartoon");
+      setMessage("Cartoon room regenerated");
     } finally {
       setIsStylizingRoom(false);
     }
@@ -1745,6 +1791,7 @@ export default function Home() {
 
   function openRoom(room: Room) {
     setRoomVisualMode("photo");
+    setRoomStylizeNonce(0);
     setSelectedRoom(room);
     void runSafely(() => fetchRoomDetails(room.id));
   }
@@ -1884,46 +1931,88 @@ export default function Home() {
                 {message}
               </div>
             ) : null}
-            <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/90 p-2 shadow-sm">
-              <div className="min-w-0">
-                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#006c49]">
-                  Room style
-                </p>
-                <p className="truncate text-[11px] text-[#6c7a71]">
-                  Switch between the original photo and AI cartoon view.
-                </p>
+            <div className="mb-3 space-y-2">
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/90 p-2 shadow-sm">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#006c49]">
+                    Room style
+                  </p>
+                  <p className="truncate text-[11px] text-[#6c7a71]">
+                    Switch between the original photo and AI cartoon view.
+                  </p>
+                </div>
+                <div className="flex shrink-0 rounded-full border border-[#d5ddd9] bg-[#f8fcfa] p-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRoomVisualMode("photo");
+                      setMessage("Photo mode enabled");
+                    }}
+                    className={`rounded-full px-3 py-1.5 text-[11px] font-bold transition ${
+                      roomVisualMode === "photo"
+                        ? "bg-[#006c49] text-white shadow-sm"
+                        : "text-[#3c4a42] hover:bg-white"
+                    }`}
+                  >
+                    Photo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void runSafely(handleShowCartoonRoom);
+                    }}
+                    disabled={isStylizingRoom}
+                    className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-bold transition disabled:cursor-not-allowed disabled:opacity-70 ${
+                      roomVisualMode === "cartoon"
+                        ? "bg-[#006c49] text-white shadow-sm"
+                        : "text-[#3c4a42] hover:bg-white"
+                    }`}
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    {isStylizingRoom ? "Working..." : "Cartoon"}
+                  </button>
+                </div>
               </div>
-              <div className="flex shrink-0 rounded-full border border-[#d5ddd9] bg-[#f8fcfa] p-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRoomVisualMode("photo");
-                    setMessage("Photo mode enabled");
-                  }}
-                  className={`rounded-full px-3 py-1.5 text-[11px] font-bold transition ${
-                    roomVisualMode === "photo"
-                      ? "bg-[#006c49] text-white shadow-sm"
-                      : "text-[#3c4a42] hover:bg-white"
-                  }`}
-                >
-                  Photo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void runSafely(handleShowCartoonRoom);
-                  }}
-                  disabled={isStylizingRoom}
-                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-bold transition disabled:cursor-not-allowed disabled:opacity-70 ${
-                    roomVisualMode === "cartoon"
-                      ? "bg-[#006c49] text-white shadow-sm"
-                      : "text-[#3c4a42] hover:bg-white"
-                  }`}
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  {isStylizingRoom ? "Generating..." : "Cartoon"}
-                </button>
+              <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#e8ddd6] bg-[#fbfaf6]/90 px-3 py-2 shadow-sm">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6c7a71]">
+                  Cartoon preset
+                </p>
+                <div className="flex rounded-full border border-[#d5ddd9] bg-white p-1">
+                  {(["soft", "medium", "strong"] as RoomStylizationPreset[]).map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => {
+                        setRoomStylizationPreset(preset);
+                        setMessage(`Cartoon preset: ${preset}`);
+                      }}
+                      className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide transition ${
+                        roomStylizationPreset === preset
+                          ? "bg-[#0f766e] text-white shadow-sm"
+                          : "text-[#3c4a42] hover:bg-[#f3f7f5]"
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
               </div>
+              {selectedRoom.stylized_background_path ||
+              selectedRoom.signed_stylized_background_url ? (
+                <div className="flex items-center justify-end gap-2 rounded-2xl border border-[#e8ddd6] bg-[#fbfaf6]/90 px-2 py-2 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void runSafely(handleRegenerateCartoonRoom);
+                    }}
+                    disabled={isStylizingRoom}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#0f766e]/35 bg-white px-3 py-2 text-[11px] font-bold text-[#0f766e] shadow-sm disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${isStylizingRoom ? "animate-spin" : ""}`} />
+                    Regenerate cartoon
+                  </button>
+                </div>
+              ) : null}
             </div>
             <div
               className="relative overflow-hidden rounded-[28px] border border-white/80 bg-[#f6ece6] shadow-[0_16px_40px_rgba(81,55,37,0.10)]"

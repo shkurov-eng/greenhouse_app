@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   buildRoomStylizationPrompt,
   type RoomStylizationPlant,
+  type RoomStylizationPreset,
 } from "@/lib/server/roomStylizationPrompt";
 import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
 import { getRequestTelegramId } from "@/lib/server/telegramAuth";
@@ -66,6 +67,13 @@ function asRoomId(value: unknown) {
   return roomId;
 }
 
+function asStylizationPreset(value: unknown): RoomStylizationPreset {
+  if (value === "soft" || value === "medium" || value === "strong") {
+    return value;
+  }
+  return "strong";
+}
+
 function buildOutputPath(roomId: string) {
   return `stylized-rooms/${roomId}/${Date.now()}-cartoon.png`;
 }
@@ -74,6 +82,7 @@ async function stylizeRoomWithAiStudio(
   imageBytes: ArrayBuffer,
   mimeType: string,
   plants: RoomStylizationPlant[],
+  preset: RoomStylizationPreset,
 ) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -87,7 +96,7 @@ async function stylizeRoomWithAiStudio(
     "gemini-2.0-flash-preview-image-generation",
   ].filter((value, index, array): value is string => Boolean(value) && array.indexOf(value) === index);
   const base64Image = Buffer.from(imageBytes).toString("base64");
-  const prompt = buildRoomStylizationPrompt(plants);
+  const prompt = buildRoomStylizationPrompt(plants, preset);
   let response: Response | null = null;
   let selectedModel: string | null = null;
   const failedModels: Array<{ model: string; message: string }> = [];
@@ -256,8 +265,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = (await request.json()) as { roomId?: unknown };
+    const body = (await request.json()) as { roomId?: unknown; force?: unknown; preset?: unknown };
     const roomId = asRoomId(body.roomId);
+    const force = body.force === true;
+    const preset = asStylizationPreset(body.preset);
     const supabaseAdmin = getSupabaseAdmin();
     type RpcResponse = { data: unknown; error: { message: string } | null };
     const rpcAny = supabaseAdmin.rpc.bind(supabaseAdmin) as unknown as (
@@ -309,6 +320,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Room has no photo. Upload room image first." }, { status: 400 });
     }
 
+    const existingStylizedPath =
+      typeof room.stylized_background_path === "string" && room.stylized_background_path.trim()
+        ? room.stylized_background_path.trim()
+        : null;
+
+    if (!force && existingStylizedPath) {
+      console.info("[rooms-stylize] skip generation (already has stylized path)", { roomId });
+      const data = await createSignedRoomUrls(room);
+      return NextResponse.json({ data });
+    }
+
     const { data: detailsData, error: detailsError } = await rpcAny("api_room_details", {
       p_telegram_id: telegramId,
       p_room_id: roomId,
@@ -350,8 +372,19 @@ export async function POST(request: NextRequest) {
       await sourceImage.arrayBuffer(),
       sourceImage.type || "image/jpeg",
       promptPlants,
+      preset,
     );
     const stylizedPath = buildOutputPath(roomId);
+    if (force && existingStylizedPath && existingStylizedPath !== stylizedPath) {
+      const { error: removeError } = await supabaseAdmin.storage.from("rooms").remove([existingStylizedPath]);
+      if (removeError) {
+        console.warn("[rooms-stylize] failed to remove previous stylized room image", {
+          roomId,
+          path: existingStylizedPath,
+          message: removeError.message,
+        });
+      }
+    }
     const { error: uploadError } = await supabaseAdmin.storage
       .from("rooms")
       .upload(stylizedPath, generated.bytes, {
