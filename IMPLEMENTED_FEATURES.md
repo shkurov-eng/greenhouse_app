@@ -214,7 +214,7 @@ Maintenance guidelines:
 
 - Added scheduled reminders endpoint `GET`/`POST /api/jobs/send-reminders`:
   - Scans open tasks with `due_at` in reminder window.
-  - Reminder scheduler is configured in `vercel.json` to run every 5 minutes.
+  - On Vercel Hobby, reminders should be triggered by an external scheduler every 5 minutes because built-in Vercel Cron is limited to daily runs.
   - Due-soon selection uses a near-deadline window; overdue selection includes older open tasks so missed cron runs can still send overdue reminders.
   - Sends `due_soon` / `overdue` notifications through Telegram Bot API.
   - Uses `task_reminders_log` to avoid duplicate sends within reminder windows.
