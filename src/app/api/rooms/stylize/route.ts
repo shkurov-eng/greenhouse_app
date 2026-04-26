@@ -80,40 +80,56 @@ async function stylizeRoomWithAiStudio(
     throw new Error("AI is disabled on server (missing GEMINI_API_KEY).");
   }
 
-  const model = process.env.GEMINI_IMAGE_MODEL?.trim() || "gemini-2.5-flash-image-preview";
+  const configuredModel = process.env.GEMINI_IMAGE_MODEL?.trim();
+  const modelsToTry = [
+    configuredModel,
+    "gemini-2.5-flash-image",
+    "gemini-2.0-flash-preview-image-generation",
+  ].filter((value, index, array): value is string => Boolean(value) && array.indexOf(value) === index);
   const base64Image = Buffer.from(imageBytes).toString("base64");
   const prompt = buildRoomStylizationPrompt(plants);
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: prompt },
-              {
-                inline_data: {
-                  mime_type: mimeType || "image/jpeg",
-                  data: base64Image,
-                },
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          responseModalities: ["IMAGE", "TEXT"],
-        },
-      }),
-    },
-  );
+  let response: Response | null = null;
+  let selectedModel: string | null = null;
+  const failedModels: Array<{ model: string; message: string }> = [];
+  let lastErrorMessage = "AI image generation failed.";
 
-  if (!response.ok) {
-    const body = await response.text();
-    let message = `AI image generation failed with HTTP ${response.status}`;
+  for (const model of modelsToTry) {
+    const candidateResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: prompt },
+                {
+                  inline_data: {
+                    mime_type: mimeType || "image/jpeg",
+                    data: base64Image,
+                  },
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            responseModalities: ["IMAGE", "TEXT"],
+          },
+        }),
+      },
+    );
+
+    if (candidateResponse.ok) {
+      response = candidateResponse;
+      selectedModel = model;
+      break;
+    }
+
+    const body = await candidateResponse.text();
+    let message = `AI image generation failed with HTTP ${candidateResponse.status}`;
     try {
       const parsed = JSON.parse(body) as { error?: { message?: string } };
       if (parsed.error?.message) {
@@ -125,8 +141,29 @@ async function stylizeRoomWithAiStudio(
         message = compact;
       }
     }
-    throw new Error(message);
+
+    const normalized = message.toLowerCase();
+    const retryableModelError =
+      normalized.includes("not found for api version") || normalized.includes("not supported for generatecontent");
+    lastErrorMessage = `${message} (model: ${model})`;
+    failedModels.push({ model, message });
+    if (!retryableModelError) {
+      throw new Error(lastErrorMessage);
+    }
   }
+
+  if (!response) {
+    throw new Error(lastErrorMessage);
+  }
+
+  console.info("[rooms-stylize] image model selected", {
+    selectedModel,
+    failedModelsCount: failedModels.length,
+    failedModels: failedModels.map((item) => ({
+      model: item.model,
+      message: item.message.slice(0, 180),
+    })),
+  });
 
   const payload = (await response.json()) as {
     candidates?: Array<{ content?: { parts?: GeminiImagePart[] } }>;
