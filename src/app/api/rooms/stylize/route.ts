@@ -78,6 +78,239 @@ function buildOutputPath(roomId: string) {
   return `stylized-rooms/${roomId}/${Date.now()}-cartoon.png`;
 }
 
+function getCartoonImageProvider(): "openrouter" | "gemini" {
+  const raw = process.env.CARTOON_IMAGE_PROVIDER?.trim().toLowerCase();
+  if (raw === "openrouter" || raw === "gemini") {
+    return raw;
+  }
+  return process.env.OPENROUTER_API_KEY?.trim() ? "openrouter" : "gemini";
+}
+
+function parseDataUrlToBuffer(dataUrl: string): { bytes: Buffer; mimeType: string } | null {
+  const match = /^data:([^;]+);base64,(.+)$/i.exec(dataUrl.trim());
+  if (!match) {
+    return null;
+  }
+  const mimeType = match[1]?.trim() || "image/png";
+  const b64 = match[2]?.trim();
+  if (!b64) {
+    return null;
+  }
+  return { bytes: Buffer.from(b64, "base64"), mimeType };
+}
+
+async function fetchImageUrlToBuffer(url: string): Promise<{ bytes: Buffer; mimeType: string }> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    const text = await response.text();
+    const compact = text.replace(/\s+/g, " ").trim().slice(0, 180);
+    throw new Error(`Failed to download image URL (${response.status}). ${compact}`);
+  }
+  const mimeType = response.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
+  const arrayBuffer = await response.arrayBuffer();
+  return { bytes: Buffer.from(arrayBuffer), mimeType };
+}
+
+type OpenRouterImageEntry = {
+  type?: string;
+  image_url?: { url?: string };
+  imageUrl?: { url?: string };
+};
+
+function extractFirstImageFromOpenRouterMessage(message: {
+  images?: OpenRouterImageEntry[];
+}): { kind: "buffer"; bytes: Buffer; mimeType: string } | { kind: "url"; url: string } | null {
+  const images = message.images;
+  if (!Array.isArray(images) || images.length === 0) {
+    return null;
+  }
+  let remoteUrl: string | null = null;
+  for (const image of images) {
+    const url = image.image_url?.url ?? image.imageUrl?.url;
+    if (!url) {
+      continue;
+    }
+    if (url.startsWith("data:")) {
+      const parsed = parseDataUrlToBuffer(url);
+      if (parsed) {
+        return { kind: "buffer", ...parsed };
+      }
+      continue;
+    }
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      remoteUrl = url;
+    }
+  }
+  return remoteUrl ? { kind: "url", url: remoteUrl } : null;
+}
+
+function parseOpenRouterModalities(): string[] {
+  const raw = process.env.OPENROUTER_CARTOON_MODALITIES?.trim();
+  if (raw) {
+    const parts = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length > 0) {
+      return parts;
+    }
+  }
+  return ["image", "text"];
+}
+
+async function stylizeRoomWithOpenRouter(
+  imageBytes: ArrayBuffer,
+  mimeType: string,
+  plants: RoomStylizationPlant[],
+  preset: RoomStylizationPreset,
+): Promise<{ bytes: Buffer; mimeType: string }> {
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("OpenRouter is not configured (missing OPENROUTER_API_KEY).");
+  }
+
+  const model =
+    process.env.OPENROUTER_CARTOON_MODEL?.trim() ||
+    process.env.OPENROUTER_IMAGE_MODEL?.trim() ||
+    "google/gemini-2.5-flash-image";
+  const baseUrl =
+    process.env.OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api/v1/chat/completions";
+
+  const prompt = buildRoomStylizationPrompt(plants, preset);
+  const safeMime = mimeType && mimeType.trim() ? mimeType.trim() : "image/jpeg";
+  const dataUrl = `data:${safeMime};base64,${Buffer.from(imageBytes).toString("base64")}`;
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  };
+  const referer = process.env.OPENROUTER_HTTP_REFERER?.trim() || process.env.OPENROUTER_SITE_URL?.trim();
+  if (referer) {
+    headers["HTTP-Referer"] = referer;
+  }
+  const title =
+    process.env.OPENROUTER_X_OPENROUTER_TITLE?.trim() ||
+    process.env.OPENROUTER_APP_NAME?.trim() ||
+    process.env.OPENROUTER_X_TITLE?.trim();
+  if (title) {
+    headers["X-OpenRouter-Title"] = title;
+  }
+
+  const temperatureRaw = process.env.OPENROUTER_CARTOON_TEMPERATURE?.trim();
+  const temperature =
+    temperatureRaw && Number.isFinite(Number(temperatureRaw)) ? Number(temperatureRaw) : 0.2;
+
+  const aspectRatio = process.env.OPENROUTER_CARTOON_ASPECT_RATIO?.trim();
+  const imageSize = process.env.OPENROUTER_CARTOON_IMAGE_SIZE?.trim();
+  const imageConfig =
+    aspectRatio || imageSize
+      ? {
+          ...(aspectRatio ? { aspect_ratio: aspectRatio } : {}),
+          ...(imageSize ? { image_size: imageSize } : {}),
+        }
+      : undefined;
+
+  const modalitiesPrimary = parseOpenRouterModalities();
+  const modalitiesFallback =
+    modalitiesPrimary.includes("image") && modalitiesPrimary.includes("text") ? (["image"] as const) : null;
+
+  async function callOpenRouter(modalities: string[]) {
+    const body: Record<string, unknown> = {
+      model,
+      temperature,
+      modalities,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            {
+              type: "image_url",
+              image_url: { url: dataUrl },
+            },
+          ],
+        },
+      ],
+    };
+    if (imageConfig && Object.keys(imageConfig).length > 0) {
+      body.image_config = imageConfig;
+    }
+    return fetch(baseUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  }
+
+  let response = await callOpenRouter(modalitiesPrimary);
+  if (!response.ok) {
+    const errText = await response.text();
+    let detail = `HTTP ${response.status}`;
+    try {
+      const parsed = JSON.parse(errText) as { error?: { message?: string } };
+      if (parsed.error?.message) {
+        detail = parsed.error.message;
+      }
+    } catch {
+      const compact = errText.replace(/\s+/g, " ").trim().slice(0, 220);
+      if (compact) {
+        detail = compact;
+      }
+    }
+    throw new Error(`OpenRouter cartoon generation failed: ${detail}`);
+  }
+
+  const payload = (await response.json()) as {
+    choices?: Array<{ message?: { content?: unknown; images?: OpenRouterImageEntry[] } }>;
+  };
+  const message = payload.choices?.[0]?.message;
+  if (!message) {
+    throw new Error("OpenRouter returned no assistant message.");
+  }
+
+  let extracted = extractFirstImageFromOpenRouterMessage(message);
+  if (!extracted && modalitiesFallback) {
+    response = await callOpenRouter([...modalitiesFallback]);
+    if (!response.ok) {
+      const errText = await response.text();
+      const compact = errText.replace(/\s+/g, " ").trim().slice(0, 220);
+      throw new Error(
+        `OpenRouter cartoon retry failed (${response.status}). ${compact || "Unknown error"}`,
+      );
+    }
+    const retryPayload = (await response.json()) as {
+      choices?: Array<{ message?: { images?: OpenRouterImageEntry[] } }>;
+    };
+    const retryMessage = retryPayload.choices?.[0]?.message;
+    if (retryMessage) {
+      extracted = extractFirstImageFromOpenRouterMessage(retryMessage);
+    }
+  }
+
+  if (extracted?.kind === "buffer") {
+    console.info("[rooms-stylize] openrouter image ok", { model, modalities: modalitiesPrimary });
+    return { bytes: extracted.bytes, mimeType: extracted.mimeType };
+  }
+  if (extracted?.kind === "url") {
+    const downloaded = await fetchImageUrlToBuffer(extracted.url);
+    console.info("[rooms-stylize] openrouter image url ok", { model });
+    return downloaded;
+  }
+
+  const contentText =
+    typeof message.content === "string"
+      ? message.content
+      : Array.isArray(message.content)
+        ? message.content.map((part) => (typeof part === "object" && part && "text" in part ? String((part as { text?: string }).text ?? "") : "")).join(" ")
+        : "";
+  const compactContent = contentText.replace(/\s+/g, " ").trim().slice(0, 220);
+  throw new Error(
+    compactContent
+      ? `OpenRouter returned no image. Assistant text: ${compactContent}`
+      : "OpenRouter returned no image in message.images.",
+  );
+}
+
 async function stylizeRoomWithAiStudio(
   imageBytes: ArrayBuffer,
   mimeType: string,
@@ -194,6 +427,19 @@ async function stylizeRoomWithAiStudio(
     .replace(/\s+/g, " ")
     .trim();
   throw new Error(text ? `AI returned text instead of an image: ${text.slice(0, 220)}` : "AI returned no image.");
+}
+
+async function stylizeRoomCartoonImage(
+  imageBytes: ArrayBuffer,
+  mimeType: string,
+  plants: RoomStylizationPlant[],
+  preset: RoomStylizationPreset,
+) {
+  const provider = getCartoonImageProvider();
+  if (provider === "openrouter") {
+    return stylizeRoomWithOpenRouter(imageBytes, mimeType, plants, preset);
+  }
+  return stylizeRoomWithAiStudio(imageBytes, mimeType, plants, preset);
 }
 
 async function createSignedRoomUrls(room: RoomRow) {
@@ -368,7 +614,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const generated = await stylizeRoomWithAiStudio(
+    const generated = await stylizeRoomCartoonImage(
       await sourceImage.arrayBuffer(),
       sourceImage.type || "image/jpeg",
       promptPlants,
