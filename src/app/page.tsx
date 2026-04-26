@@ -190,7 +190,10 @@ export default function Home() {
   const [roomStylizationPreset, setRoomStylizationPreset] = useState<RoomStylizationPreset>("strong");
   const [plants, setPlants] = useState<Plant[]>([]);
   const [markers, setMarkers] = useState<PlantMarker[]>([]);
-  const [activeMarkerId, setActiveMarkerId] = useState<string | null>(null);
+  /** Tracks marker “focus” during tap-to-water delay + completion; must not control long-press UI. */
+  const [, setWateringFocusMarkerId] = useState<string | null>(null);
+  /** Long-press quick menu (name + edit) for a single marker. */
+  const [markerQuickMenuMarkerId, setMarkerQuickMenuMarkerId] = useState<string | null>(null);
   const [pendingWateringMarkerIds, setPendingWateringMarkerIds] = useState<string[]>([]);
   const [justWateredMarkerId, setJustWateredMarkerId] = useState<string | null>(null);
   const [selectedPlantIdForMarker, setSelectedPlantIdForMarker] = useState<string>("");
@@ -399,7 +402,8 @@ export default function Home() {
   function clearRoomDetailState() {
     setPlants([]);
     setMarkers([]);
-    setActiveMarkerId(null);
+    setWateringFocusMarkerId(null);
+    setMarkerQuickMenuMarkerId(null);
     setSelectedPlantIdForMarker("");
     setIsMarkerEditMode(false);
     setIsAddPlantOpen(false);
@@ -883,7 +887,13 @@ export default function Home() {
     });
     const nextMarkers = details.markers;
     setMarkers(nextMarkers);
-    setActiveMarkerId((prev) => {
+    setWateringFocusMarkerId((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      return nextMarkers.some((marker) => marker.id === prev) ? prev : null;
+    });
+    setMarkerQuickMenuMarkerId((prev) => {
       if (!prev) {
         return prev;
       }
@@ -1237,7 +1247,8 @@ export default function Home() {
     if (pendingWateringTimersRef.current[markerId]) {
       return;
     }
-    setActiveMarkerId(markerId);
+    setMarkerQuickMenuMarkerId(null);
+    setWateringFocusMarkerId(markerId);
     setPendingWateringMarkerIds((prev) =>
       prev.includes(markerId) ? prev : [...prev, markerId],
     );
@@ -1257,7 +1268,7 @@ export default function Home() {
       }, 700);
       void runSafely(async () => {
         await handleWaterPlant(plantId, roomId);
-        setActiveMarkerId((prev) => (prev === markerId ? null : prev));
+        setWateringFocusMarkerId((prev) => (prev === markerId ? null : prev));
       });
     }, MARKER_WATER_DELAY_MS);
   }
@@ -1275,7 +1286,7 @@ export default function Home() {
       return next;
     });
     setPendingWateringMarkerIds((prev) => prev.filter((id) => id !== markerId));
-    setActiveMarkerId((prev) => (prev === markerId ? null : prev));
+    setWateringFocusMarkerId((prev) => (prev === markerId ? null : prev));
   }
 
   function getPendingWateringSecondsLeft(markerId: string) {
@@ -1313,7 +1324,7 @@ export default function Home() {
       markerLongPressHandledRef.current = markerId;
       setShowMarkerLongPressHint(false);
       window.localStorage.setItem("markerLongPressHintDismissed", "1");
-      setActiveMarkerId(markerId);
+      setMarkerQuickMenuMarkerId(markerId);
     }, 550);
   }
 
@@ -1322,7 +1333,8 @@ export default function Home() {
   }
 
   function openEditPlantDialog(plant: Plant) {
-    setActiveMarkerId(null);
+    setMarkerQuickMenuMarkerId(null);
+    setWateringFocusMarkerId(null);
     setEditingPlantId(plant.id);
     setEditPlantName(plant.name);
     setEditPlantSpecies(plant.species ?? "");
@@ -1539,7 +1551,8 @@ export default function Home() {
       return;
     }
     if (!isMarkerEditMode) {
-      setActiveMarkerId(null);
+      setMarkerQuickMenuMarkerId(null);
+      setWateringFocusMarkerId(null);
       return;
     }
     if (!selectedPlantIdForMarker) {
@@ -2056,7 +2069,7 @@ export default function Home() {
             >
               {showMarkerLongPressHint ? (
                 <div className="pointer-events-none absolute right-3 top-3 z-10 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-[#3c4a42] shadow">
-                  Long press marker to edit plant
+                  Long press marker for quick menu
                 </div>
               ) : null}
               {getRoomImageUrl(selectedRoom) ? (
@@ -2102,7 +2115,7 @@ export default function Home() {
                   >
                     <button
                       type="button"
-                      className={`group relative flex h-12 w-12 items-center justify-center rounded-full border-2 transition-all active:scale-95 ${
+                      className={`group relative flex h-12 w-12 touch-none select-none items-center justify-center rounded-full border-2 transition-all active:scale-95 ${
                         isJustWatered ? "scale-110 ring-4 ring-[#10b981]/40" : ""
                       } ${colors.glow}`}
                       onPointerDown={(event) => {
@@ -2126,10 +2139,14 @@ export default function Home() {
                         if (consumeLongPressHandled(marker.id)) {
                           return;
                         }
-                        setActiveMarkerId(null);
+                        setMarkerQuickMenuMarkerId(null);
                         void runSafely(() =>
                           handleMarkerTap(marker.plant_id, marker.id, selectedRoom.id, event.timeStamp),
                         );
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
                       }}
                       title={markerPlant?.name ?? "Plant marker"}
                       aria-label={markerPlant?.name ?? "Plant marker"}
@@ -2147,7 +2164,7 @@ export default function Home() {
                         <Sprout className="h-3.5 w-3.5" />
                       </span>
                     </button>
-                    {activeMarkerId === marker.id && markerPlant ? (
+                    {markerQuickMenuMarkerId === marker.id && markerPlant ? (
                       <div
                         className="absolute bottom-14 left-1/2 z-20 min-w-32 -translate-x-1/2 rounded-2xl border border-white/80 bg-white/95 px-2.5 py-2 text-[#1f1b17] shadow-[0_10px_28px_rgba(31,27,23,0.16)] backdrop-blur-md"
                         onClick={(event) => event.stopPropagation()}
@@ -2163,7 +2180,7 @@ export default function Home() {
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation();
-                              setActiveMarkerId(null);
+                              setMarkerQuickMenuMarkerId(null);
                               openEditPlantDialog(markerPlant);
                             }}
                             className="shrink-0 rounded-full border border-[#d5ddd9] bg-[#f8fcfa] p-1.5 text-[#006c49] shadow-sm active:scale-95"
