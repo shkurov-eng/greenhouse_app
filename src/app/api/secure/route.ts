@@ -333,15 +333,26 @@ function resolveRoomsStoragePath(room: Record<string, unknown>): string | null {
   return null;
 }
 
+function resolveStylizedRoomsStoragePath(room: Record<string, unknown>): string | null {
+  const direct = room.stylized_background_path;
+  return typeof direct === "string" && direct.trim().length > 0 ? direct.trim() : null;
+}
+
 async function enrichRoomsWithSignedUrls(rows: Array<Record<string, unknown>>) {
   const supabaseAdmin = getSupabaseAdmin();
   const pathPerRow = rows.map((room) => resolveRoomsStoragePath(room));
-  const uniquePaths = [...new Set(pathPerRow.filter((p): p is string => Boolean(p)))];
+  const stylizedPathPerRow = rows.map((room) => resolveStylizedRoomsStoragePath(room));
+  const uniquePaths = [
+    ...new Set(
+      [...pathPerRow, ...stylizedPathPerRow].filter((p): p is string => Boolean(p)),
+    ),
+  ];
 
   if (uniquePaths.length === 0) {
     return rows.map((room) => ({
       ...room,
       signed_background_url: null,
+      signed_stylized_background_url: null,
     }));
   }
 
@@ -357,10 +368,9 @@ async function enrichRoomsWithSignedUrls(rows: Array<Record<string, unknown>>) {
     }
   }
 
-  return rows.map((room, index) => {
-    const path = pathPerRow[index];
+  function signedUrlForPath(path: string | null) {
     if (!path) {
-      return { ...room, signed_background_url: null };
+      return null;
     }
     let signed = signedByPath.get(path) ?? null;
     if (!signed) {
@@ -379,9 +389,16 @@ async function enrichRoomsWithSignedUrls(rows: Array<Record<string, unknown>>) {
         }
       }
     }
+    return signed;
+  }
+
+  return rows.map((room, index) => {
+    const path = pathPerRow[index];
+    const stylizedPath = stylizedPathPerRow[index];
     return {
       ...room,
-      signed_background_url: signed,
+      signed_background_url: signedUrlForPath(path),
+      signed_stylized_background_url: signedUrlForPath(stylizedPath),
     };
   });
 }

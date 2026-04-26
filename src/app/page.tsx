@@ -9,6 +9,7 @@ import {
   ImagePlus,
   Pencil,
   Plus,
+  Sparkles,
   Settings,
   Sprout,
   Trash2,
@@ -33,6 +34,7 @@ import {
   removePlantPhoto,
   revertLastWatering,
   setActiveHousehold,
+  stylizeRoomImage,
   updatePlant,
   analyzePlantImage,
   analyzeRoomPlantsPreview,
@@ -140,6 +142,8 @@ type OptimisticMarkerPlacement = {
   y: number;
 };
 
+type RoomVisualMode = "photo" | "cartoon";
+
 declare global {
   interface Window {
     Telegram?: {
@@ -170,6 +174,8 @@ export default function Home() {
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+  const [roomVisualMode, setRoomVisualMode] = useState<RoomVisualMode>("photo");
+  const [isStylizingRoom, setIsStylizingRoom] = useState(false);
   const [plants, setPlants] = useState<Plant[]>([]);
   const [markers, setMarkers] = useState<PlantMarker[]>([]);
   const [, setActiveMarkerId] = useState<string | null>(null);
@@ -312,28 +318,25 @@ export default function Home() {
     };
   }, [stopCameraStream]);
 
-  function getMarkerColorClasses(status: PlantStatus) {
+  function getPlantGlowClasses(status: PlantStatus) {
     if (status === "healthy") {
       return {
-        pin: "bg-[#10b981]",
-        pulse: "bg-[#10b981]/40",
-        labelText: "text-[#006c49]",
-        labelChip: "bg-[#e6f5ef]",
+        glow: "border-[#bbf7d0]/70 bg-[#10b981]/12 shadow-[0_0_34px_rgba(16,185,129,0.50)]",
+        pulse: "bg-[#10b981]/25",
+        label: "bg-[#e6f5ef]/95 text-[#006c49]",
       };
     }
     if (status === "thirsty") {
       return {
-        pin: "bg-[#e29100]",
-        pulse: "bg-[#e29100]/40",
-        labelText: "text-[#855300]",
-        labelChip: "bg-[#ffddb8]",
+        glow: "border-[#fde68a]/75 bg-[#f59e0b]/16 shadow-[0_0_38px_rgba(245,158,11,0.60)]",
+        pulse: "bg-[#f59e0b]/28",
+        label: "bg-[#ffddb8]/95 text-[#855300]",
       };
     }
     return {
-      pin: "bg-[#ba1a1a]",
-      pulse: "bg-[#ba1a1a]/40",
-      labelText: "text-[#93000a]",
-      labelChip: "bg-[#ffdad6]",
+      glow: "border-[#fecaca]/80 bg-[#ef4444]/18 shadow-[0_0_44px_rgba(239,68,68,0.70)]",
+      pulse: "bg-[#ef4444]/30",
+      label: "bg-[#ffdad6]/95 text-[#93000a]",
     };
   }
 
@@ -384,6 +387,8 @@ export default function Home() {
     setIsAddPlantOpen(false);
     setIsRoomDetectionPreviewOpen(false);
     setIsEditPlantOpen(false);
+    setRoomVisualMode("photo");
+    setIsStylizingRoom(false);
     setEditingPlantId(null);
     if (newPlantPhotoPreviewUrl) {
       URL.revokeObjectURL(newPlantPhotoPreviewUrl);
@@ -754,6 +759,9 @@ export default function Home() {
   }
 
   function getRoomImageUrl(room: Room) {
+    if (roomVisualMode === "cartoon" && room.signed_stylized_background_url) {
+      return room.signed_stylized_background_url;
+    }
     return room.signed_background_url ?? room.background_url;
   }
 
@@ -1618,6 +1626,39 @@ export default function Home() {
     await uploadRoomImageFile(roomId, file);
   }
 
+  async function handleShowCartoonRoom() {
+    if (!selectedRoom) {
+      return;
+    }
+    if (roomVisualMode === "cartoon") {
+      return;
+    }
+    if (selectedRoom.signed_stylized_background_url) {
+      setRoomVisualMode("cartoon");
+      setMessage("Cartoon mode enabled");
+      return;
+    }
+    if (!selectedRoom.background_path && !selectedRoom.background_url) {
+      setMessage("Upload a room photo first, then generate cartoon mode.");
+      return;
+    }
+    if (isStylizingRoom) {
+      return;
+    }
+
+    setIsStylizingRoom(true);
+    setMessage("Generating cartoon room with AI...");
+    try {
+      const stylizedRoom = await stylizeRoomImage(getCurrentInitData(), { roomId: selectedRoom.id });
+      setRooms((prev) => prev.map((room) => (room.id === stylizedRoom.id ? stylizedRoom : room)));
+      setSelectedRoom((prev) => (prev?.id === stylizedRoom.id ? { ...prev, ...stylizedRoom } : prev));
+      setRoomVisualMode("cartoon");
+      setMessage("Cartoon room generated");
+    } finally {
+      setIsStylizingRoom(false);
+    }
+  }
+
   async function handleAutoDetectPlantsInRoom() {
     if (!selectedRoom) {
       return;
@@ -1703,6 +1744,7 @@ export default function Home() {
   }
 
   function openRoom(room: Room) {
+    setRoomVisualMode("photo");
     setSelectedRoom(room);
     void runSafely(() => fetchRoomDetails(room.id));
   }
@@ -1842,6 +1884,47 @@ export default function Home() {
                 {message}
               </div>
             ) : null}
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/90 p-2 shadow-sm">
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#006c49]">
+                  Room style
+                </p>
+                <p className="truncate text-[11px] text-[#6c7a71]">
+                  Switch between the original photo and AI cartoon view.
+                </p>
+              </div>
+              <div className="flex shrink-0 rounded-full border border-[#d5ddd9] bg-[#f8fcfa] p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRoomVisualMode("photo");
+                    setMessage("Photo mode enabled");
+                  }}
+                  className={`rounded-full px-3 py-1.5 text-[11px] font-bold transition ${
+                    roomVisualMode === "photo"
+                      ? "bg-[#006c49] text-white shadow-sm"
+                      : "text-[#3c4a42] hover:bg-white"
+                  }`}
+                >
+                  Photo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void runSafely(handleShowCartoonRoom);
+                  }}
+                  disabled={isStylizingRoom}
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-bold transition disabled:cursor-not-allowed disabled:opacity-70 ${
+                    roomVisualMode === "cartoon"
+                      ? "bg-[#006c49] text-white shadow-sm"
+                      : "text-[#3c4a42] hover:bg-white"
+                  }`}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {isStylizingRoom ? "Generating..." : "Cartoon"}
+                </button>
+              </div>
+            </div>
             <div
               className="relative overflow-hidden rounded-[28px] border border-white/80 bg-[#f6ece6] shadow-[0_16px_40px_rgba(81,55,37,0.10)]"
               ref={roomImageContainerRef}
@@ -1880,7 +1963,7 @@ export default function Home() {
                   markerPlant?.thirsty_after_hours ?? DEFAULT_THIRSTY_AFTER_HOURS,
                   markerPlant?.overdue_after_hours ?? DEFAULT_OVERDUE_AFTER_HOURS,
                 );
-                const colors = getMarkerColorClasses(status);
+                const colors = getPlantGlowClasses(status);
                 return (
                   <div
                     key={marker.id}
@@ -1896,9 +1979,9 @@ export default function Home() {
                   >
                     <button
                       type="button"
-                      className={`relative h-6 w-6 rounded-full border-2 border-white shadow-md transition-all ${
-                        isJustWatered ? "scale-125 ring-4 ring-[#10b981]/35" : ""
-                      } ${colors.pin}`}
+                      className={`group relative flex h-20 w-20 items-center justify-center rounded-full border backdrop-blur-[1px] transition-all active:scale-95 ${
+                        isJustWatered ? "scale-110 ring-4 ring-[#10b981]/40" : ""
+                      } ${colors.glow}`}
                       onPointerDown={(event) => {
                         event.stopPropagation();
                         startMarkerLongPress(marker.id, markerPlant);
@@ -1927,10 +2010,20 @@ export default function Home() {
                       title={markerPlant?.name ?? "Plant marker"}
                       aria-label={markerPlant?.name ?? "Plant marker"}
                     >
-                      <span className={`absolute inset-0 animate-ping rounded-full ${colors.pulse}`} />
+                      <span
+                        className={`pointer-events-none absolute inset-2 rounded-full blur-md transition ${
+                          isPendingWatering ? "animate-pulse opacity-95" : "opacity-80 group-hover:opacity-100"
+                        } ${colors.pulse}`}
+                      />
+                      <span className="pointer-events-none absolute inset-0 rounded-full bg-white/0 ring-1 ring-white/35" />
+                      <span
+                        className={`pointer-events-none absolute -bottom-1 left-1/2 max-w-24 -translate-x-1/2 truncate rounded-full px-2 py-0.5 text-[9px] font-bold shadow-sm ${colors.label}`}
+                      >
+                        {markerPlant?.name ?? "Plant"}
+                      </span>
                     </button>
                     {isPendingWatering ? (
-                      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 rounded-lg bg-white px-2 py-1 text-[10px] font-semibold text-[#3c4a42] shadow-md">
+                      <div className="absolute bottom-20 left-1/2 -translate-x-1/2 rounded-lg bg-white px-2 py-1 text-[10px] font-semibold text-[#3c4a42] shadow-md">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[9px] text-[#6c7a71]">Watering in {secondsLeft}s</span>
                           <button

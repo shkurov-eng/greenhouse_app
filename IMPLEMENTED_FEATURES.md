@@ -21,6 +21,7 @@ Maintenance guidelines:
   - `SUPABASE_SERVICE_ROLE_KEY` (server only)
   - `TELEGRAM_BOT_TOKEN` (production / real Mini App)
   - `GEMINI_API_KEY` (Google AI Studio, optional; enables AI detection for plant and room photos)
+  - `GEMINI_IMAGE_MODEL` (optional; overrides the default Gemini image model for room cartoon generation)
   - `ADMIN_SESSION_SECRET` (admin-panel session HMAC secret)
   - `ADMIN_PANEL_PASSWORD` (admin-panel password for MVP login flow)
   - Optional local browser debug: `DEV_BROWSER_MODE=true`, `DEV_TELEGRAM_ID` (only with `npm run dev`)
@@ -108,6 +109,9 @@ Maintenance guidelines:
   - Room photo upload applies a strict client-side payload ceiling (`~4 MB` after compression/downscale). If file is still too large, request is blocked client-side with explicit guidance.
   - Display: `listRooms` / `createRoom` / **`renameRoom`** responses include **`signed_background_url`** (short-lived signed URL from Storage).
   - **Legacy rows** with only `background_url` (old public URL) and empty `background_path`: server tries to derive storage path from the public URL and sign it so images keep working after bucket goes private.
+  - **Cartoon room mode:** `POST /api/rooms/stylize` generates a separate AI cartoon background from the original room photo, stores it as `rooms.stylized_background_path`, and returns `signed_stylized_background_url`.
+  - The cartoon generation prompt lives in `src/lib/server/roomStylizationPrompt.ts` so style instructions can be edited without touching endpoint logic.
+  - Room detail UI includes a **Photo / Cartoon** switch. If no cartoon image exists yet, choosing Cartoon starts AI generation; original room photo remains available.
 
 ## Stage 4 - Plants and Markers
 
@@ -141,6 +145,7 @@ Maintenance guidelines:
 - Plant deletion is available from **Edit Plant** with a warning modal (**Continue/Cancel**); room markers are removed together with the plant.
 - In **Plants in this room**, plants without a marker display a `no marker` badge next to the plant name.
 - **Marker pin color and active-marker status chip** (in `src/app/page.tsx`) use **watering urgency derived from `last_watered_at`**, not the stored `plants.status` field, so colors track time since last water without waiting for server-side status flips.
+- Room plant interactions now render as larger glow hotspots instead of small pin dots; glow color follows watering urgency while clicks still use the existing delayed watering flow.
 
 ## Stage 5 - Watering
 

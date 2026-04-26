@@ -57,7 +57,9 @@ export type Room = {
   name: string;
   background_path: string | null;
   background_url: string | null;
+  stylized_background_path: string | null;
   signed_background_url: string | null;
+  signed_stylized_background_url: string | null;
 };
 
 export type Plant = {
@@ -424,6 +426,21 @@ export async function uploadRoomImage(
       ...(initData ? { "x-telegram-init-data": initData } : {}),
     },
     body: formData,
+  });
+
+  return readApiPayload<Room>(response);
+}
+
+export async function stylizeRoomImage(initData: string | null, payload: { roomId: string }) {
+  const response = await fetch("/api/rooms/stylize", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(initData ? { "x-telegram-init-data": initData } : {}),
+    },
+    body: JSON.stringify({
+      roomId: payload.roomId,
+    }),
   });
 
   return readApiPayload<Room>(response);
