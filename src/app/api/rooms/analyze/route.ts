@@ -12,11 +12,11 @@ import {
   resolveProfileByTelegramId,
 } from "@/lib/server/adminSecurity";
 
-const DEFAULT_THIRSTY_AFTER_MINUTES = 6 * 60;
-const DEFAULT_OVERDUE_AFTER_MINUTES = 12 * 60;
-const MIN_THIRSTY_AFTER_MINUTES = 6 * 60;
-const MIN_OVERDUE_AFTER_MINUTES = 12 * 60;
-const MIN_GAP_BETWEEN_THRESHOLDS_MINUTES = 6 * 60;
+const DEFAULT_THIRSTY_AFTER_HOURS = 6;
+const DEFAULT_OVERDUE_AFTER_HOURS = 12;
+const MIN_THIRSTY_AFTER_HOURS = 6;
+const MIN_OVERDUE_AFTER_HOURS = 12;
+const MIN_GAP_BETWEEN_THRESHOLDS_HOURS = 6;
 const MAX_PLANTS_PER_REQUEST = 8;
 
 type RoomRow = {
@@ -30,8 +30,8 @@ type RoomPlantDetection = {
   species: string | null;
   marker_x: number;
   marker_y: number;
-  thirsty_after_minutes: number;
-  overdue_after_minutes: number;
+  thirsty_after_hours: number;
+  overdue_after_hours: number;
 };
 
 type CreatedRoomPlant = {
@@ -69,21 +69,21 @@ function extractJsonObject(raw: string): string | null {
 function normalizeWateringThresholds(thirstyRaw: number, overdueRaw: number) {
   const parsedThirsty =
     Number.isFinite(thirstyRaw) && thirstyRaw > 0
-      ? Math.round(thirstyRaw)
-      : DEFAULT_THIRSTY_AFTER_MINUTES;
-  const thirstyAfterMinutes = Math.max(parsedThirsty, MIN_THIRSTY_AFTER_MINUTES);
+      ? Number(thirstyRaw.toFixed(2))
+      : DEFAULT_THIRSTY_AFTER_HOURS;
+  const thirstyAfterHours = Math.max(parsedThirsty, MIN_THIRSTY_AFTER_HOURS);
 
   const parsedOverdue =
     Number.isFinite(overdueRaw) && overdueRaw > 0
-      ? Math.round(overdueRaw)
-      : DEFAULT_OVERDUE_AFTER_MINUTES;
-  const overdueAfterMinutes = Math.max(
+      ? Number(overdueRaw.toFixed(2))
+      : DEFAULT_OVERDUE_AFTER_HOURS;
+  const overdueAfterHours = Math.max(
     parsedOverdue,
-    MIN_OVERDUE_AFTER_MINUTES,
-    thirstyAfterMinutes + MIN_GAP_BETWEEN_THRESHOLDS_MINUTES,
+    MIN_OVERDUE_AFTER_HOURS,
+    thirstyAfterHours + MIN_GAP_BETWEEN_THRESHOLDS_HOURS,
   );
 
-  return { thirstyAfterMinutes, overdueAfterMinutes };
+  return { thirstyAfterHours, overdueAfterHours };
 }
 
 function normalizeCoordinate(value: number) {
@@ -105,8 +105,8 @@ function normalizeDetectionsInput(value: unknown) {
         species?: unknown;
         marker_x?: unknown;
         marker_y?: unknown;
-        thirsty_after_minutes?: unknown;
-        overdue_after_minutes?: unknown;
+        thirsty_after_hours?: unknown;
+        overdue_after_hours?: unknown;
       };
       const plantName = typeof row.plant_name === "string" ? row.plant_name.trim() : "";
       if (!plantName) {
@@ -116,17 +116,17 @@ function normalizeDetectionsInput(value: unknown) {
         typeof row.species === "string" && row.species.trim() ? row.species.trim() : null;
       const markerX = normalizeCoordinate(Number(row.marker_x));
       const markerY = normalizeCoordinate(Number(row.marker_y));
-      const { thirstyAfterMinutes, overdueAfterMinutes } = normalizeWateringThresholds(
-        Number(row.thirsty_after_minutes),
-        Number(row.overdue_after_minutes),
+      const { thirstyAfterHours, overdueAfterHours } = normalizeWateringThresholds(
+        Number(row.thirsty_after_hours),
+        Number(row.overdue_after_hours),
       );
       return {
         plant_name: plantName,
         species,
         marker_x: markerX,
         marker_y: markerY,
-        thirsty_after_minutes: thirstyAfterMinutes,
-        overdue_after_minutes: overdueAfterMinutes,
+        thirsty_after_hours: thirstyAfterHours,
+        overdue_after_hours: overdueAfterHours,
       };
     })
     .filter((item): item is RoomPlantDetection => item != null);
@@ -146,8 +146,8 @@ async function createPlantsAndMarkers(
       p_name: detection.plant_name,
       p_species: detection.species,
       p_status: "healthy",
-      p_thirsty_after_minutes: detection.thirsty_after_minutes,
-      p_overdue_after_minutes: detection.overdue_after_minutes,
+      p_thirsty_after_hours: detection.thirsty_after_hours,
+      p_overdue_after_hours: detection.overdue_after_hours,
     });
     if (createPlantError) {
       throw new Error(createPlantError.message);
@@ -201,8 +201,8 @@ async function detectRoomPlantsWithAiStudio(
     '      "species": "string or null",',
     '      "marker_x": "number 0..1",',
     '      "marker_y": "number 0..1",',
-    '      "thirsty_after_minutes": "integer >= 360",',
-    '      "overdue_after_minutes": "integer >= thirsty_after_minutes + 360"',
+    '      "thirsty_after_hours": "number >= 6 (hours)",',
+    '      "overdue_after_hours": "number >= thirsty_after_hours + 6 (hours)"',
     "    }",
     "  ]",
     "}",
@@ -210,9 +210,9 @@ async function detectRoomPlantsWithAiStudio(
     "Coordinates marker_x and marker_y must point near each plant's center in normalized image space.",
     "If no plants are visible, return an empty plants array.",
     "Use conservative indoor defaults when uncertain.",
-    `Never return thirsty_after_minutes below ${MIN_THIRSTY_AFTER_MINUTES}.`,
-    `Never return overdue_after_minutes below ${MIN_OVERDUE_AFTER_MINUTES}.`,
-    `Keep overdue_after_minutes at least ${MIN_GAP_BETWEEN_THRESHOLDS_MINUTES} minutes later than thirsty_after_minutes.`,
+    `Never return thirsty_after_hours below ${MIN_THIRSTY_AFTER_HOURS}.`,
+    `Never return overdue_after_hours below ${MIN_OVERDUE_AFTER_HOURS}.`,
+    `Keep overdue_after_hours at least ${MIN_GAP_BETWEEN_THRESHOLDS_HOURS} hours later than thirsty_after_hours.`,
   ].join("\n");
 
   const response = await fetch(
@@ -297,25 +297,25 @@ async function detectRoomPlantsWithAiStudio(
         species?: unknown;
         marker_x?: unknown;
         marker_y?: unknown;
-        thirsty_after_minutes?: unknown;
-        overdue_after_minutes?: unknown;
+        thirsty_after_hours?: unknown;
+        overdue_after_hours?: unknown;
       };
       const plantName = typeof row.plant_name === "string" ? row.plant_name.trim() : "";
       const species =
         typeof row.species === "string" && row.species.trim() ? row.species.trim() : null;
       const markerX = normalizeCoordinate(Number(row.marker_x));
       const markerY = normalizeCoordinate(Number(row.marker_y));
-      const { thirstyAfterMinutes, overdueAfterMinutes } = normalizeWateringThresholds(
-        Number(row.thirsty_after_minutes),
-        Number(row.overdue_after_minutes),
+      const { thirstyAfterHours, overdueAfterHours } = normalizeWateringThresholds(
+        Number(row.thirsty_after_hours),
+        Number(row.overdue_after_hours),
       );
       return {
         plant_name: plantName,
         species,
         marker_x: markerX,
         marker_y: markerY,
-        thirsty_after_minutes: thirstyAfterMinutes,
-        overdue_after_minutes: overdueAfterMinutes,
+        thirsty_after_hours: thirstyAfterHours,
+        overdue_after_hours: overdueAfterHours,
       };
     })
     .filter((item) => item.plant_name.length > 0);

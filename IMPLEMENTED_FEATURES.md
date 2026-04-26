@@ -131,7 +131,7 @@ Maintenance guidelines:
 - **Non-plant and uncertain photos:** AI prompt now requires `is_plant` + `confidence`; server returns explicit statuses for `not_plant` and `low_confidence`, and UI blocks blind autofill for obvious non-plant images.
 - AI detection badge: inferred results are marked in DB (`plants.ai_inferred_at`) and shown in plant list / edit modal as `AI detected`.
 - Manual override behavior: saving plant edits manually (`api_update_plant`) clears `ai_inferred_at`, so the `AI detected` badge is removed after user override.
-- Per-plant watering thresholds: each plant stores **thirsty-after minutes** and **overdue-after minutes** (defaults 5/60). In UI values are shown/edited in **hours** (`step=0.1`) and converted to minutes for storage.
+- Per-plant watering thresholds: each plant stores **thirsty-after hours** and **overdue-after hours** (defaults `0.1/1`). In UI values are shown/edited in **hours** (`step=0.1`), stored as hours, and inputs accept both dot and comma decimals.
 - **AI threshold safety rails:** server normalizes AI thresholds to realistic indoor ranges (`thirsty >= 6h`, `overdue >= 12h`, minimum 6h gap) to avoid absurd minute-level watering advice.
 - `plant_markers`: normalized `x`, `y` in `0..1`, unique per `plant_id`
 - Marker coordinates are calculated against the **visible image content area** (for `object-contain`), so marker placement stays aligned both on real phones and in desktop mobile emulation (no offset from letterboxing).
@@ -154,9 +154,9 @@ Maintenance guidelines:
 - **Marker long-press opens `Edit Plant`** for that exact marker's plant (tap behavior still waters as before).
 - **Edit Plant** includes **Undo last watering** with persistent DB history: restores `last_watered_at` to the value captured before the latest watering action, including after app reloads, and closes the edit modal right after undo.
 - **Client-side urgency** (`wateringDerivedStatus` in `page.tsx`), aligned with marker colors and calculated **per plant** from its own thresholds:
-  - **Green (`healthy`):** last watered less than `thirsty_after_minutes`.
-  - **Yellow (`thirsty`):** from `thirsty_after_minutes` up to `overdue_after_minutes`.
-  - **Red (`overdue`):** at/after `overdue_after_minutes`, or **`last_watered_at` is null** (never watered).
+  - **Green (`healthy`):** last watered less than `thirsty_after_hours`.
+  - **Yellow (`thirsty`):** from `thirsty_after_hours` up to `overdue_after_hours`.
+  - **Red (`overdue`):** at/after `overdue_after_hours`, or **`last_watered_at` is null** (never watered).
 - Plant info now shows full **date+time** for `last_watered_at` (`toLocaleString`), not date-only.
 - Plant upload route uses a loose typed DB write helper (`LooseTableApi`) for `plants.update(...)`, avoiding Supabase generated-type `never` issues in CI/build typecheck.
 - **Plants-in-room list:** the small uppercase status line uses the same derivation so it matches markers.
@@ -219,6 +219,7 @@ Maintenance guidelines:
   - Sends `due_soon` / `overdue` notifications through Telegram Bot API.
   - Uses `task_reminders_log` to avoid duplicate sends within reminder windows.
   - Supports optional job auth via `x-job-secret` (`TASK_REMINDER_JOB_SECRET`) or `Authorization: Bearer ...` (`CRON_SECRET`).
+  - Delivery is best-effort: per-chat Telegram send errors are logged and counted in `failed` so one bad chat does not fail the full reminder run.
 
 ## Stage 8 - Admin and Security Operations
 
@@ -390,7 +391,8 @@ Scope and plan:
 - `multi_household_delete_room.sql` — **run after** `security_hardening.sql`: `active_household_id` on `profiles`, relax single-home `household_members` uniqueness, replace `api_household_id_by_profile` / `api_bootstrap_user` / `api_join_household`, add `api_list_households`, `api_create_household`, `api_set_active_household`, `api_delete_room`, `api_rename_household`, `api_rename_room`, `api_delete_household` (optional tasks cleanup when `public.tasks` exists), and grants. Required for multi-home UI, renames, room/household delete. If the file was applied in parts, see incremental comments at the end of the SQL file for missing RPCs.
 - `watering_undo_history.sql` — persistent `plant_watering_events` history used by secure API to support global undo of the latest watering per plant.
 - `plant_photos.sql` — adds `plants.photo_path` and updates `api_room_details` payload to include plant photo metadata for signed URL rendering.
-- `plant_watering_thresholds.sql` — adds `plants.thirsty_after_minutes` + `plants.overdue_after_minutes`, updates room details payload, and extends plant create/update RPCs to persist thresholds per plant.
+- `plant_watering_thresholds.sql` - adds per-plant threshold columns, updates room details payload, and extends plant create/update RPCs to persist thresholds per plant.
+- `plant_watering_thresholds_hours.sql` - renames threshold columns and RPC params to `*_hours`, updates checks/defaults, and aligns create/update/detail RPCs with hour-based storage.
 - `plant_ai_inference_flag.sql` — adds `plants.ai_inferred_at` and extends room details payload so UI can show `AI detected`.
 - `plant_ai_manual_override.sql` — updates `api_update_plant` to clear `ai_inferred_at` on manual save.
 - `plant_ai_watering_amount.sql` — adds `plants.watering_amount_recommendation`, migrates legacy values (`little`/`a_lot`), and extends room details payload.

@@ -49,18 +49,17 @@ import {
   type Room,
 } from "@/lib/api";
 
-/** Per-plant defaults: green under 5 min, yellow 5 min–1 h, red after 1 h (or never watered). */
-const DEFAULT_THIRSTY_AFTER_MINUTES = 5;
-const DEFAULT_OVERDUE_AFTER_MINUTES = 60;
+/** Per-plant defaults in hours: green under 0.1 h, yellow 0.1 h–1 h, red after 1 h. */
+const DEFAULT_THIRSTY_AFTER_HOURS = 0.1;
+const DEFAULT_OVERDUE_AFTER_HOURS = 1;
 const MARKER_WATER_DELAY_MS = 3_000;
-const MINUTES_IN_HOUR = 60;
 const MAX_ROOM_UPLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_PLANT_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 function wateringDerivedStatus(
   lastWateredAt: string | null,
-  thirstyAfterMinutes: number,
-  overdueAfterMinutes: number,
+  thirstyAfterHours: number,
+  overdueAfterHours: number,
 ): PlantStatus {
   if (!lastWateredAt) {
     return "overdue";
@@ -70,8 +69,8 @@ function wateringDerivedStatus(
     return "overdue";
   }
   const elapsed = Date.now() - t;
-  const thirstyAfterMs = Math.max(1, thirstyAfterMinutes) * 60 * 1000;
-  const overdueAfterMs = Math.max(thirstyAfterMinutes, overdueAfterMinutes) * 60 * 1000;
+  const thirstyAfterMs = Math.max(0.1, thirstyAfterHours) * 60 * 60 * 1000;
+  const overdueAfterMs = Math.max(thirstyAfterHours, overdueAfterHours) * 60 * 60 * 1000;
   if (elapsed < thirstyAfterMs) {
     return "healthy";
   }
@@ -81,12 +80,10 @@ function wateringDerivedStatus(
   return "overdue";
 }
 
-function minutesToHours(minutes: number) {
-  return minutes / MINUTES_IN_HOUR;
-}
-
-function hoursToMinutes(hours: number) {
-  return Math.round(hours * MINUTES_IN_HOUR);
+function parseHoursInput(rawValue: string) {
+  const normalized = rawValue.trim().replace(",", ".");
+  const next = Number(normalized);
+  return Number.isFinite(next) ? next : 0;
 }
 
 function formatHours(hours: number) {
@@ -187,18 +184,8 @@ export default function Home() {
   const [plantName, setPlantName] = useState("");
   const [addPlantNameError, setAddPlantNameError] = useState<string | null>(null);
   const [plantSpecies, setPlantSpecies] = useState("");
-  const [, setPlantThirstyAfterMinutes] = useState(
-    DEFAULT_THIRSTY_AFTER_MINUTES,
-  );
-  const [, setPlantOverdueAfterMinutes] = useState(
-    DEFAULT_OVERDUE_AFTER_MINUTES,
-  );
-  const [plantThirstyAfterHours, setPlantThirstyAfterHours] = useState(
-    minutesToHours(DEFAULT_THIRSTY_AFTER_MINUTES),
-  );
-  const [plantOverdueAfterHours, setPlantOverdueAfterHours] = useState(
-    minutesToHours(DEFAULT_OVERDUE_AFTER_MINUTES),
-  );
+  const [plantThirstyAfterHours, setPlantThirstyAfterHours] = useState(DEFAULT_THIRSTY_AFTER_HOURS);
+  const [plantOverdueAfterHours, setPlantOverdueAfterHours] = useState(DEFAULT_OVERDUE_AFTER_HOURS);
   const [newPlantPhotoFile, setNewPlantPhotoFile] = useState<File | null>(null);
   const [newPlantPhotoPreviewUrl, setNewPlantPhotoPreviewUrl] = useState<string | null>(null);
   const [isAnalyzingPlantPhoto, setIsAnalyzingPlantPhoto] = useState(false);
@@ -206,15 +193,15 @@ export default function Home() {
   const [didApplyAiAutofill, setDidApplyAiAutofill] = useState(false);
   const [latestAiProfile, setLatestAiProfile] = useState<{
     plant_name: string;
-    thirsty_after_minutes: number;
-    overdue_after_minutes: number;
+    thirsty_after_hours: number;
+    overdue_after_hours: number;
     watering_amount_recommendation: "light" | "moderate" | "abundant";
     watering_summary: string;
   } | null>(null);
   const [lowConfidenceAiProfile, setLowConfidenceAiProfile] = useState<{
     plant_name: string;
-    thirsty_after_minutes: number;
-    overdue_after_minutes: number;
+    thirsty_after_hours: number;
+    overdue_after_hours: number;
   } | null>(null);
   const [newPlantPhotoCompressionInfo, setNewPlantPhotoCompressionInfo] = useState<string | null>(
     null,
@@ -226,18 +213,10 @@ export default function Home() {
   const [editPlantName, setEditPlantName] = useState("");
   const [editPlantSpecies, setEditPlantSpecies] = useState("");
   const [editPlantStatus, setEditPlantStatus] = useState<PlantStatus>("healthy");
-  const [, setEditPlantThirstyAfterMinutes] = useState(
-    DEFAULT_THIRSTY_AFTER_MINUTES,
-  );
-  const [, setEditPlantOverdueAfterMinutes] = useState(
-    DEFAULT_OVERDUE_AFTER_MINUTES,
-  );
   const [editPlantThirstyAfterHours, setEditPlantThirstyAfterHours] = useState(
-    minutesToHours(DEFAULT_THIRSTY_AFTER_MINUTES),
+    DEFAULT_THIRSTY_AFTER_HOURS,
   );
-  const [editPlantOverdueAfterHours, setEditPlantOverdueAfterHours] = useState(
-    minutesToHours(DEFAULT_OVERDUE_AFTER_MINUTES),
-  );
+  const [editPlantOverdueAfterHours, setEditPlantOverdueAfterHours] = useState(DEFAULT_OVERDUE_AFTER_HOURS);
   const [isReplacingPlantPhoto, setIsReplacingPlantPhoto] = useState(false);
   const [isRemovingPlantPhoto, setIsRemovingPlantPhoto] = useState(false);
   const [isAnalyzingEditPlantPhoto, setIsAnalyzingEditPlantPhoto] = useState(false);
@@ -619,8 +598,8 @@ export default function Home() {
       const result = await analyzePlantImage(getCurrentInitData(), { file: compressedResult.file });
       if (result.ai_status === "ok" && result.ai_profile) {
         setPlantName(result.ai_profile.plant_name);
-        setPlantThirstyAfterHours(minutesToHours(result.ai_profile.thirsty_after_minutes));
-        setPlantOverdueAfterHours(minutesToHours(result.ai_profile.overdue_after_minutes));
+        setPlantThirstyAfterHours(result.ai_profile.thirsty_after_hours);
+        setPlantOverdueAfterHours(result.ai_profile.overdue_after_hours);
         setDidApplyAiAutofill(true);
         setLatestAiProfile(result.ai_profile);
         setLowConfidenceAiProfile(null);
@@ -636,8 +615,8 @@ export default function Home() {
           setLatestAiProfile(result.ai_profile);
           setLowConfidenceAiProfile({
             plant_name: result.ai_profile.plant_name,
-            thirsty_after_minutes: result.ai_profile.thirsty_after_minutes,
-            overdue_after_minutes: result.ai_profile.overdue_after_minutes,
+            thirsty_after_hours: result.ai_profile.thirsty_after_hours,
+            overdue_after_hours: result.ai_profile.overdue_after_hours,
           });
         }
         const detail = result.ai_error?.trim();
@@ -671,8 +650,8 @@ export default function Home() {
       return;
     }
     setPlantName(lowConfidenceAiProfile.plant_name);
-    setPlantThirstyAfterHours(minutesToHours(lowConfidenceAiProfile.thirsty_after_minutes));
-    setPlantOverdueAfterHours(minutesToHours(lowConfidenceAiProfile.overdue_after_minutes));
+    setPlantThirstyAfterHours(lowConfidenceAiProfile.thirsty_after_hours);
+    setPlantOverdueAfterHours(lowConfidenceAiProfile.overdue_after_hours);
     setDidApplyAiAutofill(true);
     setLowConfidenceAiProfile(null);
     setNewPlantPhotoAiError(null);
@@ -1093,16 +1072,16 @@ export default function Home() {
       return;
     }
     setAddPlantNameError(null);
-    const nextThirstyAfterMinutes = hoursToMinutes(plantThirstyAfterHours);
-    const nextOverdueAfterMinutes = hoursToMinutes(plantOverdueAfterHours);
+    const nextThirstyAfterHours = Number(plantThirstyAfterHours.toFixed(2));
+    const nextOverdueAfterHours = Number(plantOverdueAfterHours.toFixed(2));
     if (
       !Number.isFinite(plantThirstyAfterHours) ||
       !Number.isFinite(plantOverdueAfterHours) ||
       plantThirstyAfterHours <= 0 ||
       plantOverdueAfterHours <= 0 ||
-      nextThirstyAfterMinutes <= 0 ||
-      nextOverdueAfterMinutes <= 0 ||
-      nextOverdueAfterMinutes < nextThirstyAfterMinutes
+      nextThirstyAfterHours <= 0 ||
+      nextOverdueAfterHours <= 0 ||
+      nextOverdueAfterHours < nextThirstyAfterHours
     ) {
       setMessage("Cannot save plant: invalid watering thresholds");
       return;
@@ -1117,8 +1096,8 @@ export default function Home() {
         name: newPlantName,
         species: plantSpecies.trim() || null,
         status: "healthy",
-        thirstyAfterMinutes: nextThirstyAfterMinutes,
-        overdueAfterMinutes: nextOverdueAfterMinutes,
+        thirstyAfterHours: nextThirstyAfterHours,
+        overdueAfterHours: nextOverdueAfterHours,
       });
 
       if (createdPlant?.id && photoToUpload) {
@@ -1149,10 +1128,8 @@ export default function Home() {
 
       setPlantName("");
       setPlantSpecies("");
-      setPlantThirstyAfterMinutes(DEFAULT_THIRSTY_AFTER_MINUTES);
-      setPlantOverdueAfterMinutes(DEFAULT_OVERDUE_AFTER_MINUTES);
-      setPlantThirstyAfterHours(minutesToHours(DEFAULT_THIRSTY_AFTER_MINUTES));
-      setPlantOverdueAfterHours(minutesToHours(DEFAULT_OVERDUE_AFTER_MINUTES));
+      setPlantThirstyAfterHours(DEFAULT_THIRSTY_AFTER_HOURS);
+      setPlantOverdueAfterHours(DEFAULT_OVERDUE_AFTER_HOURS);
       clearNewPlantPhotoSelection();
       setIsAddPlantOpen(false);
       await fetchRoomDetails(selectedRoom.id);
@@ -1306,14 +1283,8 @@ export default function Home() {
     setEditPlantName(plant.name);
     setEditPlantSpecies(plant.species ?? "");
     setEditPlantStatus(plant.status);
-    setEditPlantThirstyAfterMinutes(plant.thirsty_after_minutes ?? DEFAULT_THIRSTY_AFTER_MINUTES);
-    setEditPlantOverdueAfterMinutes(plant.overdue_after_minutes ?? DEFAULT_OVERDUE_AFTER_MINUTES);
-    setEditPlantThirstyAfterHours(
-      minutesToHours(plant.thirsty_after_minutes ?? DEFAULT_THIRSTY_AFTER_MINUTES),
-    );
-    setEditPlantOverdueAfterHours(
-      minutesToHours(plant.overdue_after_minutes ?? DEFAULT_OVERDUE_AFTER_MINUTES),
-    );
+    setEditPlantThirstyAfterHours(plant.thirsty_after_hours ?? DEFAULT_THIRSTY_AFTER_HOURS);
+    setEditPlantOverdueAfterHours(plant.overdue_after_hours ?? DEFAULT_OVERDUE_AFTER_HOURS);
     setIsEditPlantOpen(true);
   }
 
@@ -1327,16 +1298,16 @@ export default function Home() {
       setMessage("Cannot save plant: name is required");
       return;
     }
-    const nextEditThirstyAfterMinutes = hoursToMinutes(editPlantThirstyAfterHours);
-    const nextEditOverdueAfterMinutes = hoursToMinutes(editPlantOverdueAfterHours);
+    const nextEditThirstyAfterHours = Number(editPlantThirstyAfterHours.toFixed(2));
+    const nextEditOverdueAfterHours = Number(editPlantOverdueAfterHours.toFixed(2));
     if (
       !Number.isFinite(editPlantThirstyAfterHours) ||
       !Number.isFinite(editPlantOverdueAfterHours) ||
       editPlantThirstyAfterHours <= 0 ||
       editPlantOverdueAfterHours <= 0 ||
-      nextEditThirstyAfterMinutes <= 0 ||
-      nextEditOverdueAfterMinutes <= 0 ||
-      nextEditOverdueAfterMinutes < nextEditThirstyAfterMinutes
+      nextEditThirstyAfterHours <= 0 ||
+      nextEditOverdueAfterHours <= 0 ||
+      nextEditOverdueAfterHours < nextEditThirstyAfterHours
     ) {
       setMessage("Cannot save plant: invalid watering thresholds");
       return;
@@ -1347,8 +1318,8 @@ export default function Home() {
       name: nextName,
       species: editPlantSpecies.trim() || null,
       status: editPlantStatus,
-      thirstyAfterMinutes: nextEditThirstyAfterMinutes,
-      overdueAfterMinutes: nextEditOverdueAfterMinutes,
+      thirstyAfterHours: nextEditThirstyAfterHours,
+      overdueAfterHours: nextEditOverdueAfterHours,
     });
 
     setIsEditPlantOpen(false);
@@ -1444,8 +1415,8 @@ export default function Home() {
       const result = await analyzePlantImage(getCurrentInitData(), { file: compressedResult.file });
       if (result.ai_status === "ok" && result.ai_profile) {
         setEditPlantName(result.ai_profile.plant_name);
-        setEditPlantThirstyAfterHours(minutesToHours(result.ai_profile.thirsty_after_minutes));
-        setEditPlantOverdueAfterHours(minutesToHours(result.ai_profile.overdue_after_minutes));
+        setEditPlantThirstyAfterHours(result.ai_profile.thirsty_after_hours);
+        setEditPlantOverdueAfterHours(result.ai_profile.overdue_after_hours);
         setMessage("AI analysis complete. Edit fields updated.");
         return;
       }
@@ -1844,10 +1815,8 @@ export default function Home() {
                 onClick={() => {
                   clearNewPlantPhotoSelection();
                   setAddPlantNameError(null);
-                  setPlantThirstyAfterMinutes(DEFAULT_THIRSTY_AFTER_MINUTES);
-                  setPlantOverdueAfterMinutes(DEFAULT_OVERDUE_AFTER_MINUTES);
-                  setPlantThirstyAfterHours(minutesToHours(DEFAULT_THIRSTY_AFTER_MINUTES));
-                  setPlantOverdueAfterHours(minutesToHours(DEFAULT_OVERDUE_AFTER_MINUTES));
+                  setPlantThirstyAfterHours(DEFAULT_THIRSTY_AFTER_HOURS);
+                  setPlantOverdueAfterHours(DEFAULT_OVERDUE_AFTER_HOURS);
                   setIsAddPlantOpen(true);
                 }}
                 className="shrink-0 rounded-full border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-xs font-bold text-white shadow-[0_6px_16px_rgba(0,108,73,0.28)]"
@@ -1908,8 +1877,8 @@ export default function Home() {
                 const secondsLeft = getPendingWateringSecondsLeft(marker.id);
                 const status = wateringDerivedStatus(
                   markerPlant?.last_watered_at ?? null,
-                  markerPlant?.thirsty_after_minutes ?? DEFAULT_THIRSTY_AFTER_MINUTES,
-                  markerPlant?.overdue_after_minutes ?? DEFAULT_OVERDUE_AFTER_MINUTES,
+                  markerPlant?.thirsty_after_hours ?? DEFAULT_THIRSTY_AFTER_HOURS,
+                  markerPlant?.overdue_after_hours ?? DEFAULT_OVERDUE_AFTER_HOURS,
                 );
                 const colors = getMarkerColorClasses(status);
                 return (
@@ -2109,8 +2078,8 @@ export default function Home() {
                           <p className="mt-1 text-[10px] uppercase tracking-wide text-[#6c7a71]">
                             {wateringDerivedStatus(
                               plant.last_watered_at,
-                              plant.thirsty_after_minutes ?? DEFAULT_THIRSTY_AFTER_MINUTES,
-                              plant.overdue_after_minutes ?? DEFAULT_OVERDUE_AFTER_MINUTES,
+                              plant.thirsty_after_hours ?? DEFAULT_THIRSTY_AFTER_HOURS,
+                              plant.overdue_after_hours ?? DEFAULT_OVERDUE_AFTER_HOURS,
                             )}
                           </p>
                           <p className="text-[10px] text-[#6c7a71]">
@@ -2118,17 +2087,9 @@ export default function Home() {
                           </p>
                           <p className="text-[10px] text-[#6c7a71]">
                             Thresholds: thirsty after{" "}
-                            {formatHours(
-                              minutesToHours(
-                                plant.thirsty_after_minutes ?? DEFAULT_THIRSTY_AFTER_MINUTES,
-                              ),
-                            )}
+                            {formatHours(plant.thirsty_after_hours ?? DEFAULT_THIRSTY_AFTER_HOURS)}
                             h, overdue after{" "}
-                            {formatHours(
-                              minutesToHours(
-                                plant.overdue_after_minutes ?? DEFAULT_OVERDUE_AFTER_MINUTES,
-                              ),
-                            )}
+                            {formatHours(plant.overdue_after_hours ?? DEFAULT_OVERDUE_AFTER_HOURS)}
                             h
                           </p>
                           <p className="text-[10px] text-[#6c7a71]">
@@ -2634,8 +2595,7 @@ export default function Home() {
                   step={0.1}
                   value={plantThirstyAfterHours}
                   onChange={(event) => {
-                    const next = Number(event.target.value);
-                    setPlantThirstyAfterHours(Number.isFinite(next) ? next : 0);
+                    setPlantThirstyAfterHours(parseHoursInput(event.target.value));
                   }}
                   className="mt-1 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
                 />
@@ -2648,8 +2608,7 @@ export default function Home() {
                   step={0.1}
                   value={plantOverdueAfterHours}
                   onChange={(event) => {
-                    const next = Number(event.target.value);
-                    setPlantOverdueAfterHours(Number.isFinite(next) ? next : 0);
+                    setPlantOverdueAfterHours(parseHoursInput(event.target.value));
                   }}
                   className="mt-1 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
                 />
@@ -2781,10 +2740,8 @@ export default function Home() {
                   closeCameraCapture();
                   clearNewPlantPhotoSelection();
                   setAddPlantNameError(null);
-                  setPlantThirstyAfterMinutes(DEFAULT_THIRSTY_AFTER_MINUTES);
-                  setPlantOverdueAfterMinutes(DEFAULT_OVERDUE_AFTER_MINUTES);
-                  setPlantThirstyAfterHours(minutesToHours(DEFAULT_THIRSTY_AFTER_MINUTES));
-                  setPlantOverdueAfterHours(minutesToHours(DEFAULT_OVERDUE_AFTER_MINUTES));
+                  setPlantThirstyAfterHours(DEFAULT_THIRSTY_AFTER_HOURS);
+                  setPlantOverdueAfterHours(DEFAULT_OVERDUE_AFTER_HOURS);
                   setIsAddPlantOpen(false);
                 }}
                 disabled={isCreatingPlant}
@@ -2988,8 +2945,7 @@ export default function Home() {
                   step={0.1}
                   value={editPlantThirstyAfterHours}
                   onChange={(event) => {
-                    const next = Number(event.target.value);
-                    setEditPlantThirstyAfterHours(Number.isFinite(next) ? next : 0);
+                    setEditPlantThirstyAfterHours(parseHoursInput(event.target.value));
                   }}
                   className="mt-1 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
                 />
@@ -3002,8 +2958,7 @@ export default function Home() {
                   step={0.1}
                   value={editPlantOverdueAfterHours}
                   onChange={(event) => {
-                    const next = Number(event.target.value);
-                    setEditPlantOverdueAfterHours(Number.isFinite(next) ? next : 0);
+                    setEditPlantOverdueAfterHours(parseHoursInput(event.target.value));
                   }}
                   className="mt-1 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
                 />

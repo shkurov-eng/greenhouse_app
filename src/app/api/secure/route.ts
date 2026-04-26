@@ -165,12 +165,12 @@ function asPlantStatus(value: unknown) {
   throw new Error("Invalid plant status");
 }
 
-function asThresholdMinutes(value: unknown, fieldName: string) {
+function asThresholdHours(value: unknown, fieldName: string) {
   const n = Number(value);
-  if (!Number.isInteger(n) || n <= 0) {
+  if (!Number.isFinite(n) || n <= 0) {
     throw new Error(`Invalid ${fieldName}`);
   }
-  return n;
+  return Number(n.toFixed(2));
 }
 
 function asTaskStatus(value: unknown) {
@@ -855,15 +855,15 @@ export async function POST(request: NextRequest) {
         const name = asString(payload.name, "name");
         const species = asOptionalString(payload.species);
         const status = asPlantStatus(payload.status);
-        const thirstyAfterMinutes = asThresholdMinutes(
-          payload.thirstyAfterMinutes,
-          "thirstyAfterMinutes",
+        const thirstyAfterHours = asThresholdHours(
+          payload.thirstyAfterHours,
+          "thirstyAfterHours",
         );
-        const overdueAfterMinutes = asThresholdMinutes(
-          payload.overdueAfterMinutes,
-          "overdueAfterMinutes",
+        const overdueAfterHours = asThresholdHours(
+          payload.overdueAfterHours,
+          "overdueAfterHours",
         );
-        if (overdueAfterMinutes < thirstyAfterMinutes) {
+        if (overdueAfterHours < thirstyAfterHours) {
           throw new Error("Invalid watering thresholds");
         }
         const result = await rpc("api_create_plant", {
@@ -872,8 +872,8 @@ export async function POST(request: NextRequest) {
           p_name: name,
           p_species: species,
           p_status: status,
-          p_thirsty_after_minutes: thirstyAfterMinutes,
-          p_overdue_after_minutes: overdueAfterMinutes,
+          p_thirsty_after_hours: thirstyAfterHours,
+          p_overdue_after_hours: overdueAfterHours,
         });
         const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });
@@ -1027,15 +1027,15 @@ export async function POST(request: NextRequest) {
         const name = asString(payload.name, "name");
         const species = asOptionalString(payload.species);
         const status = asPlantStatus(payload.status);
-        const thirstyAfterMinutes = asThresholdMinutes(
-          payload.thirstyAfterMinutes,
-          "thirstyAfterMinutes",
+        const thirstyAfterHours = asThresholdHours(
+          payload.thirstyAfterHours,
+          "thirstyAfterHours",
         );
-        const overdueAfterMinutes = asThresholdMinutes(
-          payload.overdueAfterMinutes,
-          "overdueAfterMinutes",
+        const overdueAfterHours = asThresholdHours(
+          payload.overdueAfterHours,
+          "overdueAfterHours",
         );
-        if (overdueAfterMinutes < thirstyAfterMinutes) {
+        if (overdueAfterHours < thirstyAfterHours) {
           throw new Error("Invalid watering thresholds");
         }
         const result = await rpc("api_update_plant", {
@@ -1044,8 +1044,8 @@ export async function POST(request: NextRequest) {
           p_name: name,
           p_species: species,
           p_status: status,
-          p_thirsty_after_minutes: thirstyAfterMinutes,
-          p_overdue_after_minutes: overdueAfterMinutes,
+          p_thirsty_after_hours: thirstyAfterHours,
+          p_overdue_after_hours: overdueAfterHours,
         });
         const data = unwrapSingleRow<Record<string, unknown>>(result);
         return NextResponse.json({ data });

@@ -67,8 +67,8 @@ export type Plant = {
   species: string | null;
   status: PlantStatus;
   last_watered_at: string | null;
-  thirsty_after_minutes: number;
-  overdue_after_minutes: number;
+  thirsty_after_hours: number;
+  overdue_after_hours: number;
   watering_amount_recommendation: "light" | "moderate" | "abundant" | null;
   watering_summary: string | null;
   ai_inferred_at: string | null;
@@ -343,8 +343,8 @@ export async function createPlant(
     name: string;
     species: string | null;
     status: PlantStatus;
-    thirstyAfterMinutes: number;
-    overdueAfterMinutes: number;
+    thirstyAfterHours: number;
+    overdueAfterHours: number;
   },
 ) {
   return secureRequest<{ id: string }>({
@@ -388,8 +388,8 @@ export async function updatePlant(
     name: string;
     species: string | null;
     status: PlantStatus;
-    thirstyAfterMinutes: number;
-    overdueAfterMinutes: number;
+    thirstyAfterHours: number;
+    overdueAfterHours: number;
   },
 ) {
   return secureRequest<{ id: string }>({
@@ -434,8 +434,8 @@ export type RoomPlantDetectionDraft = {
   species: string | null;
   marker_x: number;
   marker_y: number;
-  thirsty_after_minutes: number;
-  overdue_after_minutes: number;
+  thirsty_after_hours: number;
+  overdue_after_hours: number;
 };
 
 type AnalyzeRoomPlantsResponse = {
@@ -525,8 +525,8 @@ export async function uploadPlantImage(
       | "skipped_manual";
     ai_profile: {
       plant_name: string;
-      thirsty_after_minutes: number;
-      overdue_after_minutes: number;
+      thirsty_after_hours: number;
+      overdue_after_hours: number;
       watering_amount_recommendation: "light" | "moderate" | "abundant";
       watering_summary: string;
     } | null;
@@ -556,8 +556,8 @@ export async function analyzePlantImage(initData: string | null, payload: { file
     ai_error: string | null;
     ai_profile: {
       plant_name: string;
-      thirsty_after_minutes: number;
-      overdue_after_minutes: number;
+      thirsty_after_hours: number;
+      overdue_after_hours: number;
       watering_amount_recommendation: "light" | "moderate" | "abundant";
       watering_summary: string;
     } | null;
