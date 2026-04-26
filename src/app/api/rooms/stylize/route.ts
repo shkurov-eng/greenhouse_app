@@ -158,6 +158,109 @@ function parseOpenRouterModalities(): string[] {
   return ["image", "text"];
 }
 
+function readSourceImageSize(imageBytes: ArrayBuffer): { width: number; height: number } | null {
+  const buffer = Buffer.from(imageBytes);
+  if (buffer.length < 24) {
+    return null;
+  }
+
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
+    return {
+      width: buffer.readUInt32BE(16),
+      height: buffer.readUInt32BE(20),
+    };
+  }
+
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2;
+    while (offset + 9 < buffer.length) {
+      while (offset < buffer.length && buffer[offset] === 0xff) {
+        offset += 1;
+      }
+      const marker = buffer[offset];
+      offset += 1;
+      if (marker === 0xd9 || marker === 0xda) {
+        break;
+      }
+      if (offset + 2 > buffer.length) {
+        break;
+      }
+      const segmentLength = buffer.readUInt16BE(offset);
+      if (segmentLength < 2 || offset + segmentLength > buffer.length) {
+        break;
+      }
+      const isStartOfFrame =
+        marker != null &&
+        marker >= 0xc0 &&
+        marker <= 0xcf &&
+        marker !== 0xc4 &&
+        marker !== 0xc8 &&
+        marker !== 0xcc;
+      if (isStartOfFrame && offset + 7 < buffer.length) {
+        return {
+          height: buffer.readUInt16BE(offset + 3),
+          width: buffer.readUInt16BE(offset + 5),
+        };
+      }
+      offset += segmentLength;
+    }
+  }
+
+  if (buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") {
+    const chunk = buffer.toString("ascii", 12, 16);
+    if (chunk === "VP8X" && buffer.length >= 30) {
+      return {
+        width: 1 + buffer.readUIntLE(24, 3),
+        height: 1 + buffer.readUIntLE(27, 3),
+      };
+    }
+    if (chunk === "VP8 " && buffer.length >= 30) {
+      return {
+        width: buffer.readUInt16LE(26) & 0x3fff,
+        height: buffer.readUInt16LE(28) & 0x3fff,
+      };
+    }
+    if (chunk === "VP8L" && buffer.length >= 25) {
+      const bits = buffer.readUInt32LE(21);
+      return {
+        width: (bits & 0x3fff) + 1,
+        height: ((bits >> 14) & 0x3fff) + 1,
+      };
+    }
+  }
+
+  return null;
+}
+
+function chooseOpenRouterAspectRatio(imageBytes: ArrayBuffer): string | null {
+  const dimensions = readSourceImageSize(imageBytes);
+  if (!dimensions || dimensions.width <= 0 || dimensions.height <= 0) {
+    return null;
+  }
+
+  const sourceRatio = dimensions.width / dimensions.height;
+  const supported = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
+  let best = supported[0];
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const candidate of supported) {
+    const [width, height] = candidate.split(":").map(Number);
+    if (!width || !height) {
+      continue;
+    }
+    const distance = Math.abs(Math.log(sourceRatio / (width / height)));
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
 async function stylizeRoomWithOpenRouter(
   imageBytes: ArrayBuffer,
   mimeType: string,
@@ -200,7 +303,8 @@ async function stylizeRoomWithOpenRouter(
   const temperature =
     temperatureRaw && Number.isFinite(Number(temperatureRaw)) ? Number(temperatureRaw) : 0.2;
 
-  const aspectRatio = process.env.OPENROUTER_CARTOON_ASPECT_RATIO?.trim();
+  const aspectRatio =
+    process.env.OPENROUTER_CARTOON_ASPECT_RATIO?.trim() || chooseOpenRouterAspectRatio(imageBytes);
   const imageSize = process.env.OPENROUTER_CARTOON_IMAGE_SIZE?.trim();
   const imageConfig =
     aspectRatio || imageSize

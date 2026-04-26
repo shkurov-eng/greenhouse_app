@@ -59,6 +59,7 @@ const DEFAULT_OVERDUE_AFTER_HOURS = 1;
 const MARKER_WATER_DELAY_MS = 3_000;
 const MAX_ROOM_UPLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_PLANT_UPLOAD_BYTES = 4 * 1024 * 1024;
+const ROOM_VISUAL_MODE_STORAGE_KEY = "greenhouseRoomVisualMode";
 
 function wateringDerivedStatus(
   lastWateredAt: string | null,
@@ -325,22 +326,25 @@ export default function Home() {
   function getPlantGlowClasses(status: PlantStatus) {
     if (status === "healthy") {
       return {
-        glow: "border-[#bbf7d0]/70 bg-[#10b981]/12 shadow-[0_0_34px_rgba(16,185,129,0.50)]",
-        pulse: "bg-[#10b981]/25",
-        label: "bg-[#e6f5ef]/95 text-[#006c49]",
+        glow: "border-[#10b981]/80 bg-white/5 shadow-[0_0_14px_rgba(16,185,129,0.36)]",
+        pulse: "border-[#10b981]/55 shadow-[0_0_12px_rgba(16,185,129,0.30)]",
+        dot: "bg-[#10b981]",
+        label: "border-[#bbf7d0]/80 bg-white/90 text-[#006c49]",
       };
     }
     if (status === "thirsty") {
       return {
-        glow: "border-[#fde68a]/75 bg-[#f59e0b]/16 shadow-[0_0_38px_rgba(245,158,11,0.60)]",
-        pulse: "bg-[#f59e0b]/28",
-        label: "bg-[#ffddb8]/95 text-[#855300]",
+        glow: "border-[#f59e0b]/80 bg-white/5 shadow-[0_0_16px_rgba(245,158,11,0.40)]",
+        pulse: "border-[#f59e0b]/60 shadow-[0_0_14px_rgba(245,158,11,0.34)]",
+        dot: "bg-[#f59e0b]",
+        label: "border-[#fde68a]/85 bg-white/90 text-[#855300]",
       };
     }
     return {
-      glow: "border-[#fecaca]/80 bg-[#ef4444]/18 shadow-[0_0_44px_rgba(239,68,68,0.70)]",
-      pulse: "bg-[#ef4444]/30",
-      label: "bg-[#ffdad6]/95 text-[#93000a]",
+      glow: "border-[#ef4444]/80 bg-white/5 shadow-[0_0_18px_rgba(239,68,68,0.42)]",
+      pulse: "border-[#ef4444]/60 shadow-[0_0_16px_rgba(239,68,68,0.36)]",
+      dot: "bg-[#ef4444]",
+      label: "border-[#fecaca]/85 bg-white/90 text-[#93000a]",
     };
   }
 
@@ -772,6 +776,22 @@ export default function Home() {
       return base;
     }
     return room.signed_background_url ?? room.background_url;
+  }
+
+  function hasStylizedRoomImage(room: Room) {
+    return Boolean(room.stylized_background_path?.trim()) || Boolean(room.signed_stylized_background_url);
+  }
+
+  function getStoredRoomVisualMode(): RoomVisualMode {
+    if (typeof window === "undefined") {
+      return "photo";
+    }
+    return window.localStorage.getItem(ROOM_VISUAL_MODE_STORAGE_KEY) === "cartoon" ? "cartoon" : "photo";
+  }
+
+  function setPreferredRoomVisualMode(mode: RoomVisualMode) {
+    setRoomVisualMode(mode);
+    window.localStorage.setItem(ROOM_VISUAL_MODE_STORAGE_KEY, mode);
   }
 
   function computeObjectContainBox(
@@ -1642,11 +1662,9 @@ export default function Home() {
     if (roomVisualMode === "cartoon") {
       return;
     }
-    const hasStylized =
-      Boolean(selectedRoom.stylized_background_path?.trim()) ||
-      Boolean(selectedRoom.signed_stylized_background_url);
+    const hasStylized = hasStylizedRoomImage(selectedRoom);
     if (hasStylized) {
-      setRoomVisualMode("cartoon");
+      setPreferredRoomVisualMode("cartoon");
       setMessage("Cartoon mode enabled");
       return;
     }
@@ -1668,7 +1686,7 @@ export default function Home() {
       });
       setRooms((prev) => prev.map((room) => (room.id === stylizedRoom.id ? stylizedRoom : room)));
       setSelectedRoom((prev) => (prev?.id === stylizedRoom.id ? { ...prev, ...stylizedRoom } : prev));
-      setRoomVisualMode("cartoon");
+      setPreferredRoomVisualMode("cartoon");
       setMessage("Cartoon room generated");
     } finally {
       setIsStylizingRoom(false);
@@ -1698,7 +1716,7 @@ export default function Home() {
       setRooms((prev) => prev.map((room) => (room.id === stylizedRoom.id ? stylizedRoom : room)));
       setSelectedRoom((prev) => (prev?.id === stylizedRoom.id ? { ...prev, ...stylizedRoom } : prev));
       setRoomStylizeNonce((n) => n + 1);
-      setRoomVisualMode("cartoon");
+      setPreferredRoomVisualMode("cartoon");
       setMessage("Cartoon room regenerated");
     } finally {
       setIsStylizingRoom(false);
@@ -1790,7 +1808,8 @@ export default function Home() {
   }
 
   function openRoom(room: Room) {
-    setRoomVisualMode("photo");
+    const preferredMode = getStoredRoomVisualMode();
+    setRoomVisualMode(preferredMode === "cartoon" && hasStylizedRoomImage(room) ? "cartoon" : "photo");
     setRoomStylizeNonce(0);
     setSelectedRoom(room);
     void runSafely(() => fetchRoomDetails(room.id));
@@ -1945,7 +1964,7 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => {
-                      setRoomVisualMode("photo");
+                      setPreferredRoomVisualMode("photo");
                       setMessage("Photo mode enabled");
                     }}
                     className={`rounded-full px-3 py-1.5 text-[11px] font-bold transition ${
@@ -2071,7 +2090,7 @@ export default function Home() {
                       type="button"
                       className={
                         isCartoonMode
-                          ? `group relative flex h-20 w-20 items-center justify-center rounded-full border backdrop-blur-[1px] transition-all active:scale-95 ${
+                          ? `group relative flex h-12 w-12 items-center justify-center rounded-full border-2 transition-all active:scale-95 ${
                               isJustWatered ? "scale-110 ring-4 ring-[#10b981]/40" : ""
                             } ${colors.glow}`
                           : `relative h-6 w-6 rounded-full border-2 border-white shadow-md transition-all ${
@@ -2115,13 +2134,15 @@ export default function Home() {
                       {isCartoonMode ? (
                         <>
                           <span
-                            className={`pointer-events-none absolute inset-2 rounded-full blur-md transition ${
+                            className={`pointer-events-none absolute -inset-1 rounded-full border-2 bg-transparent transition ${
                               isPendingWatering ? "animate-pulse opacity-95" : "opacity-80 group-hover:opacity-100"
                             } ${colors.pulse}`}
                           />
-                          <span className="pointer-events-none absolute inset-0 rounded-full bg-white/0 ring-1 ring-white/35" />
                           <span
-                            className={`pointer-events-none absolute -bottom-1 left-1/2 max-w-24 -translate-x-1/2 truncate rounded-full px-2 py-0.5 text-[9px] font-bold shadow-sm ${colors.label}`}
+                            className={`pointer-events-none relative h-2.5 w-2.5 rounded-full border border-white/90 shadow-sm ${colors.dot}`}
+                          />
+                          <span
+                            className={`pointer-events-none absolute -bottom-6 left-1/2 max-w-24 -translate-x-1/2 truncate rounded-full border px-2 py-0.5 text-[9px] font-bold shadow-sm ${colors.label}`}
                           >
                             {markerPlant?.name ?? "Plant"}
                           </span>
@@ -2141,7 +2162,7 @@ export default function Home() {
                     {isPendingWatering ? (
                       <div
                         className={`absolute left-1/2 -translate-x-1/2 rounded-lg bg-white px-2 py-1 text-[10px] font-semibold text-[#3c4a42] shadow-md ${
-                          isCartoonMode ? "bottom-20" : "bottom-8"
+                          isCartoonMode ? "bottom-14" : "bottom-8"
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
