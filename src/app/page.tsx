@@ -147,6 +147,13 @@ type OptimisticMarkerPlacement = {
 
 type RoomVisualMode = "photo" | "cartoon";
 
+function readRoomVisualModeFromStorage(): RoomVisualMode {
+  if (typeof window === "undefined") {
+    return "photo";
+  }
+  return window.localStorage.getItem(ROOM_VISUAL_MODE_STORAGE_KEY) === "cartoon" ? "cartoon" : "photo";
+}
+
 declare global {
   interface Window {
     Telegram?: {
@@ -274,6 +281,12 @@ export default function Home() {
   const cameraCaptureCounterRef = useRef(0);
   const markerPlacementFeedbackTimerRef = useRef<number | null>(null);
 
+  useLayoutEffect(() => {
+    // After SSR/hydration, apply the user's last Photo/Cartoon choice from localStorage.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional one-shot client sync
+    setRoomVisualMode(readRoomVisualModeFromStorage());
+  }, []);
+
   /** Opening a room reuses the same document scroll as the overview; reset so the photo + markers are in view. */
   useLayoutEffect(() => {
     if (!selectedRoom) {
@@ -329,7 +342,6 @@ export default function Home() {
         glow: "border-[#10b981]/80 bg-white/5 shadow-[0_0_14px_rgba(16,185,129,0.36)]",
         pulse: "border-[#10b981]/55 shadow-[0_0_12px_rgba(16,185,129,0.30)]",
         dot: "bg-[#10b981]",
-        label: "border-[#bbf7d0]/80 bg-white/90 text-[#006c49]",
       };
     }
     if (status === "thirsty") {
@@ -337,14 +349,12 @@ export default function Home() {
         glow: "border-[#f59e0b]/80 bg-white/5 shadow-[0_0_16px_rgba(245,158,11,0.40)]",
         pulse: "border-[#f59e0b]/60 shadow-[0_0_14px_rgba(245,158,11,0.34)]",
         dot: "bg-[#f59e0b]",
-        label: "border-[#fde68a]/85 bg-white/90 text-[#855300]",
       };
     }
     return {
       glow: "border-[#ef4444]/80 bg-white/5 shadow-[0_0_18px_rgba(239,68,68,0.42)]",
       pulse: "border-[#ef4444]/60 shadow-[0_0_16px_rgba(239,68,68,0.36)]",
       dot: "bg-[#ef4444]",
-      label: "border-[#fecaca]/85 bg-white/90 text-[#93000a]",
     };
   }
 
@@ -395,7 +405,7 @@ export default function Home() {
     setIsAddPlantOpen(false);
     setIsRoomDetectionPreviewOpen(false);
     setIsEditPlantOpen(false);
-    setRoomVisualMode("photo");
+    setRoomVisualMode(readRoomVisualModeFromStorage());
     setIsStylizingRoom(false);
     setRoomStylizeNonce(0);
     setEditingPlantId(null);
@@ -783,10 +793,7 @@ export default function Home() {
   }
 
   function getStoredRoomVisualMode(): RoomVisualMode {
-    if (typeof window === "undefined") {
-      return "photo";
-    }
-    return window.localStorage.getItem(ROOM_VISUAL_MODE_STORAGE_KEY) === "cartoon" ? "cartoon" : "photo";
+    return readRoomVisualModeFromStorage();
   }
 
   function setPreferredRoomVisualMode(mode: RoomVisualMode) {
@@ -1879,32 +1886,61 @@ export default function Home() {
     };
   }, [newPlantPhotoPreviewUrl]);
 
+  const savingMarkerGlow = getPlantGlowClasses("healthy");
+
   return (
-    <MobileShell>
+  <MobileShell>
     <main className="min-h-screen pb-32 text-[#1f1b17]">
       {selectedRoom ? (
         <div className="mx-auto flex w-full max-w-5xl flex-col">
-          <header className="fixed top-0 z-30 flex h-16 w-full items-center justify-between border-b border-white/70 bg-[#fbfaf6]/88 px-5 shadow-[0_8px_28px_rgba(31,27,23,0.06)] backdrop-blur-xl">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedRoom(null);
-                  clearRoomDetailState();
-                }}
-                className="rounded-full bg-white/90 p-2 text-[#3c4a42] shadow-sm active:scale-95"
-                aria-label="Back to rooms"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </button>
-              <div className="flex items-center gap-2">
-                <Sprout className="h-5 w-5 text-[#006c49]" />
-                <p className="text-sm font-semibold text-[#006c49]">GreenHouse</p>
+          <header className="fixed top-0 z-30 w-full border-b border-white/70 bg-[#fbfaf6]/88 shadow-[0_8px_28px_rgba(31,27,23,0.06)] backdrop-blur-xl">
+            <div className="mx-auto flex w-full max-w-5xl flex-col gap-1.5 px-4 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedRoom(null);
+                      clearRoomDetailState();
+                    }}
+                    className="shrink-0 rounded-full bg-white/90 p-2 text-[#3c4a42] shadow-sm active:scale-95"
+                    aria-label="Back to rooms"
+                  >
+                    <ArrowLeft className="h-5 w-5" />
+                  </button>
+                  <Sprout className="h-5 w-5 shrink-0 text-[#006c49]" />
+                  <p className="min-w-0 truncate text-sm font-semibold text-[#006c49]">GreenHouse</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearNewPlantPhotoSelection();
+                      setAddPlantNameError(null);
+                      setPlantThirstyAfterHours(DEFAULT_THIRSTY_AFTER_HOURS);
+                      setPlantOverdueAfterHours(DEFAULT_OVERDUE_AFTER_HOURS);
+                      setIsAddPlantOpen(true);
+                    }}
+                    className="rounded-full border-b-2 border-[#005236] bg-[#006c49] px-3 py-1.5 text-[10px] font-bold text-white shadow-[0_6px_16px_rgba(0,108,73,0.28)] sm:px-4 sm:py-2 sm:text-xs"
+                  >
+                    Add Plant
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void runSafely(handleAutoDetectPlantsInRoom);
+                    }}
+                    disabled={isDetectingRoomPlants}
+                    className="rounded-full border border-[#0f766e]/45 bg-white/95 px-2.5 py-1.5 text-[10px] font-semibold text-[#0f766e] shadow-sm disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-2 sm:text-xs"
+                  >
+                    {isDetectingRoomPlants ? "Detect…" : "AI Plants"}
+                  </button>
+                </div>
               </div>
-            </div>
-            <div className="flex min-w-0 max-w-[min(100%,20rem)] flex-1 items-center justify-end gap-2 sm:max-w-none">
-              <div className="flex min-w-0 items-center gap-1">
-                <p className="truncate text-xs font-medium text-[#6c7a71]">{selectedRoom.name}</p>
+              <div className="flex items-center justify-center gap-1 border-t border-[#e8e4df]/80 pt-1.5">
+                <p className="min-w-0 max-w-[min(100%,14rem)] truncate text-center text-xs font-medium text-[#6c7a71] sm:max-w-[min(100%,24rem)]">
+                  {selectedRoom.name}
+                </p>
                 <button
                   type="button"
                   onClick={() => {
@@ -1918,33 +1954,10 @@ export default function Home() {
                   <Pencil className="h-[18px] w-[18px]" />
                 </button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  clearNewPlantPhotoSelection();
-                  setAddPlantNameError(null);
-                  setPlantThirstyAfterHours(DEFAULT_THIRSTY_AFTER_HOURS);
-                  setPlantOverdueAfterHours(DEFAULT_OVERDUE_AFTER_HOURS);
-                  setIsAddPlantOpen(true);
-                }}
-                className="shrink-0 rounded-full border-b-2 border-[#005236] bg-[#006c49] px-4 py-2 text-xs font-bold text-white shadow-[0_6px_16px_rgba(0,108,73,0.28)]"
-              >
-                Add Plant
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void runSafely(handleAutoDetectPlantsInRoom);
-                }}
-                disabled={isDetectingRoomPlants}
-                className="shrink-0 rounded-full border border-[#0f766e]/45 bg-white/95 px-4 py-2 text-xs font-semibold text-[#0f766e] shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isDetectingRoomPlants ? "Detecting..." : "AI Detect Plants"}
-              </button>
             </div>
           </header>
 
-          <section className="px-5 pt-20">
+          <section className="px-5 pt-28">
             {message ? (
               <div className="mb-3 rounded-xl border border-[#e8ddd6] bg-white/85 px-3 py-2 text-xs text-[#3c4a42] shadow-sm">
                 {message}
@@ -2066,7 +2079,6 @@ export default function Home() {
                 const isPendingWatering = pendingWateringMarkerIds.includes(marker.id);
                 const isJustWatered = justWateredMarkerId === marker.id;
                 const secondsLeft = getPendingWateringSecondsLeft(marker.id);
-                const isCartoonMode = roomVisualMode === "cartoon";
                 const status = wateringDerivedStatus(
                   markerPlant?.last_watered_at ?? null,
                   markerPlant?.thirsty_after_hours ?? DEFAULT_THIRSTY_AFTER_HOURS,
@@ -2088,21 +2100,9 @@ export default function Home() {
                   >
                     <button
                       type="button"
-                      className={
-                        isCartoonMode
-                          ? `group relative flex h-12 w-12 items-center justify-center rounded-full border-2 transition-all active:scale-95 ${
-                              isJustWatered ? "scale-110 ring-4 ring-[#10b981]/40" : ""
-                            } ${colors.glow}`
-                          : `relative h-6 w-6 rounded-full border-2 border-white shadow-md transition-all ${
-                              isJustWatered ? "scale-125 ring-4 ring-[#10b981]/35" : ""
-                            } ${
-                              status === "healthy"
-                                ? "bg-[#10b981]"
-                                : status === "thirsty"
-                                  ? "bg-[#e29100]"
-                                  : "bg-[#ba1a1a]"
-                            }`
-                      }
+                      className={`group relative flex h-12 w-12 items-center justify-center rounded-full border-2 transition-all active:scale-95 ${
+                        isJustWatered ? "scale-110 ring-4 ring-[#10b981]/40" : ""
+                      } ${colors.glow}`}
                       onPointerDown={(event) => {
                         event.stopPropagation();
                         startMarkerLongPress(marker.id, markerPlant);
@@ -2131,39 +2131,18 @@ export default function Home() {
                       title={markerPlant?.name ?? "Plant marker"}
                       aria-label={markerPlant?.name ?? "Plant marker"}
                     >
-                      {isCartoonMode ? (
-                        <>
-                          <span
-                            className={`pointer-events-none absolute -inset-1 rounded-full border-2 bg-transparent transition ${
-                              isPendingWatering ? "animate-pulse opacity-95" : "opacity-80 group-hover:opacity-100"
-                            } ${colors.pulse}`}
-                          />
-                          <span
-                            className={`pointer-events-none relative h-2.5 w-2.5 rounded-full border border-white/90 shadow-sm ${colors.dot}`}
-                          />
-                          <span
-                            className={`pointer-events-none absolute -bottom-6 left-1/2 max-w-24 -translate-x-1/2 truncate rounded-full border px-2 py-0.5 text-[9px] font-bold shadow-sm ${colors.label}`}
-                          >
-                            {markerPlant?.name ?? "Plant"}
-                          </span>
-                        </>
-                      ) : (
-                        <span
-                          className={`absolute inset-0 animate-ping rounded-full ${
-                            status === "healthy"
-                              ? "bg-[#10b981]/40"
-                              : status === "thirsty"
-                                ? "bg-[#e29100]/40"
-                                : "bg-[#ba1a1a]/40"
-                          }`}
-                        />
-                      )}
+                      <span
+                        className={`pointer-events-none absolute -inset-1 rounded-full border-2 bg-transparent transition ${
+                          isPendingWatering ? "animate-pulse opacity-95" : "opacity-80 group-hover:opacity-100"
+                        } ${colors.pulse}`}
+                      />
+                      <span
+                        className={`pointer-events-none relative h-2.5 w-2.5 rounded-full border border-white/90 shadow-sm ${colors.dot}`}
+                      />
                     </button>
                     {isPendingWatering ? (
                       <div
-                        className={`absolute left-1/2 -translate-x-1/2 rounded-lg bg-white px-2 py-1 text-[10px] font-semibold text-[#3c4a42] shadow-md ${
-                          isCartoonMode ? "bottom-14" : "bottom-8"
-                        }`}
+                        className="absolute bottom-10 left-1/2 -translate-x-1/2 rounded-lg bg-white px-2 py-1 text-[10px] font-semibold text-[#3c4a42] shadow-md"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[9px] text-[#6c7a71]">Watering in {secondsLeft}s</span>
@@ -2196,8 +2175,16 @@ export default function Home() {
                       : `${optimisticMarkerPlacement.y * 100}%`,
                   }}
                 >
-                  <span className="absolute -inset-2 animate-ping rounded-full bg-[#006c49]/30" />
-                  <span className="relative block h-6 w-6 rounded-full border-2 border-white bg-[#006c49] shadow-md" />
+                  <div
+                    className={`relative flex h-12 w-12 items-center justify-center rounded-full border-2 ${savingMarkerGlow.glow}`}
+                  >
+                    <span
+                      className={`pointer-events-none absolute -inset-1 animate-pulse rounded-full border-2 bg-transparent opacity-90 ${savingMarkerGlow.pulse}`}
+                    />
+                    <span
+                      className={`pointer-events-none relative h-2.5 w-2.5 rounded-full border border-white/90 shadow-sm ${savingMarkerGlow.dot}`}
+                    />
+                  </div>
                   <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 rounded-md bg-white/95 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#006c49] shadow">
                     Saving...
                   </span>
@@ -2215,8 +2202,16 @@ export default function Home() {
                       : `${markerPlacementFeedback.y * 100}%`,
                   }}
                 >
-                  <span className="block h-8 w-8 animate-ping rounded-full bg-[#006c49]/35" />
-                  <span className="absolute inset-0 m-auto block h-4 w-4 rounded-full border-2 border-white bg-[#006c49] shadow-md" />
+                  <div
+                    className={`relative flex h-12 w-12 items-center justify-center rounded-full border-2 ${savingMarkerGlow.glow}`}
+                  >
+                    <span
+                      className={`pointer-events-none absolute -inset-1 animate-ping rounded-full border-2 bg-transparent opacity-80 ${savingMarkerGlow.pulse}`}
+                    />
+                    <span
+                      className={`pointer-events-none relative h-2.5 w-2.5 rounded-full border border-white/90 shadow-sm ${savingMarkerGlow.dot}`}
+                    />
+                  </div>
                 </div>
               ) : null}
               {isMarkerEditMode ? (
@@ -2421,6 +2416,46 @@ export default function Home() {
                 </span>
               </div>
             )}
+          </section>
+
+          <section className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/90 p-2 shadow-sm">
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#006c49]">Room style</p>
+              <p className="truncate text-[11px] text-[#6c7a71]">
+                Previews use cartoon when a room has a generated cartoon.
+              </p>
+            </div>
+            <div className="flex shrink-0 rounded-full border border-[#d5ddd9] bg-[#f8fcfa] p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setPreferredRoomVisualMode("photo");
+                  setMessage("Photo previews");
+                }}
+                className={`rounded-full px-3 py-1.5 text-[11px] font-bold transition ${
+                  roomVisualMode === "photo"
+                    ? "bg-[#006c49] text-white shadow-sm"
+                    : "text-[#3c4a42] hover:bg-white"
+                }`}
+              >
+                Photo
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPreferredRoomVisualMode("cartoon");
+                  setMessage("Cartoon previews (where available)");
+                }}
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-bold transition ${
+                  roomVisualMode === "cartoon"
+                    ? "bg-[#006c49] text-white shadow-sm"
+                    : "text-[#3c4a42] hover:bg-white"
+                }`}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Cartoon
+              </button>
+            </div>
           </section>
 
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
