@@ -181,10 +181,12 @@ Maintenance guidelines:
     - household tasks -> only members of that household.
 - Added SQL migration `task_message_mode_settings.sql`:
   - `profiles.task_message_mode` (`single`/`combine`) for bot ingestion behavior.
+- Added SQL migration `task_overdue_reminder_settings.sql`:
+  - `profiles.repeat_overdue_reminders` (`boolean`, default `true`) controls whether overdue reminders can repeat for the same task.
 - `/api/secure` now supports task actions: `listTasks`, `createTask`, `updateTaskStatus`, `deleteTask`.
 - `/api/secure` also supports:
   - `updateTask` (edit title, deadline, scope, household)
-  - `getTaskSettings` / `setTaskSettings` (task message mode in settings)
+  - `getTaskSettings` / `setTaskSettings` (task message mode + repeated overdue reminder preference in settings)
 - `/tasks` page is now functional (no longer a placeholder):
   - Loads personal tasks for current user and household tasks from member homes.
   - Supports manual task creation in-page (title, deadline, scope; target home only for household tasks).
@@ -220,6 +222,9 @@ Maintenance guidelines:
   - Uses `task_reminders_log` to avoid duplicate sends within reminder windows.
   - Supports optional job auth via `x-job-secret` (`TASK_REMINDER_JOB_SECRET`) or `Authorization: Bearer ...` (`CRON_SECRET`).
   - Delivery is best-effort: per-chat Telegram send errors are logged and counted in `failed` so one bad chat does not fail the full reminder run.
+  - Overdue reminder behavior is per-user configurable:
+    - when `profiles.repeat_overdue_reminders = true` (default), overdue reminders can repeat based on overdue dedupe window;
+    - when `false`, overdue reminder is sent only once per task (any prior overdue log suppresses repeats).
 
 ## Stage 8 - Admin and Security Operations
 
@@ -400,6 +405,7 @@ Scope and plan:
 - `tasks_bot_reminders.sql` — adds `tasks` + `task_reminders_log`, task RPCs, and grants used by secure API and reminder worker.
 - `tasks_scope_and_bot_choice.sql` — adds personal/shared task scope, bot drafts, and task visibility logic for multi-home users.
 - `task_message_mode_settings.sql` — adds per-profile bot task ingestion mode (`single`/`combine`).
+- `task_overdue_reminder_settings.sql` — adds per-profile preference to disable repeated overdue reminders (`profiles.repeat_overdue_reminders`).
 - `household_join_approval.sql` — adds owner-approval flow for invite joins (enabled by default), pending join requests, bot approval callbacks, and owner-only members management RPCs (`api_list_household_members`, `api_remove_household_member`).
 - `supabase_sql_hardening_patch.sql` — consolidated SQL Editor patch for already-migrated Supabase projects. It applies the current RPC hardening without rerunning historical migrations: `pgcrypto` invite-code generation, no create-rate limiter on `api_list_rooms`, legacy owner repair for join approval, task membership helper reuse, and explicit `grant`/`revoke` hygiene for `SECURITY DEFINER` functions. Run this after the existing migration sequence when production needs the hardening changes as a single copy/paste script.
 - `admin_security.sql` — admin/security schema and monitoring layer (admins, blocks, audit/security events, request telemetry, overview views, helper functions/grants).

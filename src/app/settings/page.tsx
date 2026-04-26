@@ -54,6 +54,7 @@ function hasTelegramUserAgentRuntime() {
 export default function SettingsPage() {
   const initData = useMemo(() => resolveTelegramInitData(), []);
   const [mode, setMode] = useState<"single" | "combine">("single");
+  const [repeatOverdueReminders, setRepeatOverdueReminders] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [joinSettings, setJoinSettings] = useState<HouseholdJoinSetting[]>([]);
@@ -103,6 +104,7 @@ export default function SettingsPage() {
           getHouseholdJoinSettings(initData),
         ]);
         setMode(taskSettings.taskMessageMode);
+        setRepeatOverdueReminders(taskSettings.repeatOverdueReminders);
         setJoinSettings(settingsRows);
         await refreshHouseholds(true);
         const ownerHome = settingsRows.find((row) => row.is_owner);
@@ -151,10 +153,34 @@ export default function SettingsPage() {
     setSaving(true);
     setMessage(null);
     try {
-      const saved = await setTaskSettings(initData, { taskMessageMode: nextMode });
+      const saved = await setTaskSettings(initData, {
+        taskMessageMode: nextMode,
+        repeatOverdueReminders,
+      });
       setMode(saved.taskMessageMode);
+      setRepeatOverdueReminders(saved.repeatOverdueReminders);
     } catch (error) {
       setMessage(readErrorText(error, "Failed to save settings"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onToggleRepeatOverdueReminders = async () => {
+    const nextValue = !repeatOverdueReminders;
+    setRepeatOverdueReminders(nextValue);
+    setSaving(true);
+    setMessage(null);
+    try {
+      const saved = await setTaskSettings(initData, {
+        taskMessageMode: mode,
+        repeatOverdueReminders: nextValue,
+      });
+      setMode(saved.taskMessageMode);
+      setRepeatOverdueReminders(saved.repeatOverdueReminders);
+    } catch (error) {
+      setRepeatOverdueReminders(!nextValue);
+      setMessage(readErrorText(error, "Failed to save reminder settings"));
     } finally {
       setSaving(false);
     }
@@ -565,6 +591,26 @@ export default function SettingsPage() {
                   </span>
                 </span>
               </label>
+            </div>
+            <div className="mt-4 rounded-xl border border-[#e7ddd6] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-[#1f1b17]">Repeat overdue reminders</p>
+                  <p className="text-xs text-[#6c7a71]">
+                    If disabled, overdue reminder is sent only once per task.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onToggleRepeatOverdueReminders();
+                  }}
+                  disabled={loading || saving}
+                  className="rounded-lg border border-[#bbcabf] px-3 py-1.5 text-xs font-semibold text-[#1f1b17] disabled:opacity-60"
+                >
+                  {repeatOverdueReminders ? "Enabled" : "Disabled"}
+                </button>
+              </div>
             </div>
             {saving ? <p className="mt-3 text-xs text-[#6c7a71]">Saving...</p> : null}
           </section>

@@ -201,6 +201,13 @@ function asTaskMessageMode(value: unknown) {
   throw new Error("Invalid task message mode");
 }
 
+function asRepeatOverdueReminders(value: unknown) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  throw new Error("Invalid repeat overdue reminders setting");
+}
+
 function asOptionalIsoDate(value: unknown, fieldName: string) {
   if (value == null) {
     return null;
@@ -1212,29 +1219,38 @@ export async function POST(request: NextRequest) {
         const supabaseAdmin = getSupabaseAdmin();
         const { data: profileRow, error: profileError } = await supabaseAdmin
           .from("profiles")
-          .select("task_message_mode")
+          .select("task_message_mode,repeat_overdue_reminders")
           .eq("telegram_id", telegramId)
           .single();
         if (profileError) {
           throw new Error(profileError.message);
         }
-        const modeRaw = (profileRow as { task_message_mode?: string | null } | null)?.task_message_mode;
+        const profileData = (profileRow as {
+          task_message_mode?: string | null;
+          repeat_overdue_reminders?: boolean | null;
+        } | null) ?? { task_message_mode: null, repeat_overdue_reminders: null };
+        const modeRaw = profileData.task_message_mode;
         const taskMessageMode = modeRaw === "combine" ? "combine" : "single";
-        return NextResponse.json({ data: { taskMessageMode } });
+        const repeatOverdueReminders = profileData.repeat_overdue_reminders !== false;
+        return NextResponse.json({ data: { taskMessageMode, repeatOverdueReminders } });
       }
 
       case "setTaskSettings": {
         const taskMessageMode = asTaskMessageMode(payload.taskMessageMode);
+        const repeatOverdueReminders = asRepeatOverdueReminders(payload.repeatOverdueReminders);
         const supabaseAdmin = getSupabaseAdmin();
         const db = supabaseAdmin as unknown as LooseTableApi;
         const { error: updateError } = await db
           .from("profiles")
-          .update({ task_message_mode: taskMessageMode })
+          .update({
+            task_message_mode: taskMessageMode,
+            repeat_overdue_reminders: repeatOverdueReminders,
+          })
           .eq("telegram_id", Number(telegramId));
         if (updateError) {
           throw new Error(updateError.message);
         }
-        return NextResponse.json({ data: { taskMessageMode } });
+        return NextResponse.json({ data: { taskMessageMode, repeatOverdueReminders } });
       }
 
       default:

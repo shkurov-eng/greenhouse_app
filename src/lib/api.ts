@@ -634,7 +634,10 @@ export async function updateTask(
 }
 
 export async function getTaskSettings(initData: string | null) {
-  return secureRequest<{ taskMessageMode: "single" | "combine" }>({
+  return secureRequest<{
+    taskMessageMode: "single" | "combine";
+    repeatOverdueReminders: boolean;
+  }>({
     action: "getTaskSettings",
     initData,
   });
@@ -642,9 +645,12 @@ export async function getTaskSettings(initData: string | null) {
 
 export async function setTaskSettings(
   initData: string | null,
-  payload: { taskMessageMode: "single" | "combine" },
+  payload: { taskMessageMode: "single" | "combine"; repeatOverdueReminders: boolean },
 ) {
-  return secureRequest<{ taskMessageMode: "single" | "combine" }>({
+  return secureRequest<{
+    taskMessageMode: "single" | "combine";
+    repeatOverdueReminders: boolean;
+  }>({
     action: "setTaskSettings",
     initData,
     payload,

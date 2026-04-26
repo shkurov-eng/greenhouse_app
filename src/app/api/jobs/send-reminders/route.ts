@@ -19,6 +19,11 @@ type CandidateTask = {
   created_by_profile_id: string | null;
 };
 
+type ProfileReminderSettings = {
+  telegram_id?: number | string | null;
+  repeat_overdue_reminders?: boolean | null;
+};
+
 const DUE_SOON_LEAD_MS = 15 * 60 * 1000;
 const DUE_SOON_GRACE_MS = 5 * 60 * 1000;
 const DUE_SOON_DEDUPE_MS = 15 * 60 * 1000;
@@ -127,21 +132,41 @@ async function handleReminderJob(request: NextRequest) {
 
       const { data: profileRow, error: profileError } = await supabaseAdmin
         .from("profiles")
-        .select("telegram_id")
+        .select("telegram_id,repeat_overdue_reminders")
         .eq("id", task.created_by_profile_id)
         .single();
       if (profileError) {
         skipped += 1;
         continue;
       }
-      const telegramId = String((profileRow as { telegram_id?: number | string | null }).telegram_id ?? "");
+      const profileSettings = (profileRow as ProfileReminderSettings | null) ?? {};
+      const telegramId = String(profileSettings.telegram_id ?? "");
       if (!telegramId) {
         skipped += 1;
         continue;
       }
+      const repeatOverdueReminders = profileSettings.repeat_overdue_reminders !== false;
+      const shouldCheckAnyOverdueLog = kind === "overdue" && !repeatOverdueReminders;
 
       const dueText = new Date(task.due_at).toLocaleString();
       const prefix = kind === "overdue" ? "Overdue task" : "Task reminder";
+
+      if (shouldCheckAnyOverdueLog) {
+        const { data: anyOverdueLog, error: anyOverdueLogError } = await supabaseAdmin
+          .from("task_reminders_log")
+          .select("id")
+          .eq("task_id", task.id)
+          .eq("reminder_type", "overdue")
+          .limit(1);
+        if (anyOverdueLogError) {
+          throw new Error(anyOverdueLogError.message);
+        }
+        if ((anyOverdueLog ?? []).length > 0) {
+          skipped += 1;
+          continue;
+        }
+      }
+
       try {
         await sendTelegramMessage(telegramId, `${prefix}: ${task.title}\nDue: ${dueText}`);
       } catch (sendError) {
