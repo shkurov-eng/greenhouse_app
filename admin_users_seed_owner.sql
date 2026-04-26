@@ -2,7 +2,7 @@
 -- Idempotent: safe to re-run. To use another email, change the value below.
 
 insert into public.admin_users (email, role, is_active)
-values (lower(trim('shkurov@gmail.com')), 'owner', true)
+values (lower(trim('shurich@inbox.ru')), 'owner', true)
 on conflict (email) do update
 set
   role = excluded.role,

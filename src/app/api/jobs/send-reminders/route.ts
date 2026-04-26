@@ -24,6 +24,27 @@ const DUE_SOON_GRACE_MS = 5 * 60 * 1000;
 const DUE_SOON_DEDUPE_MS = 15 * 60 * 1000;
 const OVERDUE_DEDUPE_MS = 24 * 60 * 60 * 1000;
 
+function getAcceptedJobSecrets() {
+  return [process.env.TASK_REMINDER_JOB_SECRET, process.env.CRON_SECRET]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+}
+
+function getProvidedJobSecret(request: NextRequest) {
+  const explicitHeader = request.headers.get("x-job-secret")?.trim();
+  if (explicitHeader) {
+    return explicitHeader;
+  }
+
+  const authorization = request.headers.get("authorization")?.trim();
+  const bearerPrefix = "Bearer ";
+  if (authorization?.startsWith(bearerPrefix)) {
+    return authorization.slice(bearerPrefix.length).trim();
+  }
+
+  return null;
+}
+
 function classifyReminderKind(dueAt: string): ReminderKind {
   const due = new Date(dueAt).getTime();
   return due < Date.now() - DUE_SOON_GRACE_MS ? "overdue" : "due_soon";
@@ -50,28 +71,26 @@ async function sendTelegramMessage(chatId: string, text: string) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function handleReminderJob(request: NextRequest) {
   try {
-    const secret = process.env.TASK_REMINDER_JOB_SECRET?.trim();
-    if (secret) {
-      const provided = request.headers.get("x-job-secret");
-      if (provided !== secret) {
+    const acceptedSecrets = getAcceptedJobSecrets();
+    if (acceptedSecrets.length > 0) {
+      const provided = getProvidedJobSecret(request);
+      if (!provided || !acceptedSecrets.includes(provided)) {
         return NextResponse.json({ error: "Unauthorized job request" }, { status: 401 });
       }
     }
 
     const supabaseAdmin = getSupabaseAdmin();
     const nowMs = Date.now();
-    const dueWindowStartIso = new Date(nowMs - DUE_SOON_GRACE_MS).toISOString();
     const dueWindowEndIso = new Date(nowMs + DUE_SOON_LEAD_MS).toISOString();
     const { data, error } = await supabaseAdmin
       .from("tasks")
       .select("id,title,due_at,created_by_profile_id")
       .eq("status", "open")
       .not("due_at", "is", null)
-      .gte("due_at", dueWindowStartIso)
       .lte("due_at", dueWindowEndIso)
-      .order("due_at", { ascending: true })
+      .order("due_at", { ascending: false })
       .limit(100);
     if (error) {
       throw new Error(error.message);
@@ -145,4 +164,12 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Reminder job failed";
     return NextResponse.json({ error: message }, { status: 400 });
   }
+}
+
+export async function GET(request: NextRequest) {
+  return handleReminderJob(request);
+}
+
+export async function POST(request: NextRequest) {
+  return handleReminderJob(request);
 }

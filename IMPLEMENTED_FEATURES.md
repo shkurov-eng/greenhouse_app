@@ -21,6 +21,8 @@ Maintenance guidelines:
   - `SUPABASE_SERVICE_ROLE_KEY` (server only)
   - `TELEGRAM_BOT_TOKEN` (production / real Mini App)
   - `GEMINI_API_KEY` (Google AI Studio, optional; enables AI detection for plant and room photos)
+  - `ADMIN_SESSION_SECRET` (admin-panel session HMAC secret)
+  - `ADMIN_PANEL_PASSWORD` (admin-panel password for MVP login flow)
   - Optional local browser debug: `DEV_BROWSER_MODE=true`, `DEV_TELEGRAM_ID` (only with `npm run dev`)
 - `src/lib/supabase.ts` remains for potential non-UI use; **main UI does not use it for data access**.
 - Last known lint baseline is clean (`npm run lint` passes).
@@ -210,13 +212,113 @@ Maintenance guidelines:
 
 ## Stage 7 - Reminders
 
-- Added scheduled reminders endpoint `POST /api/jobs/send-reminders`:
+- Added scheduled reminders endpoint `GET`/`POST /api/jobs/send-reminders`:
   - Scans open tasks with `due_at` in reminder window.
-  - Reminder scheduler is configured to run every 5 minutes.
-  - Due-soon selection uses a near-deadline window (`now-5m .. now+15m`) to avoid overly early reminders.
+  - Reminder scheduler is configured in `vercel.json` to run every 5 minutes.
+  - Due-soon selection uses a near-deadline window; overdue selection includes older open tasks so missed cron runs can still send overdue reminders.
   - Sends `due_soon` / `overdue` notifications through Telegram Bot API.
   - Uses `task_reminders_log` to avoid duplicate sends within reminder windows.
-  - Supports optional job secret header (`x-job-secret`) via env.
+  - Supports optional job auth via `x-job-secret` (`TASK_REMINDER_JOB_SECRET`) or `Authorization: Bearer ...` (`CRON_SECRET`).
+
+## Stage 8 - Admin and Security Operations
+
+- Added admin/security schema in `admin_security.sql`:
+  - tables: `admin_users`, `profile_blocks`, `admin_audit_log`, `security_events`, `api_request_events`
+  - helper function: `api_is_profile_blocked(text)` for unified block checks
+  - helper function: `admin_record_security_event(...)` for normalized security event writes
+  - views: `admin_overview_24h`, `admin_top_users_24h`
+- Added owner seed SQL: `admin_users_seed_owner.sql` (idempotent upsert into `admin_users`).
+- Added admin API endpoints:
+  - auth/session: `POST /api/admin/login`, `POST /api/admin/logout`, `GET /api/admin/me`
+  - data/actions: `GET /api/admin/overview`, `GET /api/admin/users`, `GET /api/admin/users/[profileId]`,
+    `POST|DELETE /api/admin/users/[profileId]/block`, `GET /api/admin/security-events`
+- Added admin UI routes:
+  - `/admin`, `/admin/login`, `/admin/users`, `/admin/users/[profileId]`, `/admin/security-events`
+- Added role checks (`owner`, `security`, `support`, `readonly`) and admin audit writes in `src/lib/server/adminAuth.ts`.
+- Added request telemetry/security helper module `src/lib/server/adminSecurity.ts`.
+- Added block-gate checks for regular user flows in:
+  - `POST /api/secure`
+  - `POST /api/rooms/upload`
+  - `POST /api/rooms/analyze`
+  - `POST /api/bot/webhook`
+
+### Security event model (implemented)
+
+- `security_events` receives normalized events through `logSecurityEvent(...)` and DB function `admin_record_security_event(...)`.
+- Event sources currently include:
+  - blocked-request denies (`blocked_request_denied`)
+  - endpoint failures (`secure_api_error`, `rooms_upload_error`, `rooms_analyze_error`, `bot_webhook_error`)
+  - admin block/unblock actions (`user_blocked_by_admin`, `user_unblocked_by_admin`)
+  - explicit rate-limit events (`rate_limit_hit`)
+- Explicit rate-limit logging is now implemented (instead of relying only on generic error events):
+  - helper `logRateLimitHit(...)` and detector `isLikelyRateLimitError(...)` in `src/lib/server/adminSecurity.ts`
+  - emitted from `secure`, `rooms/upload`, `rooms/analyze`, and `bot/webhook` when quota/limit errors are detected
+  - stores structured details (`limit_name`, message) for easier admin filtering.
+
+#### Event type reference (`security_events`)
+
+| event_type | source | trigger |
+| --- | --- | --- |
+| `blocked_request_denied` | `secure_api`, `rooms_upload`, `rooms_analyze`, `bot_webhook` | User has active block in `profile_blocks` and request is denied before business action |
+| `secure_api_error` | `secure_api` | Unhandled/returned error in `POST /api/secure` catch path |
+| `rooms_upload_error` | `rooms_upload` | Error in `POST /api/rooms/upload` catch path |
+| `rooms_analyze_error` | `rooms_analyze` | Error in `POST /api/rooms/analyze` catch path |
+| `bot_webhook_error` | `bot_webhook` | Error in `POST /api/bot/webhook` catch path |
+| `user_blocked_by_admin` | `admin_api` | Admin blocks a profile via `POST /api/admin/users/[profileId]/block` |
+| `user_unblocked_by_admin` | `admin_api` | Admin unblocks a profile via `DELETE /api/admin/users/[profileId]/block` |
+| `rate_limit_hit` | `secure_api`, `rooms_upload`, `rooms_analyze`, `bot_webhook` | Rate/quota/too-many-requests style error detected; structured `details.limit_name` when known |
+
+Notes:
+
+- `security_events.details` stores per-event metadata (`message`, `limit_name`, block reason, etc.).
+- `api_request_events` is complementary telemetry (status, duration, endpoint/action), while `security_events` is the normalized security signal stream.
+
+#### Useful SQL: rate-limit investigations
+
+Top users by rate-limit hits (last 24h):
+
+```sql
+select
+  se.telegram_id,
+  p.username,
+  count(*) as rate_limit_hits_24h
+from public.security_events se
+left join public.profiles p on p.telegram_id = se.telegram_id
+where se.event_type = 'rate_limit_hit'
+  and se.created_at >= now() - interval '24 hours'
+group by se.telegram_id, p.username
+order by rate_limit_hits_24h desc
+limit 50;
+```
+
+Top users by rate-limit hits (last 7d):
+
+```sql
+select
+  se.telegram_id,
+  p.username,
+  count(*) as rate_limit_hits_7d
+from public.security_events se
+left join public.profiles p on p.telegram_id = se.telegram_id
+where se.event_type = 'rate_limit_hit'
+  and se.created_at >= now() - interval '7 days'
+group by se.telegram_id, p.username
+order by rate_limit_hits_7d desc
+limit 100;
+```
+
+Rate-limit breakdown by `limit_name` (last 24h):
+
+```sql
+select
+  coalesce(se.details->>'limit_name', 'unknown') as limit_name,
+  count(*) as hits
+from public.security_events se
+where se.event_type = 'rate_limit_hit'
+  and se.created_at >= now() - interval '24 hours'
+group by 1
+order by hits desc;
+```
 
 ## UI / Design System Work
 
@@ -298,10 +400,13 @@ Scope and plan:
 - `task_message_mode_settings.sql` — adds per-profile bot task ingestion mode (`single`/`combine`).
 - `household_join_approval.sql` — adds owner-approval flow for invite joins (enabled by default), pending join requests, bot approval callbacks, and owner-only members management RPCs (`api_list_household_members`, `api_remove_household_member`).
 - `supabase_sql_hardening_patch.sql` — consolidated SQL Editor patch for already-migrated Supabase projects. It applies the current RPC hardening without rerunning historical migrations: `pgcrypto` invite-code generation, no create-rate limiter on `api_list_rooms`, legacy owner repair for join approval, task membership helper reuse, and explicit `grant`/`revoke` hygiene for `SECURITY DEFINER` functions. Run this after the existing migration sequence when production needs the hardening changes as a single copy/paste script.
+- `admin_security.sql` — admin/security schema and monitoring layer (admins, blocks, audit/security events, request telemetry, overview views, helper functions/grants).
+- `admin_users_seed_owner.sql` — idempotent seed for first admin (`owner`) record in `admin_users`.
 
 ## Current Behavior Summary
 
 - **Production:** open only from Telegram Mini App (menu / `web_app` button). Server requires valid `initData` + `TELEGRAM_BOT_TOKEN`.
+- **Admin panel:** separate web surface under `/admin` with its own session auth (`ADMIN_SESSION_SECRET`, `ADMIN_PANEL_PASSWORD`) and `admin_users` allowlist/role checks.
 - **Local browser debug:** `npm run dev` + `DEV_BROWSER_MODE=true` + `DEV_TELEGRAM_ID` + `SUPABASE_SERVICE_ROLE_KEY` (not available on deployed Vercel preview/prod by design).
 - All data access: `POST /api/secure`, `POST /api/rooms/upload`, `POST /api/rooms/analyze`, `POST /api/plants/upload`, `POST /api/plants/analyze`; RLS + RPC enforce household scope (active household from `profiles.active_household_id` when migration applied).
 - **Households:** members can **rename** (`api_rename_household`) a home they belong to; owner can **delete** (`api_delete_household`) it, while non-owner can only **leave** (`leaveHousehold` secure action). Delete removes shared data for everyone; leave removes only current member access. Empty membership after delete/leave is healed by **`bootstrapUser`** inside `loadHouseholds` (default home again).
