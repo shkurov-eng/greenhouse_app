@@ -1958,6 +1958,7 @@ export default function Home() {
                 const isPendingWatering = pendingWateringMarkerIds.includes(marker.id);
                 const isJustWatered = justWateredMarkerId === marker.id;
                 const secondsLeft = getPendingWateringSecondsLeft(marker.id);
+                const isCartoonMode = roomVisualMode === "cartoon";
                 const status = wateringDerivedStatus(
                   markerPlant?.last_watered_at ?? null,
                   markerPlant?.thirsty_after_hours ?? DEFAULT_THIRSTY_AFTER_HOURS,
@@ -1979,9 +1980,21 @@ export default function Home() {
                   >
                     <button
                       type="button"
-                      className={`group relative flex h-20 w-20 items-center justify-center rounded-full border backdrop-blur-[1px] transition-all active:scale-95 ${
-                        isJustWatered ? "scale-110 ring-4 ring-[#10b981]/40" : ""
-                      } ${colors.glow}`}
+                      className={
+                        isCartoonMode
+                          ? `group relative flex h-20 w-20 items-center justify-center rounded-full border backdrop-blur-[1px] transition-all active:scale-95 ${
+                              isJustWatered ? "scale-110 ring-4 ring-[#10b981]/40" : ""
+                            } ${colors.glow}`
+                          : `relative h-6 w-6 rounded-full border-2 border-white shadow-md transition-all ${
+                              isJustWatered ? "scale-125 ring-4 ring-[#10b981]/35" : ""
+                            } ${
+                              status === "healthy"
+                                ? "bg-[#10b981]"
+                                : status === "thirsty"
+                                  ? "bg-[#e29100]"
+                                  : "bg-[#ba1a1a]"
+                            }`
+                      }
                       onPointerDown={(event) => {
                         event.stopPropagation();
                         startMarkerLongPress(marker.id, markerPlant);
@@ -2010,20 +2023,38 @@ export default function Home() {
                       title={markerPlant?.name ?? "Plant marker"}
                       aria-label={markerPlant?.name ?? "Plant marker"}
                     >
-                      <span
-                        className={`pointer-events-none absolute inset-2 rounded-full blur-md transition ${
-                          isPendingWatering ? "animate-pulse opacity-95" : "opacity-80 group-hover:opacity-100"
-                        } ${colors.pulse}`}
-                      />
-                      <span className="pointer-events-none absolute inset-0 rounded-full bg-white/0 ring-1 ring-white/35" />
-                      <span
-                        className={`pointer-events-none absolute -bottom-1 left-1/2 max-w-24 -translate-x-1/2 truncate rounded-full px-2 py-0.5 text-[9px] font-bold shadow-sm ${colors.label}`}
-                      >
-                        {markerPlant?.name ?? "Plant"}
-                      </span>
+                      {isCartoonMode ? (
+                        <>
+                          <span
+                            className={`pointer-events-none absolute inset-2 rounded-full blur-md transition ${
+                              isPendingWatering ? "animate-pulse opacity-95" : "opacity-80 group-hover:opacity-100"
+                            } ${colors.pulse}`}
+                          />
+                          <span className="pointer-events-none absolute inset-0 rounded-full bg-white/0 ring-1 ring-white/35" />
+                          <span
+                            className={`pointer-events-none absolute -bottom-1 left-1/2 max-w-24 -translate-x-1/2 truncate rounded-full px-2 py-0.5 text-[9px] font-bold shadow-sm ${colors.label}`}
+                          >
+                            {markerPlant?.name ?? "Plant"}
+                          </span>
+                        </>
+                      ) : (
+                        <span
+                          className={`absolute inset-0 animate-ping rounded-full ${
+                            status === "healthy"
+                              ? "bg-[#10b981]/40"
+                              : status === "thirsty"
+                                ? "bg-[#e29100]/40"
+                                : "bg-[#ba1a1a]/40"
+                          }`}
+                        />
+                      )}
                     </button>
                     {isPendingWatering ? (
-                      <div className="absolute bottom-20 left-1/2 -translate-x-1/2 rounded-lg bg-white px-2 py-1 text-[10px] font-semibold text-[#3c4a42] shadow-md">
+                      <div
+                        className={`absolute left-1/2 -translate-x-1/2 rounded-lg bg-white px-2 py-1 text-[10px] font-semibold text-[#3c4a42] shadow-md ${
+                          isCartoonMode ? "bottom-20" : "bottom-8"
+                        }`}
+                      >
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[9px] text-[#6c7a71]">Watering in {secondsLeft}s</span>
                           <button
