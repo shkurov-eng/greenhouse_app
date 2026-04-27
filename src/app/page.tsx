@@ -295,6 +295,7 @@ export default function Home() {
   const cameraPreviewVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraCaptureCounterRef = useRef(0);
+  const roomsFetchRequestIdRef = useRef(0);
   const markerPlacementFeedbackTimerRef = useRef<number | null>(null);
   const markerHighlightTimerRef = useRef<number | null>(null);
   const roomOpenAnimationTimerRef = useRef<number | null>(null);
@@ -444,6 +445,16 @@ export default function Home() {
     setSelectedRoomDetectionIndexes([]);
     setFullscreenPlantPhotoUrl(null);
     setHighlightedMarkerPlantId(null);
+  }
+
+  function beginHouseholdTransition(nextHousehold?: Household | null) {
+    // Invalidate in-flight room list requests from the previous household.
+    roomsFetchRequestIdRef.current += 1;
+    setHouseholdId(nextHousehold?.id ?? null);
+    setCurrentHousehold(nextHousehold ?? null);
+    setRooms([]);
+    setSelectedRoom(null);
+    clearRoomDetailState();
   }
 
   function focusPlantOnRoomPhoto(plantId: string, closeEditModal = false) {
@@ -912,7 +923,12 @@ export default function Home() {
   }, []);
 
   async function fetchRoomsForHousehold() {
+    const requestId = roomsFetchRequestIdRef.current + 1;
+    roomsFetchRequestIdRef.current = requestId;
     const nextRooms = await listRooms(getCurrentInitData());
+    if (roomsFetchRequestIdRef.current !== requestId) {
+      return;
+    }
     let shouldClearSelectionState = false;
     setRooms(nextRooms);
     setSelectedRoom((prev) => {
@@ -1075,8 +1091,11 @@ export default function Home() {
       return;
     }
 
-    setSelectedRoom(null);
-    clearRoomDetailState();
+    beginHouseholdTransition({
+      id: targetHome.household_id,
+      name: targetHome.household_name,
+      invite_code: targetHome.invite_code,
+    });
     setIsJoinHomeOpen(false);
     setJoinCode("");
     await loadHouseholds();
@@ -1085,9 +1104,17 @@ export default function Home() {
   }
 
   async function handleSwitchHousehold(targetId: string) {
+    const nextHome = householdSummaries.find((home) => home.household_id === targetId) ?? null;
+    beginHouseholdTransition(
+      nextHome
+        ? {
+        id: nextHome.household_id,
+        name: nextHome.household_name,
+        invite_code: nextHome.invite_code,
+          }
+        : null,
+    );
     await setActiveHousehold(getCurrentInitData(), targetId);
-    setSelectedRoom(null);
-    clearRoomDetailState();
     await loadHouseholds();
     await fetchRoomsForHousehold();
     setMessage("Home switched");
@@ -1095,11 +1122,14 @@ export default function Home() {
 
   async function handleCreateHome() {
     const label = newHomeName.trim();
-    await createHousehold(getCurrentInitData(), label.length > 0 ? label : null);
+    const createdHome = await createHousehold(getCurrentInitData(), label.length > 0 ? label : null);
     setNewHomeName("");
     setIsCreateHomeOpen(false);
-    setSelectedRoom(null);
-    clearRoomDetailState();
+    beginHouseholdTransition({
+      id: createdHome.household_id,
+      name: createdHome.household_name,
+      invite_code: createdHome.invite_code,
+    });
     await loadHouseholds();
     await fetchRoomsForHousehold();
     setMessage("New home created");
@@ -1117,10 +1147,7 @@ export default function Home() {
 
   async function handleDeleteHousehold(targetHouseholdId: string) {
     await deleteHousehold(getCurrentInitData(), targetHouseholdId);
-    if (householdId === targetHouseholdId) {
-      setSelectedRoom(null);
-      clearRoomDetailState();
-    }
+    beginHouseholdTransition(null);
     await loadHouseholds();
     try {
       await fetchRoomsForHousehold();
