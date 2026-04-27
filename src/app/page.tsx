@@ -259,6 +259,8 @@ export default function Home() {
   const [isConfirmDeletePending, setIsConfirmDeletePending] = useState(false);
   const [fullscreenPlantPhotoUrl, setFullscreenPlantPhotoUrl] = useState<string | null>(null);
   const [highlightedMarkerPlantId, setHighlightedMarkerPlantId] = useState<string | null>(null);
+  const [isRoomOpeningAnimationActive, setIsRoomOpeningAnimationActive] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   /** Bumps on an interval so marker colors refresh from `last_watered_at` without refetch. */
   const [, setWateringUiTick] = useState(0);
   const [, setPendingWateringTick] = useState(0);
@@ -292,6 +294,7 @@ export default function Home() {
   const cameraCaptureCounterRef = useRef(0);
   const markerPlacementFeedbackTimerRef = useRef<number | null>(null);
   const markerHighlightTimerRef = useRef<number | null>(null);
+  const roomOpenAnimationTimerRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     // After SSR/hydration, apply the user's last Photo/Cartoon choice from localStorage.
@@ -1914,6 +1917,40 @@ export default function Home() {
     : null;
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const applyPreference = () => setPrefersReducedMotion(mediaQuery.matches);
+    applyPreference();
+    mediaQuery.addEventListener("change", applyPreference);
+    return () => {
+      mediaQuery.removeEventListener("change", applyPreference);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedRoom || prefersReducedMotion) {
+      setIsRoomOpeningAnimationActive(false);
+      return;
+    }
+    setIsRoomOpeningAnimationActive(true);
+    if (roomOpenAnimationTimerRef.current !== null) {
+      window.clearTimeout(roomOpenAnimationTimerRef.current);
+    }
+    roomOpenAnimationTimerRef.current = window.setTimeout(() => {
+      setIsRoomOpeningAnimationActive(false);
+      roomOpenAnimationTimerRef.current = null;
+    }, 520);
+    return () => {
+      if (roomOpenAnimationTimerRef.current !== null) {
+        window.clearTimeout(roomOpenAnimationTimerRef.current);
+        roomOpenAnimationTimerRef.current = null;
+      }
+    };
+  }, [selectedRoom?.id, prefersReducedMotion]);
+
+  useEffect(() => {
     return () => {
       clearMarkerLongPressTimer();
       if (markerPlacementFeedbackTimerRef.current !== null) {
@@ -1921,6 +1958,9 @@ export default function Home() {
       }
       if (markerHighlightTimerRef.current !== null) {
         window.clearTimeout(markerHighlightTimerRef.current);
+      }
+      if (roomOpenAnimationTimerRef.current !== null) {
+        window.clearTimeout(roomOpenAnimationTimerRef.current);
       }
       const timers = Object.values(pendingWateringTimersRef.current);
       for (const timerId of timers) {
@@ -2127,7 +2167,11 @@ export default function Home() {
                 <img
                   src={getRoomImageUrl(selectedRoom) ?? undefined}
                   alt={selectedRoom.name}
-                  className="h-[72vh] w-full object-contain"
+                  className={`h-[72vh] w-full object-contain transition-all duration-500 ${
+                    isRoomOpeningAnimationActive
+                      ? "translate-y-1 scale-[0.985] opacity-0"
+                      : "translate-y-0 scale-100 opacity-100"
+                  }`}
                   ref={roomImageRef}
                   onLoad={() => {
                     measureRoomImageContentBox();
@@ -2138,7 +2182,7 @@ export default function Home() {
                   No image yet
                 </div>
               )}
-              {markers.map((marker) => {
+              {markers.map((marker, markerIndex) => {
                 const markerPlant = plants.find((plant) => plant.id === marker.plant_id);
                 const isPendingWatering = pendingWateringMarkerIds.includes(marker.id);
                 const isJustWatered = justWateredMarkerId === marker.id;
@@ -2165,8 +2209,16 @@ export default function Home() {
                       top: roomImageContentBox
                         ? `${roomImageContentBox.top + marker.y * roomImageContentBox.height}px`
                         : `${marker.y * 100}%`,
+                      transitionDelay:
+                        isRoomOpeningAnimationActive && !prefersReducedMotion
+                          ? `${Math.min(markerIndex * 55, 420)}ms`
+                          : "0ms",
                     }}
-                    className={`absolute -translate-x-1/2 -translate-y-1/2 ${isHighlightedOnRoom ? "z-30" : ""}`}
+                    className={`absolute -translate-x-1/2 -translate-y-1/2 transition-all duration-300 ${
+                      isRoomOpeningAnimationActive && !prefersReducedMotion
+                        ? "scale-75 opacity-0"
+                        : "scale-100 opacity-100"
+                    } ${isHighlightedOnRoom ? "z-30" : ""}`}
                   >
                     <button
                       type="button"
