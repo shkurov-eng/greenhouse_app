@@ -158,6 +158,25 @@ function asOptionalString(value: unknown) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function asBooleanLike(value: unknown, fallback = false) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "t" || normalized === "1" || normalized === "yes") {
+      return true;
+    }
+    if (normalized === "false" || normalized === "f" || normalized === "0" || normalized === "no") {
+      return false;
+    }
+  }
+  return fallback;
+}
+
 function asPlantStatus(value: unknown) {
   if (value === "healthy" || value === "thirsty" || value === "overdue") {
     return value;
@@ -582,15 +601,15 @@ export async function POST(request: NextRequest) {
         const data = rows.map((row) => ({
           household_id: String(row.household_id),
           household_name: String(row.household_name ?? ""),
-          require_join_approval: Boolean(row.require_join_approval),
-          is_owner: Boolean(row.is_owner),
+          require_join_approval: asBooleanLike(row.require_join_approval),
+          is_owner: asBooleanLike(row.is_owner),
         }));
         return NextResponse.json({ data });
       }
 
       case "setHouseholdJoinSetting": {
         const householdId = asUuid(payload.householdId, "householdId");
-        const requireJoinApproval = Boolean(payload.requireJoinApproval);
+        const requireJoinApproval = asBooleanLike(payload.requireJoinApproval);
         const result = await rpc("api_set_household_join_setting", {
           p_telegram_id: telegramId,
           p_household_id: householdId,
@@ -600,8 +619,8 @@ export async function POST(request: NextRequest) {
         const data = {
           household_id: String(row.household_id),
           household_name: String(row.household_name ?? ""),
-          require_join_approval: Boolean(row.require_join_approval),
-          is_owner: Boolean(row.is_owner),
+          require_join_approval: asBooleanLike(row.require_join_approval),
+          is_owner: asBooleanLike(row.is_owner),
         };
         return NextResponse.json({ data });
       }
@@ -668,7 +687,7 @@ export async function POST(request: NextRequest) {
           profile_id: String(row.profile_id ?? ""),
           telegram_id: Number(row.telegram_id),
           username: row.username == null || row.username === "" ? null : String(row.username),
-          is_owner: Boolean(row.is_owner),
+          is_owner: asBooleanLike(row.is_owner),
         }));
         return NextResponse.json({ data });
       }
@@ -702,7 +721,7 @@ export async function POST(request: NextRequest) {
             row.invite_code == null || row.invite_code === ""
               ? null
               : String(row.invite_code),
-          is_active: Boolean(row.is_active),
+          is_active: asBooleanLike(row.is_active),
         }));
         return NextResponse.json({ data });
       }

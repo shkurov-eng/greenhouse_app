@@ -129,6 +129,11 @@ Maintenance guidelines:
 - **Edit Plant photo actions:** in `Edit Plant`, user can also **take a new photo** directly (camera capture) in addition to gallery replacement.
 - **Edit Plant camera parity:** `Take photo` in `Edit Plant` now uses the same in-app camera modal flow (`getUserMedia` preview + `Capture`) as `Add Plant`, instead of opening the system file picker.
 - **Edit Plant AI analyze action:** in `Edit Plant`, user can run **Analyze with AI** on the current plant photo to refresh editable fields (name + watering thresholds) even if the plant was initially filled manually.
+- **Edit Plant mobile UX refresh:** edit modal is compacted for phones (scrollable container, compact controls, collapsible advanced section), with a pinned action row (`Cancel`/`Save`) and better keyboard-safe behavior.
+- **Edit Plant recommendation visibility:** watering recommendations are promoted into a dedicated `Watering recommendations` block and no longer depend on photo visibility.
+- **Edit Plant name edit-on-demand:** plant name input is hidden by default and opens only via pencil icon in the header block.
+- **Fullscreen plant photo preview:** tapping a plant photo (list or edit modal) opens it fullscreen; tap anywhere closes.
+- **Show-on-room-photo action:** list and edit modal include a search icon action that scrolls to room photo and accent-highlights that plant's marker for a short interval.
 - **Android camera fallback:** `Add Plant` includes in-app camera capture via `getUserMedia` + frame capture, so Telegram Android/WebView `file input` quirks no longer block taking photos.
 - **Photo compression before AI/upload:** client compresses selected/captured images (downscale + JPEG quality) before sending to AI Studio and storage upload; UI shows compression result (`Compressed: X -> Y` or `No compression gain`).
 - **Unified upload-size guardrails:** shared client helper now handles compression + max-size validation for room and plant photo upload flows (including Add Plant, Replace Plant Photo, and pre-save AI analyze). Limit target is `~4 MB` after compression.
@@ -137,6 +142,10 @@ Maintenance guidelines:
 - **Add Plant partial-success behavior:** if plant row is created but photo upload fails, plant creation is kept (no full rollback), and user gets explicit status that plant was added without photo.
 - **AI auto-detection on plant photo upload:** when `GEMINI_API_KEY` is configured, `POST /api/plants/upload` sends the photo to Google AI Studio (Gemini) and auto-updates plant name + per-plant watering thresholds from model output.
 - **Dedicated AI analyze endpoint:** `POST /api/plants/analyze` analyzes the photo before save and returns `ai_status`, `ai_error`, and optional `ai_profile` for controlled autofill UX.
+- **Dedicated reanalyze-by-plant endpoint:** `POST /api/plants/reanalyze` reruns AI analysis from the existing stored plant photo (`photo_path`) without client reupload and persists AI fields (`watering_summary`, `watering_amount_recommendation`, thresholds, inferred timestamp) when profile is returned.
+- **Low-confidence apply behavior:** reanalyze returns and applies profile values even for `low_confidence` status (with warning), instead of dropping updates.
+- **Manual save preserves AI recommendations:** `updatePlant` payload/secure action now supports persisting `watering_summary` + `watering_amount_recommendation` during save, avoiding recommendation loss after AI refresh.
+- **Room-details AI field consistency:** `listRoomDetails` response is normalized server-side to include `watering_summary`, `watering_amount_recommendation`, and `ai_inferred_at` from `plants` even when RPC payload omits them.
 - **Room-level AI plant detection:** room header includes `AI Detect Plants` (next to `Add Plant`) that calls `POST /api/rooms/analyze`, shows a preview list of detected plants (with per-item selection), then creates selected plant rows and auto-places markers.
 - **AI model updated:** moved from `gemini-2.0-flash` to `gemini-2.5-flash` for new-key compatibility.
 - AI watering amount recommendation: photo analysis stores suggested watering amount (`light` / `moderate` / `abundant`) and shows it in plant info; legacy values are mapped (`little`→`light`, `a_lot`→`abundant`).
@@ -154,7 +163,13 @@ Maintenance guidelines:
 - Plant deletion is available from **Edit Plant** with a warning modal (**Continue/Cancel**); room markers are removed together with the plant.
 - In **Plants in this room**, plants without a marker display a `no marker` badge next to the plant name.
 - **Marker pin color and active-marker status chip** (in `src/app/page.tsx`) use **watering urgency derived from `last_watered_at`**, not the stored `plants.status` field, so colors track time since last water without waiting for server-side status flips.
-- Room plant interactions now render as larger glow hotspots instead of small pin dots; glow color follows watering urgency while clicks still use the existing delayed watering flow.
+- Room plant markers now use a unified glow-ring style in both **Photo** and **Cartoon** modes (same footprint and status colors), with a transparent center so plants remain visible.
+- Marker glow includes status-weighted shimmer intensity:
+  - healthy: subtle/slow
+  - thirsty: medium
+  - overdue: strongest/fastest
+- Marker quick menu is opened by **long-press only** (not by regular tap) and shows compact plant info + edit pencil action.
+- Marker quick menu positioning is edge-aware (left/center/right alignment by marker `x`), so popover content stays within room-image bounds near screen edges.
 
 ## Stage 5 - Watering
 
@@ -165,7 +180,7 @@ Maintenance guidelines:
 - Multiple marker popups can be visible at the same time while their independent countdowns are running.
 - Closing a room does **not** cancel already scheduled marker waterings; they continue server-side and appear on next room open.
 - Re-watering is allowed: tapping an already watered marker updates `last_watered_at` to the current time again (timer reset/restart).
-- **Marker long-press opens `Edit Plant`** for that exact marker's plant (tap behavior still waters as before).
+- **Marker long-press opens a compact quick menu** for that marker's plant; edit form is opened explicitly via the pencil in that menu (tap behavior still waters as before).
 - **Edit Plant** includes **Undo last watering** with persistent DB history: restores `last_watered_at` to the value captured before the latest watering action, including after app reloads, and closes the edit modal right after undo.
 - **Client-side urgency** (`wateringDerivedStatus` in `page.tsx`), aligned with marker colors and calculated **per plant** from its own thresholds:
   - **Green (`healthy`):** last watered less than `thirsty_after_hours`.
@@ -441,5 +456,8 @@ Scope and plan:
 - **Room cartoon generation quota:** default `3` generations per user; admin can disable the limit or set limit/usage manually per profile in admin user card.
 - Room thumbnails and detail images use **signed URLs**; legacy public URLs are supported via path extraction when needed.
 - Upload API error mapping now converts HTTP `413` responses to a clear message (`Uploaded file is too large. Please choose a smaller photo.`) instead of exposing raw non-JSON payload text.
-- **Opening a room** scrolls the page to the **top** before paint (`useLayoutEffect` in `src/app/page.tsx`) so watering markers on the image are usable without scrolling up from the list position.
+- **Opening a room** now scrolls directly to the room photo anchor (with `scroll-margin` compensation for sticky header), so the photo/markers are immediately visible.
 - Deletions (home, room, plant) use an in-app warning modal with explicit **Continue** / **Cancel** actions instead of browser `confirm()`.
+- Main rooms overview includes a **Photo / Cartoon** preference toggle for room-card previews; in Cartoon preference, cards use stylized room image when available and fall back to photo otherwise.
+- Room cards on home page now use richer visual treatment: lightweight parallax/tap feedback, status aura ring (`vivid`/`ready`/`needs photo`), and branded skeleton placeholder when photo is absent.
+- Room opening animation: room photo reveal uses smooth fade+scale, and marker appearance uses coordinated reveal animation (no abrupt marker pop-in).
