@@ -344,6 +344,8 @@ export default function Home() {
         glow: "border-[#10b981]/75 bg-white/10 shadow-[0_0_12px_rgba(16,185,129,0.28)]",
         pulse: "border-[#10b981]/45 shadow-[0_0_10px_rgba(16,185,129,0.24)]",
         dot: "bg-[#10b981] text-white",
+        shimmer: "[animation:pulse_4.2s_ease-in-out_infinite]",
+        shimmerOpacity: "opacity-35 group-hover:opacity-55",
       };
     }
     if (status === "thirsty") {
@@ -351,12 +353,16 @@ export default function Home() {
         glow: "border-[#f59e0b]/80 bg-white/10 shadow-[0_0_16px_rgba(245,158,11,0.40)]",
         pulse: "border-[#f59e0b]/60 shadow-[0_0_14px_rgba(245,158,11,0.34)]",
         dot: "bg-[#f59e0b] text-white",
+        shimmer: "[animation:pulse_2.8s_ease-in-out_infinite]",
+        shimmerOpacity: "opacity-70 group-hover:opacity-95",
       };
     }
     return {
       glow: "border-[#ef4444]/80 bg-white/10 shadow-[0_0_18px_rgba(239,68,68,0.42)]",
       pulse: "border-[#ef4444]/60 shadow-[0_0_16px_rgba(239,68,68,0.36)]",
       dot: "bg-[#ef4444] text-white",
+      shimmer: "[animation:pulse_1.9s_ease-in-out_infinite]",
+      shimmerOpacity: "opacity-90 group-hover:opacity-100",
     };
   }
 
@@ -2098,7 +2104,9 @@ export default function Home() {
                   markerPlant?.overdue_after_hours ?? DEFAULT_OVERDUE_AFTER_HOURS,
                 );
                 const colors = getPlantGlowClasses(status);
-                const shouldPulseMarker = isPendingWatering || status !== "healthy";
+                const shimmerIntensity = isPendingWatering
+                  ? "animate-pulse opacity-100"
+                  : `${colors.shimmer} ${colors.shimmerOpacity}`;
                 const popoverAlign =
                   marker.x >= 0.67 ? "right" : marker.x <= 0.33 ? "left" : "center";
                 return (
@@ -2149,11 +2157,7 @@ export default function Home() {
                       aria-label={markerPlant?.name ?? "Plant marker"}
                     >
                       <span
-                        className={`pointer-events-none absolute -inset-1 rounded-full border-2 bg-transparent transition ${
-                          shouldPulseMarker
-                            ? "animate-pulse opacity-90"
-                            : "opacity-45 group-hover:opacity-90"
-                        } ${colors.pulse}`}
+                        className={`pointer-events-none absolute -inset-1 rounded-full border-2 bg-transparent transition ${shimmerIntensity} ${colors.pulse}`}
                       />
                       <span
                         className={`pointer-events-none relative h-2.5 w-2.5 rounded-full border border-white/90 shadow-sm ${colors.dot}`}
