@@ -260,6 +260,7 @@ export default function Home() {
   const [fullscreenPlantPhotoUrl, setFullscreenPlantPhotoUrl] = useState<string | null>(null);
   const [highlightedMarkerPlantId, setHighlightedMarkerPlantId] = useState<string | null>(null);
   const [isRoomOpeningAnimationActive, setIsRoomOpeningAnimationActive] = useState(false);
+  const [isMarkerRevealAnimationActive, setIsMarkerRevealAnimationActive] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [pressedRoomCardId, setPressedRoomCardId] = useState<string | null>(null);
   const [roomCardParallaxTick, setRoomCardParallaxTick] = useState(0);
@@ -1978,6 +1979,22 @@ export default function Home() {
   }, [selectedRoom?.id, prefersReducedMotion]);
 
   useEffect(() => {
+    if (!selectedRoom || prefersReducedMotion || markers.length === 0) {
+      setIsMarkerRevealAnimationActive(false);
+      return;
+    }
+    setIsMarkerRevealAnimationActive(true);
+    const firstRaf = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        setIsMarkerRevealAnimationActive(false);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstRaf);
+    };
+  }, [selectedRoom?.id, markers.length, prefersReducedMotion]);
+
+  useEffect(() => {
     return () => {
       clearMarkerLongPressTimer();
       if (markerPlacementFeedbackTimerRef.current !== null) {
@@ -2212,7 +2229,7 @@ export default function Home() {
                   No image yet
                 </div>
               )}
-              {markers.map((marker, markerIndex) => {
+              {markers.map((marker) => {
                 const markerPlant = plants.find((plant) => plant.id === marker.plant_id);
                 const isPendingWatering = pendingWateringMarkerIds.includes(marker.id);
                 const isJustWatered = justWateredMarkerId === marker.id;
@@ -2239,14 +2256,10 @@ export default function Home() {
                       top: roomImageContentBox
                         ? `${roomImageContentBox.top + marker.y * roomImageContentBox.height}px`
                         : `${marker.y * 100}%`,
-                      transitionDelay:
-                        isRoomOpeningAnimationActive && !prefersReducedMotion
-                          ? `${Math.min(markerIndex * 120, 980)}ms`
-                          : "0ms",
                     }}
-                    className={`absolute -translate-x-1/2 -translate-y-1/2 transition-all duration-[1150ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                      isRoomOpeningAnimationActive && !prefersReducedMotion
-                        ? "translate-y-4 scale-65 opacity-0"
+                    className={`absolute -translate-x-1/2 -translate-y-1/2 transition-all duration-500 ${
+                      isMarkerRevealAnimationActive && !prefersReducedMotion
+                        ? "translate-y-1 scale-[0.985] opacity-0"
                         : "translate-y-0 scale-100 opacity-100"
                     } ${isHighlightedOnRoom ? "z-30" : ""}`}
                   >
