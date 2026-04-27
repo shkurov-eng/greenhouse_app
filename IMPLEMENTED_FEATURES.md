@@ -115,6 +115,12 @@ Maintenance guidelines:
   - **Cartoon room mode:** `POST /api/rooms/stylize` generates a separate AI cartoon background from the original room photo, stores it as `rooms.stylized_background_path`, and returns `signed_stylized_background_url`.
   - The cartoon generation prompt lives in `src/lib/server/roomStylizationPrompt.ts` so style instructions can be edited without touching endpoint logic.
   - Room detail UI includes a **Photo / Cartoon** switch. If no cartoon image exists yet, choosing Cartoon starts AI generation; original room photo remains available.
+  - Cartoon generation has a **per-user quota** via `api_register_room_cartoon_generation` and profile fields:
+    - default: `3` generations per user (`profiles.cartoon_room_limit_count = 3`)
+    - toggle: limit can be disabled per user (`profiles.cartoon_room_limit_enabled = false`)
+    - usage counter: `profiles.cartoon_room_generated_count`
+  - The quota is consumed only when a **new generation is actually started** (not when returning an already existing stylized image).
+  - On limit exceed, `POST /api/rooms/stylize` returns HTTP `429` and emits a structured security rate-limit event (`limit_name = api_register_room_cartoon_generation`).
 
 ## Stage 4 - Plants and Markers
 
@@ -245,9 +251,14 @@ Maintenance guidelines:
 - Added admin API endpoints:
   - auth/session: `POST /api/admin/login`, `POST /api/admin/logout`, `GET /api/admin/me`
   - data/actions: `GET /api/admin/overview`, `GET /api/admin/users`, `GET /api/admin/users/[profileId]`,
+    `PATCH /api/admin/users/[profileId]` (cartoon limit settings),
     `POST|DELETE /api/admin/users/[profileId]/block`, `GET /api/admin/security-events`
 - Added admin UI routes:
   - `/admin`, `/admin/login`, `/admin/users`, `/admin/users/[profileId]`, `/admin/security-events`
+- Admin user card (`/admin/users/[profileId]`) includes manual controls for cartoon generation quota:
+  - enable/disable limit per user
+  - set numeric limit manually
+  - set used counter manually (support/admin recovery scenarios)
 - Added role checks (`owner`, `security`, `support`, `readonly`) and admin audit writes in `src/lib/server/adminAuth.ts`.
 - Added request telemetry/security helper module `src/lib/server/adminSecurity.ts`.
 - Added block-gate checks for regular user flows in:
@@ -418,6 +429,7 @@ Scope and plan:
 - `supabase_sql_hardening_patch.sql` — consolidated SQL Editor patch for already-migrated Supabase projects. It applies the current RPC hardening without rerunning historical migrations: `pgcrypto` invite-code generation, no create-rate limiter on `api_list_rooms`, legacy owner repair for join approval, task membership helper reuse, and explicit `grant`/`revoke` hygiene for `SECURITY DEFINER` functions. Run this after the existing migration sequence when production needs the hardening changes as a single copy/paste script.
 - `admin_security.sql` — admin/security schema and monitoring layer (admins, blocks, audit/security events, request telemetry, overview views, helper functions/grants).
 - `admin_users_seed_owner.sql` — idempotent seed for first admin (`owner`) record in `admin_users`.
+- `room_cartoon_generation_limits.sql` — adds per-user cartoon generation quota fields to `profiles` and RPC `api_register_room_cartoon_generation(text)` with default limit `3`.
 
 ## Current Behavior Summary
 
@@ -426,6 +438,7 @@ Scope and plan:
 - **Local browser debug:** `npm run dev` + `DEV_BROWSER_MODE=true` + `DEV_TELEGRAM_ID` + `SUPABASE_SERVICE_ROLE_KEY` (not available on deployed Vercel preview/prod by design).
 - All data access: `POST /api/secure`, `POST /api/rooms/upload`, `POST /api/rooms/analyze`, `POST /api/plants/upload`, `POST /api/plants/analyze`; RLS + RPC enforce household scope (active household from `profiles.active_household_id` when migration applied).
 - **Households:** members can **rename** (`api_rename_household`) a home they belong to; owner can **delete** (`api_delete_household`) it, while non-owner can only **leave** (`leaveHousehold` secure action). Delete removes shared data for everyone; leave removes only current member access. Empty membership after delete/leave is healed by **`bootstrapUser`** inside `loadHouseholds` (default home again).
+- **Room cartoon generation quota:** default `3` generations per user; admin can disable the limit or set limit/usage manually per profile in admin user card.
 - Room thumbnails and detail images use **signed URLs**; legacy public URLs are supported via path extraction when needed.
 - Upload API error mapping now converts HTTP `413` responses to a clear message (`Uploaded file is too large. Please choose a smaller photo.`) instead of exposing raw non-JSON payload text.
 - **Opening a room** scrolls the page to the **top** before paint (`useLayoutEffect` in `src/app/page.tsx`) so watering markers on the image are usable without scrolling up from the list position.

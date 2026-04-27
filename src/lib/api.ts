@@ -587,6 +587,36 @@ export async function analyzePlantImage(initData: string | null, payload: { file
   }>(response);
 }
 
+export async function reanalyzePlantPhoto(initData: string | null, payload: { plantId: string }) {
+  const response = await fetch("/api/plants/reanalyze", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(initData ? { "x-telegram-init-data": initData } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return readApiPayload<{
+    id: string;
+    ai_status:
+      | "ok"
+      | "not_plant"
+      | "low_confidence"
+      | "disabled_missing_api_key"
+      | "request_failed"
+      | "invalid_response";
+    ai_error: string | null;
+    ai_profile: {
+      plant_name: string;
+      thirsty_after_hours: number;
+      overdue_after_hours: number;
+      watering_amount_recommendation: "light" | "moderate" | "abundant";
+      watering_summary: string;
+    } | null;
+  }>(response);
+}
+
 export async function removePlantPhoto(initData: string | null, plantId: string) {
   return secureRequest<{ id: string; photo_path: null; signed_photo_url: null }>({
     action: "removePlantPhoto",

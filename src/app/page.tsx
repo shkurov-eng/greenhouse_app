@@ -39,6 +39,7 @@ import {
   updatePlant,
   analyzePlantImage,
   analyzeRoomPlantsPreview,
+  reanalyzePlantPhoto,
   uploadPlantImage,
   uploadRoomImage,
   upsertMarker,
@@ -1466,7 +1467,7 @@ export default function Home() {
   }
 
   async function handleAnalyzeEditPlantPhotoWithAi() {
-    if (!editingPlantId) {
+    if (!editingPlantId || !selectedRoom) {
       return;
     }
     const editingPlant = plants.find((plant) => plant.id === editingPlantId);
@@ -1476,25 +1477,15 @@ export default function Home() {
     }
     setIsAnalyzingEditPlantPhoto(true);
     try {
-      const response = await fetch(editingPlant.signed_photo_url, { cache: "no-store" });
-      if (!response.ok) {
-        setMessage("Could not load current plant photo for AI analysis.");
-        return;
-      }
-      const blob = await response.blob();
-      const sourceType = blob.type || "image/jpeg";
-      const sourceFile = new File([blob], `edit-plant-${editingPlantId}.jpg`, {
-        type: sourceType,
-      });
-      const compressedResult = await compressImageIfNeeded(sourceFile);
-      const result = await analyzePlantImage(getCurrentInitData(), { file: compressedResult.file });
+      const result = await reanalyzePlantPhoto(getCurrentInitData(), { plantId: editingPlantId });
       if (result.ai_status === "ok" && result.ai_profile) {
         setEditPlantName(result.ai_profile.plant_name);
         setEditPlantThirstyAfterHours(result.ai_profile.thirsty_after_hours);
         setEditPlantOverdueAfterHours(result.ai_profile.overdue_after_hours);
         setEditPlantAiSummary(result.ai_profile.watering_summary);
         setEditPlantAiWaterAmount(result.ai_profile.watering_amount_recommendation);
-        setMessage("AI analysis complete. Edit fields updated.");
+        await fetchRoomDetails(selectedRoom.id);
+        setMessage("AI analysis complete. Recommendations saved.");
         return;
       }
       if (result.ai_status === "disabled_missing_api_key") {
