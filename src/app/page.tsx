@@ -2785,7 +2785,7 @@ export default function Home() {
                         </div>
                       </div>
                     )}
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/40 to-transparent" />
+                    <div className="pointer-events-none absolute inset-0 bg-black/18" />
                     <button
                       type="button"
                       className="absolute left-3 top-3 rounded-full bg-white/95 p-2 text-[#006c49] shadow-md active:scale-95"
