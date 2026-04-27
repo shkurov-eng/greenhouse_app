@@ -2241,12 +2241,12 @@ export default function Home() {
                         : `${marker.y * 100}%`,
                       transitionDelay:
                         isRoomOpeningAnimationActive && !prefersReducedMotion
-                          ? `${Math.min(markerIndex * 95, 760)}ms`
+                          ? `${Math.min(markerIndex * 120, 980)}ms`
                           : "0ms",
                     }}
-                    className={`absolute -translate-x-1/2 -translate-y-1/2 transition-all duration-850 ease-out ${
+                    className={`absolute -translate-x-1/2 -translate-y-1/2 transition-all duration-[1150ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
                       isRoomOpeningAnimationActive && !prefersReducedMotion
-                        ? "translate-y-3 scale-70 opacity-0"
+                        ? "translate-y-4 scale-65 opacity-0"
                         : "translate-y-0 scale-100 opacity-100"
                     } ${isHighlightedOnRoom ? "z-30" : ""}`}
                   >
