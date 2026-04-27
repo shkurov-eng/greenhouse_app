@@ -1478,14 +1478,18 @@ export default function Home() {
     setIsAnalyzingEditPlantPhoto(true);
     try {
       const result = await reanalyzePlantPhoto(getCurrentInitData(), { plantId: editingPlantId });
-      if (result.ai_status === "ok" && result.ai_profile) {
+      if (result.ai_profile) {
         setEditPlantName(result.ai_profile.plant_name);
         setEditPlantThirstyAfterHours(result.ai_profile.thirsty_after_hours);
         setEditPlantOverdueAfterHours(result.ai_profile.overdue_after_hours);
         setEditPlantAiSummary(result.ai_profile.watering_summary);
         setEditPlantAiWaterAmount(result.ai_profile.watering_amount_recommendation);
         await fetchRoomDetails(selectedRoom.id);
-        setMessage("AI analysis complete. Recommendations saved.");
+        setMessage(
+          result.ai_status === "low_confidence"
+            ? "AI analysis applied with low confidence. Please review values."
+            : "AI analysis complete. Recommendations saved.",
+        );
         return;
       }
       if (result.ai_status === "disabled_missing_api_key") {

@@ -157,9 +157,6 @@ async function detectPlantProfileWithAiStudio(
   }
   const confidenceRaw = Number(row.confidence);
   const confidence = Number.isFinite(confidenceRaw) ? confidenceRaw : 0.8;
-  if (confidence < 0.55) {
-    return { profile: null, status: "low_confidence", errorMessage: `Low confidence (${confidence.toFixed(2)})` };
-  }
 
   const plantName = typeof row.plant_name === "string" ? row.plant_name.trim() : "";
   if (!plantName) {
@@ -186,15 +183,25 @@ async function detectPlantProfileWithAiStudio(
   const wateringSummaryRaw =
     typeof row.watering_summary === "string" ? row.watering_summary.trim() : "";
 
+  const profile = {
+    plantName,
+    thirstyAfterHours,
+    overdueAfterHours,
+    wateringAmountRecommendation,
+    wateringSummary:
+      wateringSummaryRaw ||
+      `Water when topsoil feels dry. Prefer ${wateringAmountRecommendation} watering and avoid stagnant water.`,
+  };
+  if (confidence < 0.55) {
+    return {
+      profile,
+      status: "low_confidence",
+      errorMessage: `Low confidence (${confidence.toFixed(2)}). Applied with caution.`,
+    };
+  }
   return {
     profile: {
-      plantName,
-      thirstyAfterHours,
-      overdueAfterHours,
-      wateringAmountRecommendation,
-      wateringSummary:
-        wateringSummaryRaw ||
-        `Water when topsoil feels dry. Prefer ${wateringAmountRecommendation} watering and avoid stagnant water.`,
+      ...profile,
     },
     status: "ok",
   };
@@ -225,7 +232,7 @@ export async function POST(request: NextRequest) {
 
     const { data: plantRow, error: plantError } = await supabaseAdmin
       .from("plants")
-      .select("id,room_id,household_id,photo_path")
+      .select("id,room_id,photo_path,rooms!inner(household_id)")
       .eq("id", plantId)
       .single();
     if (plantError) {
@@ -234,10 +241,11 @@ export async function POST(request: NextRequest) {
     const plant = plantRow as {
       id: string;
       room_id: string;
-      household_id: string;
       photo_path: string | null;
+      rooms?: { household_id?: string | null } | null;
     };
-    if (plant.household_id !== activeHouseholdId) {
+    const plantHouseholdId = plant.rooms?.household_id ?? null;
+    if (!plantHouseholdId || plantHouseholdId !== activeHouseholdId) {
       return NextResponse.json({ error: "Plant not found in active household" }, { status: 403 });
     }
     if (!plant.photo_path) {
@@ -258,7 +266,7 @@ export async function POST(request: NextRequest) {
       mimeType,
     );
 
-    if (aiStatus === "ok" && aiProfile) {
+    if (aiProfile) {
       const db = supabaseAdmin as unknown as LooseTableApi;
       const { error: updateError } = await db
         .from("plants")
