@@ -17,11 +17,9 @@ set search_path = public
 as $$
 declare
   v_profile_id uuid;
-  v_household_id uuid;
   v_room_household_id uuid;
 begin
   v_profile_id := public.api_profile_id_by_telegram(p_telegram_id);
-  v_household_id := public.api_household_id_by_profile(v_profile_id);
 
   select r.household_id into v_room_household_id
   from public.rooms r
@@ -30,7 +28,12 @@ begin
   if v_room_household_id is null then
     raise exception 'room not found';
   end if;
-  if v_room_household_id <> v_household_id then
+  if not exists (
+    select 1
+    from public.household_members hm
+    where hm.user_id = v_profile_id
+      and hm.household_id = v_room_household_id
+  ) then
     raise exception 'forbidden room access';
   end if;
 

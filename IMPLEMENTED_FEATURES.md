@@ -95,6 +95,7 @@ Maintenance guidelines:
   - Household switching UI now has explicit transition handling in `src/app/page.tsx`: in-flight room requests are invalidated, room state is cleared during transition, home picker is temporarily disabled, and a compact `Switching home...` spinner is shown.
   - `src/app/api/secure/route.ts` now parses DB boolean-like values with a strict helper (`asBooleanLike`) instead of raw `Boolean(...)` casting for household-related responses (`is_active`, `is_owner`, `require_join_approval`), preventing string values like `"false"` from being treated as truthy.
   - `listRooms` supports explicit household scoping (`payload.householdId`) end-to-end (`src/lib/api.ts` -> `/api/secure`): server verifies membership in that household and returns rooms filtered directly by `rooms.household_id`. This prevents cross-household room bleed even if active-home state in DB is temporarily inconsistent.
+  - `/api/secure` auto-bootstrap behavior: when a valid Telegram user has no `profiles` row yet, secure route now attempts `api_bootstrap_user` automatically before continuing action handling. This prevents first-contact `profile not found` failures for join/settings flows when bootstrap has not run yet.
 
 ## Stage 3 - Rooms
 
@@ -149,6 +150,11 @@ Maintenance guidelines:
 - **Low-confidence apply behavior:** reanalyze returns and applies profile values even for `low_confidence` status (with warning), instead of dropping updates.
 - **Manual save preserves AI recommendations:** `updatePlant` payload/secure action now supports persisting `watering_summary` + `watering_amount_recommendation` during save, avoiding recommendation loss after AI refresh.
 - **Room-details AI field consistency:** `listRoomDetails` response is normalized server-side to include `watering_summary`, `watering_amount_recommendation`, and `ai_inferred_at` from `plants` even when RPC payload omits them.
+- **Room-details plants consistency patch (targeted SQL):**
+  - Added `fix_room_details_plants_by_room.sql`: replaces `api_room_details` so plants are loaded by `room_id` after room-level ownership check, preventing empty plant lists when historical `plants.household_id` is inconsistent.
+  - Added `fix_plants_household_consistency.sql`: heals existing mismatches by aligning `plants.household_id` to `rooms.household_id`.
+  - Added `guard_plants_household_consistency.sql`: installs trigger `trg_plants_household_consistency` to enforce alignment on future writes.
+  - Added `fix_household_join_and_plants_consistency_all_in_one.sql`: one idempotent script that applies all three steps in production-safe order.
 - **Room-level AI plant detection:** room header includes `AI Detect Plants` (next to `Add Plant`) that calls `POST /api/rooms/analyze`, shows a preview list of detected plants (with per-item selection), then creates selected plant rows and auto-places markers.
 - **AI model updated:** moved from `gemini-2.0-flash` to `gemini-2.5-flash` for new-key compatibility.
 - AI watering amount recommendation: photo analysis stores suggested watering amount (`light` / `moderate` / `abundant`) and shows it in plant info; legacy values are mapped (`little`→`light`, `a_lot`→`abundant`).
