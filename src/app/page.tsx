@@ -261,6 +261,7 @@ export default function Home() {
   const [highlightedMarkerPlantId, setHighlightedMarkerPlantId] = useState<string | null>(null);
   const [isRoomOpeningAnimationActive, setIsRoomOpeningAnimationActive] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [pressedRoomCardId, setPressedRoomCardId] = useState<string | null>(null);
   /** Bumps on an interval so marker colors refresh from `last_watered_at` without refetch. */
   const [, setWateringUiTick] = useState(0);
   const [, setPendingWateringTick] = useState(0);
@@ -295,6 +296,7 @@ export default function Home() {
   const markerPlacementFeedbackTimerRef = useRef<number | null>(null);
   const markerHighlightTimerRef = useRef<number | null>(null);
   const roomOpenAnimationTimerRef = useRef<number | null>(null);
+  const roomCardOpenTimerRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     // After SSR/hydration, apply the user's last Photo/Cartoon choice from localStorage.
@@ -463,6 +465,18 @@ export default function Home() {
     window.requestAnimationFrame(() => {
       roomImageContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  }
+
+  function handleOpenRoomCard(room: Room) {
+    setPressedRoomCardId(room.id);
+    if (roomCardOpenTimerRef.current !== null) {
+      window.clearTimeout(roomCardOpenTimerRef.current);
+    }
+    roomCardOpenTimerRef.current = window.setTimeout(() => {
+      setPressedRoomCardId(null);
+      openRoom(room);
+      roomCardOpenTimerRef.current = null;
+    }, 120);
   }
 
   function clearNewPlantPhotoSelection() {
@@ -1962,6 +1976,9 @@ export default function Home() {
       if (roomOpenAnimationTimerRef.current !== null) {
         window.clearTimeout(roomOpenAnimationTimerRef.current);
       }
+      if (roomCardOpenTimerRef.current !== null) {
+        window.clearTimeout(roomCardOpenTimerRef.current);
+      }
       const timers = Object.values(pendingWateringTimersRef.current);
       for (const timerId of timers) {
         window.clearTimeout(timerId);
@@ -2674,12 +2691,40 @@ export default function Home() {
                 return (
                 <article
                   key={room.id}
-                  className={`group cursor-pointer overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-[0_10px_28px_rgba(81,55,37,0.07)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_36px_rgba(81,55,37,0.12)] active:scale-[0.99] active:shadow-[0_8px_20px_rgba(81,55,37,0.12)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#006c49]/35 focus-visible:ring-offset-2 ${roomAuraClasses}`}
-                  onClick={() => openRoom(room)}
+                  className={`group cursor-pointer overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-[0_10px_28px_rgba(81,55,37,0.07)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_36px_rgba(81,55,37,0.12)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#006c49]/35 focus-visible:ring-offset-2 ${
+                    pressedRoomCardId === room.id
+                      ? "scale-[0.985] shadow-[0_8px_20px_rgba(81,55,37,0.14)]"
+                      : ""
+                  } ${roomAuraClasses}`}
+                  onClick={() => handleOpenRoomCard(room)}
+                  onPointerDown={() => setPressedRoomCardId(room.id)}
+                  onPointerLeave={(event) => {
+                    event.currentTarget.style.setProperty("--parallax-x", "0");
+                    event.currentTarget.style.setProperty("--parallax-y", "0");
+                    if (pressedRoomCardId === room.id) {
+                      setPressedRoomCardId(null);
+                    }
+                  }}
+                  onPointerMove={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    if (!rect.width || !rect.height) {
+                      return;
+                    }
+                    const x = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
+                    const y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
+                    event.currentTarget.style.setProperty("--parallax-x", x.toFixed(3));
+                    event.currentTarget.style.setProperty("--parallax-y", y.toFixed(3));
+                  }}
                   onKeyDown={(event) => handleRoomCardKeyDown(event, room)}
                   role="button"
                   tabIndex={0}
                   aria-label={`Open ${room.name}`}
+                  style={
+                    {
+                      "--parallax-x": "0",
+                      "--parallax-y": "0",
+                    } as React.CSSProperties
+                  }
                 >
                   <div className="relative h-48 bg-[#f6ece6]">
                     {roomImageUrl ? (
@@ -2687,7 +2732,11 @@ export default function Home() {
                       <img
                         src={roomImageUrl ?? undefined}
                         alt={room.name}
-                        className="h-full w-full translate-y-1 object-cover transition duration-500 group-hover:-translate-y-1 group-hover:scale-[1.04]"
+                        className="h-full w-full object-cover transition duration-300"
+                        style={{
+                          transform:
+                            "translate3d(calc(var(--parallax-x) * 7px), calc(var(--parallax-y) * 5px), 0) scale(1.04)",
+                        }}
                       />
                     ) : (
                       <div className="relative h-full overflow-hidden bg-gradient-to-br from-[#f2efe9] via-[#efe5dc] to-[#e8ddd6]">
