@@ -2205,7 +2205,7 @@ export default function Home() {
                       aria-label={markerPlant?.name ?? "Plant marker"}
                     >
                       <span
-                        className={`pointer-events-none absolute -inset-1 rounded-full border-2 bg-transparent transition ${shimmerIntensity} ${colors.pulse}`}
+                        className={`pointer-events-none absolute -inset-1 animate-pulse rounded-full border-2 bg-transparent transition ${shimmerIntensity} ${colors.pulse}`}
                       />
                       <span
                         className={`pointer-events-none relative h-2.5 w-2.5 rounded-full border border-white/90 shadow-sm ${colors.dot}`}
