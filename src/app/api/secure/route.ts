@@ -306,24 +306,6 @@ async function rpc(fn: string, params: Record<string, unknown>): Promise<unknown
   return data as unknown;
 }
 
-async function ensureProfileExists(telegramId: string | number) {
-  const supabaseAdmin = getSupabaseAdmin();
-  const { error } = await supabaseAdmin
-    .from("profiles")
-    .upsert(
-      {
-        telegram_id: Number(telegramId),
-      },
-      {
-        onConflict: "telegram_id",
-        ignoreDuplicates: true,
-      },
-    );
-  if (error) {
-    throw new Error(error.message);
-  }
-}
-
 async function telegramApiCall(method: string, payload: Record<string, unknown>) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
   if (!botToken) {
@@ -498,22 +480,10 @@ export async function POST(request: NextRequest) {
         throw resolveError;
       }
       // Auto-bootstrap first-time users so invite join works without manual DB intervention.
-      try {
-        await rpc("api_bootstrap_user", {
-          p_telegram_id: telegramId,
-          p_username: null,
-        });
-      } catch (bootstrapError) {
-        const bootstrapMessage =
-          bootstrapError instanceof Error
-            ? bootstrapError.message.toLowerCase()
-            : String(bootstrapError).toLowerCase();
-        // If DB bootstrap fails (e.g. missing pgcrypto), fall back to profile-only creation.
-        if (!bootstrapMessage.includes("gen_random_bytes")) {
-          throw bootstrapError;
-        }
-        await ensureProfileExists(telegramId);
-      }
+      await rpc("api_bootstrap_user", {
+        p_telegram_id: telegramId,
+        p_username: null,
+      });
       profile = await resolveProfileByTelegramId(String(telegramId));
     }
     profileIdForLog = profile.profileId;
