@@ -7,6 +7,22 @@ type Context = {
   params: Promise<{ profileId: string }>;
 };
 
+type DbError = { message: string } | null;
+type DbSingleResult = Promise<{ data: unknown; error: DbError }>;
+
+/** Tables not in generated Database types: avoid `.update` inferred as `never`. */
+type ProfilesTableApi = {
+  from: (table: "profiles") => {
+    update: (values: Record<string, unknown>) => {
+      eq: (column: string, value: string) => {
+        select: (columns: string) => {
+          maybeSingle: () => DbSingleResult;
+        };
+      };
+    };
+  };
+};
+
 export async function GET(request: NextRequest, context: Context) {
   const auth = await requireAdminUser(request, "readonly");
   if (!auth.ok) {
@@ -114,9 +130,10 @@ export async function PATCH(request: NextRequest, context: Context) {
   }
 
   const supabaseAdmin = getSupabaseAdmin();
-  const { data, error } = await supabaseAdmin
+  const profilesDb = supabaseAdmin as unknown as ProfilesTableApi;
+  const { data, error } = await profilesDb
     .from("profiles")
-    .update(updates)
+    .update(updates as Record<string, unknown>)
     .eq("id", profileId)
     .select(
       "id,telegram_id,username,created_at,active_household_id,task_message_mode,cartoon_room_limit_enabled,cartoon_room_limit_count,cartoon_room_generated_count",
