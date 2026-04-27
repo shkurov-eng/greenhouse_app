@@ -92,6 +92,9 @@ Maintenance guidelines:
   - PL/pgSQL uses dynamic `EXECUTE ... USING` where needed so `RETURNS TABLE (household_id, ...)` output names do not shadow column names.
   - UI supports create home, rename home (`api_rename_household`), delete owned home (`api_delete_household`), and leave non-owned home (`leaveHousehold` secure action).
   - If the user deletes/leaves their last home, `loadHouseholds` runs `bootstrapUser` again so a default home is recreated.
+  - Household switching UI now has explicit transition handling in `src/app/page.tsx`: in-flight room requests are invalidated, room state is cleared during transition, home picker is temporarily disabled, and a compact `Switching home...` spinner is shown.
+  - `src/app/api/secure/route.ts` now parses DB boolean-like values with a strict helper (`asBooleanLike`) instead of raw `Boolean(...)` casting for household-related responses (`is_active`, `is_owner`, `require_join_approval`), preventing string values like `"false"` from being treated as truthy.
+  - `listRooms` supports explicit household scoping (`payload.householdId`) end-to-end (`src/lib/api.ts` -> `/api/secure`): server verifies membership in that household and returns rooms filtered directly by `rooms.household_id`. This prevents cross-household room bleed even if active-home state in DB is temporarily inconsistent.
 
 ## Stage 3 - Rooms
 

@@ -470,7 +470,22 @@ export async function POST(request: NextRequest) {
   try {
     const telegramId = getRequestTelegramId(request);
     telegramIdForLog = String(telegramId);
-    const profile = await resolveProfileByTelegramId(String(telegramId));
+    let profile;
+    try {
+      profile = await resolveProfileByTelegramId(String(telegramId));
+    } catch (resolveError) {
+      const resolveMessage =
+        resolveError instanceof Error ? resolveError.message.toLowerCase() : String(resolveError).toLowerCase();
+      if (!resolveMessage.includes("profile not found")) {
+        throw resolveError;
+      }
+      // Auto-bootstrap first-time users so invite join works without manual DB intervention.
+      await rpc("api_bootstrap_user", {
+        p_telegram_id: telegramId,
+        p_username: null,
+      });
+      profile = await resolveProfileByTelegramId(String(telegramId));
+    }
     profileIdForLog = profile.profileId;
     const blockState = await assertNotBlocked(String(telegramId));
     if (blockState.isBlocked) {
