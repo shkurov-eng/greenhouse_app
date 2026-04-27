@@ -1390,6 +1390,8 @@ export default function Home() {
       status: editPlantStatus,
       thirstyAfterHours: nextEditThirstyAfterHours,
       overdueAfterHours: nextEditOverdueAfterHours,
+      wateringAmountRecommendation: editPlantAiWaterAmount,
+      wateringSummary: editPlantAiSummary,
     });
 
     setIsEditPlantOpen(false);

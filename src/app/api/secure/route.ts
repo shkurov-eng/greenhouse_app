@@ -1062,6 +1062,27 @@ export async function POST(request: NextRequest) {
         if (overdueAfterHours < thirstyAfterHours) {
           throw new Error("Invalid watering thresholds");
         }
+        const wateringAmountRaw = payload.wateringAmountRecommendation;
+        const wateringAmountRecommendation =
+          wateringAmountRaw === "light" ||
+          wateringAmountRaw === "moderate" ||
+          wateringAmountRaw === "abundant"
+            ? wateringAmountRaw
+            : wateringAmountRaw == null
+              ? null
+              : undefined;
+        if (wateringAmountRecommendation === undefined) {
+          throw new Error("Invalid wateringAmountRecommendation");
+        }
+        const wateringSummary =
+          payload.wateringSummary == null
+            ? null
+            : typeof payload.wateringSummary === "string"
+              ? payload.wateringSummary.trim() || null
+              : undefined;
+        if (wateringSummary === undefined) {
+          throw new Error("Invalid wateringSummary");
+        }
         const { supabaseAdmin } = await getScopedPlantForActiveHousehold(telegramId, plantId);
         const db = supabaseAdmin as unknown as LooseTableApi;
         const { error: updateError } = await db
@@ -1072,6 +1093,10 @@ export async function POST(request: NextRequest) {
             status,
             thirsty_after_hours: thirstyAfterHours,
             overdue_after_hours: overdueAfterHours,
+            ...(wateringAmountRecommendation !== undefined
+              ? { watering_amount_recommendation: wateringAmountRecommendation }
+              : {}),
+            ...(wateringSummary !== undefined ? { watering_summary: wateringSummary } : {}),
           })
           .eq("id", plantId);
         if (updateError) {

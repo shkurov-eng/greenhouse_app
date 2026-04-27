@@ -393,6 +393,8 @@ export async function updatePlant(
     status: PlantStatus;
     thirstyAfterHours: number;
     overdueAfterHours: number;
+    wateringAmountRecommendation?: "light" | "moderate" | "abundant" | null;
+    wateringSummary?: string | null;
   },
 ) {
   return secureRequest<{ id: string }>({
