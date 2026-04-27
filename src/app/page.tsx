@@ -2756,7 +2756,7 @@ export default function Home() {
                       <img
                         src={roomImageUrl ?? undefined}
                         alt={room.name}
-                        className="block h-full w-full object-cover transition duration-300"
+                        className="block h-full w-full object-cover brightness-[0.82] transition duration-300"
                         style={{
                           transform: `translate3d(calc(var(--parallax-tx) + ${
                             Math.sin(roomCardParallaxTick / 8 + roomIndex * 0.9) * 2.8
@@ -2776,7 +2776,6 @@ export default function Home() {
                         </div>
                       </div>
                     )}
-                    <div className="pointer-events-none absolute inset-0 bg-black/18" />
                     <button
                       type="button"
                       className="absolute left-3 top-3 rounded-full bg-white/95 p-2 text-[#006c49] shadow-md active:scale-95"
