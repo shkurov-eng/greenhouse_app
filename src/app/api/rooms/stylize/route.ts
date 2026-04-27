@@ -626,31 +626,6 @@ export async function POST(request: NextRequest) {
       args?: Record<string, unknown>,
     ) => Promise<RpcResponse>;
 
-    const { error: aiRateError } = await rpcAny("api_register_ai_photo_request", {
-      p_telegram_id: String(telegramId),
-    });
-    if (aiRateError) {
-      if (isMissingAiRateLimitRpc(aiRateError.message)) {
-        console.warn("[rooms-stylize] missing ai rate limit RPC, continuing without limit", {
-          message: aiRateError.message,
-        });
-      } else {
-        statusCode = 429;
-        await logRateLimitHit({
-          source: "rooms_stylize",
-          telegramId: telegramIdForLog,
-          profileId: profileIdForLog,
-          endpoint: request.nextUrl.pathname,
-          action: "stylizeRoomImage",
-          message: aiRateError.message,
-          limitName: "api_register_ai_photo_request",
-          ipHash,
-          userAgentHash,
-        });
-        return NextResponse.json({ error: aiRateError.message }, { status: 429 });
-      }
-    }
-
     const { data: roomsData, error: roomsError } = await rpcAny("api_list_rooms", {
       p_telegram_id: telegramId,
     });
@@ -679,6 +654,50 @@ export async function POST(request: NextRequest) {
       console.info("[rooms-stylize] skip generation (already has stylized path)", { roomId });
       const data = await createSignedRoomUrls(room);
       return NextResponse.json({ data });
+    }
+
+    const { error: aiRateError } = await rpcAny("api_register_ai_photo_request", {
+      p_telegram_id: String(telegramId),
+    });
+    if (aiRateError) {
+      if (isMissingAiRateLimitRpc(aiRateError.message)) {
+        console.warn("[rooms-stylize] missing ai rate limit RPC, continuing without limit", {
+          message: aiRateError.message,
+        });
+      } else {
+        statusCode = 429;
+        await logRateLimitHit({
+          source: "rooms_stylize",
+          telegramId: telegramIdForLog,
+          profileId: profileIdForLog,
+          endpoint: request.nextUrl.pathname,
+          action: "stylizeRoomImage",
+          message: aiRateError.message,
+          limitName: "api_register_ai_photo_request",
+          ipHash,
+          userAgentHash,
+        });
+        return NextResponse.json({ error: aiRateError.message }, { status: 429 });
+      }
+    }
+
+    const { error: cartoonLimitError } = await rpcAny("api_register_room_cartoon_generation", {
+      p_telegram_id: String(telegramId),
+    });
+    if (cartoonLimitError) {
+      statusCode = 429;
+      await logRateLimitHit({
+        source: "rooms_stylize",
+        telegramId: telegramIdForLog,
+        profileId: profileIdForLog,
+        endpoint: request.nextUrl.pathname,
+        action: "stylizeRoomImage",
+        message: cartoonLimitError.message,
+        limitName: "api_register_room_cartoon_generation",
+        ipHash,
+        userAgentHash,
+      });
+      return NextResponse.json({ error: cartoonLimitError.message }, { status: 429 });
     }
 
     const { data: detailsData, error: detailsError } = await rpcAny("api_room_details", {

@@ -231,6 +231,7 @@ export default function Home() {
   const [isStartingCamera, setIsStartingCamera] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [editPlantName, setEditPlantName] = useState("");
+  const [isEditPlantNameFieldOpen, setIsEditPlantNameFieldOpen] = useState(false);
   const [editPlantSpecies, setEditPlantSpecies] = useState("");
   const [editPlantStatus, setEditPlantStatus] = useState<PlantStatus>("healthy");
   const [editPlantThirstyAfterHours, setEditPlantThirstyAfterHours] = useState(
@@ -1346,6 +1347,7 @@ export default function Home() {
     setEditPlantStatus(plant.status);
     setEditPlantThirstyAfterHours(plant.thirsty_after_hours ?? DEFAULT_THIRSTY_AFTER_HOURS);
     setEditPlantOverdueAfterHours(plant.overdue_after_hours ?? DEFAULT_OVERDUE_AFTER_HOURS);
+    setIsEditPlantNameFieldOpen(false);
     setIsEditPlantOpen(true);
   }
 
@@ -1384,6 +1386,7 @@ export default function Home() {
     });
 
     setIsEditPlantOpen(false);
+    setIsEditPlantNameFieldOpen(false);
     setEditingPlantId(null);
     await fetchRoomDetails(selectedRoom.id);
     setMessage("Plant updated");
@@ -1396,6 +1399,7 @@ export default function Home() {
     const plantId = editingPlantId;
     await deletePlant(getCurrentInitData(), plantId);
     setIsEditPlantOpen(false);
+    setIsEditPlantNameFieldOpen(false);
     setEditingPlantId(null);
     await fetchRoomDetails(selectedRoom.id);
     setMessage("Plant deleted");
@@ -3245,7 +3249,12 @@ export default function Home() {
                               <p className="truncate text-sm font-semibold text-[#1f1b17]">{editPlantName}</p>
                               <button
                                 type="button"
-                                onClick={() => document.getElementById("edit-plant-name-input")?.focus()}
+                                onClick={() => {
+                                  setIsEditPlantNameFieldOpen(true);
+                                  window.requestAnimationFrame(() => {
+                                    document.getElementById("edit-plant-name-input")?.focus();
+                                  });
+                                }}
                                 className="rounded-lg border border-[#bbcabf] p-1.5 text-[#6c7a71]"
                                 aria-label="Edit plant name"
                               >
@@ -3287,14 +3296,16 @@ export default function Home() {
                 })()
               ) : null}
 
-              <input
-                id="edit-plant-name-input"
-                value={editPlantName}
-                onChange={(event) => setEditPlantName(event.target.value)}
-                placeholder="Plant name"
-                className="mt-3 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
-                autoFocus
-              />
+              {isEditPlantNameFieldOpen ? (
+                <input
+                  id="edit-plant-name-input"
+                  value={editPlantName}
+                  onChange={(event) => setEditPlantName(event.target.value)}
+                  placeholder="Plant name"
+                  className="mt-3 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+                  autoFocus
+                />
+              ) : null}
               <details className="mt-3 rounded-xl border border-[#e7ddd6] bg-[#fffaf7] p-3">
                 <summary className="cursor-pointer text-xs font-semibold text-[#3c4a42]">
                   Advanced settings
@@ -3433,7 +3444,10 @@ export default function Home() {
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsEditPlantOpen(false)}
+                  onClick={() => {
+                    setIsEditPlantNameFieldOpen(false);
+                    setIsEditPlantOpen(false);
+                  }}
                   className="rounded-xl border border-[#bbcabf] px-4 py-2 text-sm font-medium text-[#3c4a42]"
                 >
                   Cancel

@@ -18,7 +18,9 @@ export async function GET(request: NextRequest, context: Context) {
   const [profileRes, blocksRes, requestsRes, membershipsRes] = await Promise.all([
     supabaseAdmin
       .from("profiles")
-      .select("id,telegram_id,username,created_at,active_household_id,task_message_mode")
+      .select(
+        "id,telegram_id,username,created_at,active_household_id,task_message_mode,cartoon_room_limit_enabled,cartoon_room_limit_count,cartoon_room_generated_count",
+      )
       .eq("id", profileId)
       .maybeSingle(),
     supabaseAdmin
@@ -77,4 +79,66 @@ export async function GET(request: NextRequest, context: Context) {
       households: households ?? [],
     },
   });
+}
+
+export async function PATCH(request: NextRequest, context: Context) {
+  const auth = await requireAdminUser(request, "security");
+  if (!auth.ok) {
+    return auth.response;
+  }
+  const { profileId } = await context.params;
+  const body = (await request.json()) as {
+    cartoonLimitEnabled?: unknown;
+    cartoonLimitCount?: unknown;
+    cartoonGeneratedCount?: unknown;
+  };
+
+  const updates: Record<string, unknown> = {};
+  if (typeof body.cartoonLimitEnabled === "boolean") {
+    updates.cartoon_room_limit_enabled = body.cartoonLimitEnabled;
+  }
+  if (typeof body.cartoonLimitCount === "number" && Number.isInteger(body.cartoonLimitCount)) {
+    if (body.cartoonLimitCount < 0) {
+      return NextResponse.json({ error: "cartoonLimitCount must be >= 0" }, { status: 400 });
+    }
+    updates.cartoon_room_limit_count = body.cartoonLimitCount;
+  }
+  if (typeof body.cartoonGeneratedCount === "number" && Number.isInteger(body.cartoonGeneratedCount)) {
+    if (body.cartoonGeneratedCount < 0) {
+      return NextResponse.json({ error: "cartoonGeneratedCount must be >= 0" }, { status: 400 });
+    }
+    updates.cartoon_room_generated_count = body.cartoonGeneratedCount;
+  }
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+  }
+
+  const supabaseAdmin = getSupabaseAdmin();
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update(updates)
+    .eq("id", profileId)
+    .select(
+      "id,telegram_id,username,created_at,active_household_id,task_message_mode,cartoon_room_limit_enabled,cartoon_room_limit_count,cartoon_room_generated_count",
+    )
+    .maybeSingle();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (!data) {
+    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  }
+
+  await logAdminAudit({
+    request,
+    adminUserId: auth.admin.id,
+    action: "update_user_cartoon_limit",
+    targetType: "profile",
+    targetId: profileId,
+    severity: "warning",
+    details: updates,
+  });
+
+  return NextResponse.json({ data });
 }
