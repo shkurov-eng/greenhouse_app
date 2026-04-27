@@ -111,25 +111,30 @@ type ApiRequestEventInput = {
 };
 
 export async function logApiRequestEvent(input: ApiRequestEventInput) {
-  const supabaseAdmin = getSupabaseAdmin();
-  const db = supabaseAdmin as unknown as LooseInsertTableApi;
-  const { error } = await db.from("api_request_events").insert({
-    source: input.source,
-    endpoint: input.endpoint,
-    action: input.action,
-    method: input.method,
-    status_code: input.statusCode,
-    duration_ms: Math.max(0, Math.round(input.durationMs)),
-    telegram_id: input.telegramId ? Number(input.telegramId) : null,
-    profile_id: input.profileId,
-    is_blocked: input.isBlocked,
-    is_error: input.statusCode >= 400,
-    error_message: input.errorMessage,
-    ip_hash: input.ipHash,
-    user_agent_hash: input.userAgentHash,
-  });
-  if (error) {
-    console.warn("[admin-security] failed to write api_request_events", error.message);
+  try {
+    const supabaseAdmin = getSupabaseAdmin();
+    const db = supabaseAdmin as unknown as LooseInsertTableApi;
+    const { error } = await db.from("api_request_events").insert({
+      source: input.source,
+      endpoint: input.endpoint,
+      action: input.action,
+      method: input.method,
+      status_code: input.statusCode,
+      duration_ms: Math.max(0, Math.round(input.durationMs)),
+      telegram_id: input.telegramId ? Number(input.telegramId) : null,
+      profile_id: input.profileId,
+      is_blocked: input.isBlocked,
+      is_error: input.statusCode >= 400,
+      error_message: input.errorMessage,
+      ip_hash: input.ipHash,
+      user_agent_hash: input.userAgentHash,
+    });
+    if (error) {
+      console.warn("[admin-security] failed to write api_request_events", error.message);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("[admin-security] api_request_events write threw", message);
   }
 }
 
@@ -189,24 +194,29 @@ export async function logRateLimitHit(input: RateLimitHitInput) {
 }
 
 export async function logSecurityEvent(input: SecurityEventInput) {
-  const supabaseAdmin = getSupabaseAdmin();
-  const rpcAny = supabaseAdmin.rpc.bind(supabaseAdmin) as unknown as (
-    name: string,
-    params?: Record<string, unknown>,
-  ) => Promise<RpcResponse>;
-  const { error } = await rpcAny("admin_record_security_event", {
-    p_event_type: input.eventType,
-    p_severity: input.severity,
-    p_source: input.source,
-    p_telegram_id: input.telegramId ? Number(input.telegramId) : null,
-    p_profile_id: input.profileId,
-    p_endpoint: input.endpoint,
-    p_action: input.action,
-    p_details: input.details ?? {},
-    p_ip_hash: input.ipHash ?? null,
-    p_user_agent_hash: input.userAgentHash ?? null,
-  });
-  if (error) {
-    console.warn("[admin-security] failed to write security event", error.message);
+  try {
+    const supabaseAdmin = getSupabaseAdmin();
+    const rpcAny = supabaseAdmin.rpc.bind(supabaseAdmin) as unknown as (
+      name: string,
+      params?: Record<string, unknown>,
+    ) => Promise<RpcResponse>;
+    const { error } = await rpcAny("admin_record_security_event", {
+      p_event_type: input.eventType,
+      p_severity: input.severity,
+      p_source: input.source,
+      p_telegram_id: input.telegramId ? Number(input.telegramId) : null,
+      p_profile_id: input.profileId,
+      p_endpoint: input.endpoint,
+      p_action: input.action,
+      p_details: input.details ?? {},
+      p_ip_hash: input.ipHash ?? null,
+      p_user_agent_hash: input.userAgentHash ?? null,
+    });
+    if (error) {
+      console.warn("[admin-security] failed to write security event", error.message);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("[admin-security] security event write threw", message);
   }
 }
