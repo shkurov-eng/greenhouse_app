@@ -169,7 +169,7 @@ async function detectPlantProfileWithAiStudio(
     typeof row.watering_amount_recommendation === "string"
       ? row.watering_amount_recommendation.trim().toLowerCase()
       : "";
-  const wateringAmountRecommendation =
+  const wateringAmountRecommendation: PlantAiProfile["wateringAmountRecommendation"] =
     rawWateringAmount === "light" ||
     rawWateringAmount === "little" ||
     rawWateringAmount === "small" ||
