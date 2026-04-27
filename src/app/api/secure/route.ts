@@ -866,7 +866,58 @@ export async function POST(request: NextRequest) {
           p_telegram_id: telegramId,
           p_room_id: roomId,
         })) as { plants?: Array<Record<string, unknown>>; markers?: Array<Record<string, unknown>> } | null;
-        const plants = await enrichPlantsWithSignedUrls(details?.plants ?? []);
+        const rpcPlants = details?.plants ?? [];
+        const plantIds = rpcPlants
+          .map((plant) => plant.id)
+          .filter((id): id is string => typeof id === "string" && id.length > 0);
+        let aiFieldsByPlantId = new Map<
+          string,
+          {
+            watering_summary: string | null;
+            watering_amount_recommendation: "light" | "moderate" | "abundant" | null;
+            ai_inferred_at: string | null;
+          }
+        >();
+        if (plantIds.length > 0) {
+          const { data: aiRows, error: aiRowsError } = await getSupabaseAdmin()
+            .from("plants")
+            .select("id,watering_summary,watering_amount_recommendation,ai_inferred_at")
+            .in("id", plantIds);
+          if (aiRowsError) {
+            throw new Error(aiRowsError.message);
+          }
+          aiFieldsByPlantId = new Map(
+            ((aiRows as Array<Record<string, unknown>> | null) ?? []).map((row) => [
+              String(row.id ?? ""),
+              {
+                watering_summary:
+                  typeof row.watering_summary === "string" ? row.watering_summary : row.watering_summary ?? null,
+                watering_amount_recommendation:
+                  row.watering_amount_recommendation === "light" ||
+                  row.watering_amount_recommendation === "moderate" ||
+                  row.watering_amount_recommendation === "abundant"
+                    ? row.watering_amount_recommendation
+                    : null,
+                ai_inferred_at:
+                  typeof row.ai_inferred_at === "string" ? row.ai_inferred_at : row.ai_inferred_at ?? null,
+              },
+            ]),
+          );
+        }
+        const mergedPlants = rpcPlants.map((plant) => {
+          const id = typeof plant.id === "string" ? plant.id : "";
+          const aiFields = id ? aiFieldsByPlantId.get(id) : null;
+          if (!aiFields) {
+            return plant;
+          }
+          return {
+            ...plant,
+            watering_summary: aiFields.watering_summary,
+            watering_amount_recommendation: aiFields.watering_amount_recommendation,
+            ai_inferred_at: aiFields.ai_inferred_at,
+          };
+        });
+        const plants = await enrichPlantsWithSignedUrls(mergedPlants);
         const data = {
           plants,
           markers: details?.markers ?? [],
