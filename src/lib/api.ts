@@ -121,11 +121,11 @@ type SecureRequest = {
   username?: string | null;
 };
 
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS = 35000;
 const UPLOAD_REQUEST_TIMEOUT_MS = 45000;
 const ANALYZE_REQUEST_TIMEOUT_MS = 60000;
 const NETWORK_RETRY_DELAY_MS = 350;
-const MAX_NETWORK_RETRIES = 1;
+const MAX_NETWORK_RETRIES = 2;
 
 function isRetryableNetworkError(error: unknown) {
   if (!(error instanceof Error)) {
