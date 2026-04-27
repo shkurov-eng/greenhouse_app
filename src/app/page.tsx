@@ -2657,10 +2657,24 @@ export default function Home() {
                 </button>
               </div>
             ) : (
-              rooms.map((room) => (
+              rooms.map((room) => {
+                const roomImageUrl = getRoomImageUrl(room);
+                const hasCartoonPreview =
+                  Boolean(room.stylized_background_path) || Boolean(room.signed_stylized_background_url);
+                const roomAuraClasses = hasCartoonPreview
+                  ? "ring-2 ring-[#16a34a]/40 shadow-[0_0_0_4px_rgba(22,163,74,0.10)]"
+                  : roomImageUrl
+                    ? "ring-2 ring-[#f59e0b]/35 shadow-[0_0_0_4px_rgba(245,158,11,0.10)]"
+                    : "ring-2 ring-[#9ca3af]/35 shadow-[0_0_0_4px_rgba(156,163,175,0.10)]";
+                const roomAuraLabel = hasCartoonPreview
+                  ? "vivid"
+                  : roomImageUrl
+                    ? "ready"
+                    : "needs photo";
+                return (
                 <article
                   key={room.id}
-                  className="group cursor-pointer overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-[0_10px_28px_rgba(81,55,37,0.07)] transition hover:-translate-y-0.5 hover:shadow-[0_16px_36px_rgba(81,55,37,0.12)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#006c49]/35 focus-visible:ring-offset-2"
+                  className={`group cursor-pointer overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-[0_10px_28px_rgba(81,55,37,0.07)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_36px_rgba(81,55,37,0.12)] active:scale-[0.99] active:shadow-[0_8px_20px_rgba(81,55,37,0.12)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#006c49]/35 focus-visible:ring-offset-2 ${roomAuraClasses}`}
                   onClick={() => openRoom(room)}
                   onKeyDown={(event) => handleRoomCardKeyDown(event, room)}
                   role="button"
@@ -2668,17 +2682,24 @@ export default function Home() {
                   aria-label={`Open ${room.name}`}
                 >
                   <div className="relative h-48 bg-[#f6ece6]">
-                    {getRoomImageUrl(room) ? (
+                    {roomImageUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={getRoomImageUrl(room) ?? undefined}
+                        src={roomImageUrl ?? undefined}
                         alt={room.name}
-                        className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                        className="h-full w-full translate-y-1 object-cover transition duration-500 group-hover:-translate-y-1 group-hover:scale-[1.04]"
                       />
                     ) : (
-                      <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-[#6c7a71]">
-                        <ImagePlus className="h-8 w-8 text-[#9b8a80]" />
-                        <span>No room photo yet</span>
+                      <div className="relative h-full overflow-hidden bg-gradient-to-br from-[#f2efe9] via-[#efe5dc] to-[#e8ddd6]">
+                        <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-white/35 to-transparent" />
+                        <div className="absolute left-4 top-4 h-2.5 w-20 rounded-full bg-white/60" />
+                        <div className="absolute left-4 top-9 h-2 w-14 rounded-full bg-white/50" />
+                        <div className="absolute right-4 bottom-5 h-10 w-16 rounded-xl bg-white/40" />
+                        <div className="absolute bottom-5 left-4 h-16 w-24 rounded-2xl bg-white/45" />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-[#6c7a71]">
+                          <ImagePlus className="h-8 w-8 text-[#9b8a80]" />
+                          <span>Room snapshot waiting</span>
+                        </div>
                       </div>
                     )}
                     <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/40 to-transparent" />
@@ -2716,8 +2737,16 @@ export default function Home() {
                           Open room details and plant markers
                         </p>
                       </div>
-                      <span className="rounded-full bg-[#e6f5ef] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#006c49]">
-                        Open
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${
+                          hasCartoonPreview
+                            ? "bg-[#e7f8ee] text-[#15803d]"
+                            : roomImageUrl
+                              ? "bg-[#fff4e5] text-[#b45309]"
+                              : "bg-[#eef1f4] text-[#4b5563]"
+                        }`}
+                      >
+                        {roomAuraLabel}
                       </span>
                     </div>
 
@@ -2744,7 +2773,8 @@ export default function Home() {
                     ) : null}
                   </div>
                 </article>
-              ))
+                );
+              })
             )}
           </section>
 
