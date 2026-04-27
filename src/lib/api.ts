@@ -300,10 +300,11 @@ export async function renameHousehold(initData: string | null, householdId: stri
   });
 }
 
-export async function listRooms(initData: string | null) {
+export async function listRooms(initData: string | null, householdId?: string | null) {
   return secureRequest<Room[]>({
     action: "listRooms",
     initData,
+    payload: householdId ? { householdId } : {},
   });
 }
 

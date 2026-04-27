@@ -839,9 +839,55 @@ export async function POST(request: NextRequest) {
       }
 
       case "listRooms": {
-        const rooms = (await rpc("api_list_rooms", {
-          p_telegram_id: telegramId,
-        })) as Array<Record<string, unknown>> | null;
+        const requestedHouseholdIdRaw = payload.householdId;
+        const requestedHouseholdId =
+          requestedHouseholdIdRaw == null ? null : asUuid(requestedHouseholdIdRaw, "householdId");
+        const supabaseAdmin = getSupabaseAdmin();
+        const { data: profile, error: profileError } = await supabaseAdmin
+          .from("profiles")
+          .select("id")
+          .eq("telegram_id", telegramId)
+          .single();
+        if (profileError) {
+          throw new Error(profileError.message);
+        }
+        const profileId = String((profile as { id?: string } | null)?.id ?? "");
+        if (!profileId) {
+          throw new Error("Profile not found");
+        }
+
+        let householdId = requestedHouseholdId;
+        if (!householdId) {
+          const resolved = await rpc("api_list_rooms", {
+            p_telegram_id: telegramId,
+          });
+          const rooms = (resolved as Array<Record<string, unknown>> | null) ?? [];
+          const data = await enrichRoomsWithSignedUrls(rooms);
+          return NextResponse.json({ data });
+        }
+
+        const { data: membershipRow, error: membershipError } = await supabaseAdmin
+          .from("household_members")
+          .select("household_id")
+          .eq("user_id", profileId)
+          .eq("household_id", householdId)
+          .maybeSingle();
+        if (membershipError) {
+          throw new Error(membershipError.message);
+        }
+        if (!membershipRow) {
+          throw new Error("Not a member of this household");
+        }
+
+        const { data: roomsRows, error: roomsError } = await supabaseAdmin
+          .from("rooms")
+          .select("id,name,background_path,background_url,stylized_background_path")
+          .eq("household_id", householdId)
+          .order("created_at", { ascending: true });
+        if (roomsError) {
+          throw new Error(roomsError.message);
+        }
+        const rooms = (roomsRows as Array<Record<string, unknown>> | null) ?? [];
         const data = await enrichRoomsWithSignedUrls(rooms ?? []);
         return NextResponse.json({ data });
       }

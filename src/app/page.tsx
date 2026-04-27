@@ -417,9 +417,11 @@ export default function Home() {
         name: active.household_name,
         invite_code: active.invite_code,
       });
+      return active.household_id;
     } else {
       setHouseholdId(null);
       setCurrentHousehold(null);
+      return null;
     }
   }
 
@@ -921,10 +923,17 @@ export default function Home() {
     setRoomImageContentBox(box);
   }, []);
 
-  async function fetchRoomsForHousehold() {
+  async function fetchRoomsForHousehold(targetHouseholdId?: string | null) {
+    const householdScopeId = targetHouseholdId ?? householdId;
+    if (!householdScopeId) {
+      setRooms([]);
+      setSelectedRoom(null);
+      clearRoomDetailState();
+      return;
+    }
     const requestId = roomsFetchRequestIdRef.current + 1;
     roomsFetchRequestIdRef.current = requestId;
-    const nextRooms = await listRooms(getCurrentInitData());
+    const nextRooms = await listRooms(getCurrentInitData(), householdScopeId);
     if (roomsFetchRequestIdRef.current !== requestId) {
       return;
     }
@@ -1012,8 +1021,8 @@ export default function Home() {
       await bootstrapUser(telegramInitDataValue, telegramUser?.username ?? null);
 
       if (isMounted) {
-        await loadHouseholds();
-        await fetchRoomsForHousehold();
+        const activeHouseholdId = await loadHouseholds();
+        await fetchRoomsForHousehold(activeHouseholdId);
       }
     }
 
@@ -1089,7 +1098,8 @@ export default function Home() {
 
     if (targetHome.household_id === householdId) {
       setMessage("This home is already active");
-      await loadHouseholds();
+      const activeHouseholdId = await loadHouseholds();
+      await fetchRoomsForHousehold(activeHouseholdId);
       return;
     }
 
@@ -1098,8 +1108,8 @@ export default function Home() {
     setIsJoinHomeOpen(false);
     setJoinCode("");
     try {
-      await loadHouseholds();
-      await fetchRoomsForHousehold();
+      const activeHouseholdId = await loadHouseholds();
+      await fetchRoomsForHousehold(activeHouseholdId);
       setMessage(`Joined ${targetHome.household_name}`);
     } finally {
       setIsSwitchingHousehold(false);
@@ -1114,8 +1124,8 @@ export default function Home() {
     beginHouseholdTransition();
     try {
       await setActiveHousehold(getCurrentInitData(), targetId);
-      await loadHouseholds();
-      await fetchRoomsForHousehold();
+      const activeHouseholdId = await loadHouseholds();
+      await fetchRoomsForHousehold(activeHouseholdId ?? targetId);
       setMessage("Home switched");
     } finally {
       setIsSwitchingHousehold(false);
@@ -1133,8 +1143,8 @@ export default function Home() {
       setNewHomeName("");
       setIsCreateHomeOpen(false);
       beginHouseholdTransition();
-      await loadHouseholds();
-      await fetchRoomsForHousehold();
+      const activeHouseholdId = await loadHouseholds();
+      await fetchRoomsForHousehold(activeHouseholdId);
       setMessage("New home created");
     } finally {
       setIsSwitchingHousehold(false);
@@ -1159,13 +1169,13 @@ export default function Home() {
     await deleteHousehold(getCurrentInitData(), targetHouseholdId);
     beginHouseholdTransition();
     try {
-      await loadHouseholds();
+      const activeHouseholdId = await loadHouseholds();
       try {
-        await fetchRoomsForHousehold();
+        await fetchRoomsForHousehold(activeHouseholdId);
       } catch {
         // Fallback for race/transition cases when last home is deleted and auto-bootstrap just recreated a default home.
-        await loadHouseholds();
-        await fetchRoomsForHousehold();
+        const fallbackHouseholdId = await loadHouseholds();
+        await fetchRoomsForHousehold(fallbackHouseholdId);
       }
       setMessage("Home deleted");
     } finally {
