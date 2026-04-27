@@ -891,7 +891,7 @@ export async function POST(request: NextRequest) {
               String(row.id ?? ""),
               {
                 watering_summary:
-                  typeof row.watering_summary === "string" ? row.watering_summary : row.watering_summary ?? null,
+                  typeof row.watering_summary === "string" ? row.watering_summary : null,
                 watering_amount_recommendation:
                   row.watering_amount_recommendation === "light" ||
                   row.watering_amount_recommendation === "moderate" ||
@@ -899,7 +899,7 @@ export async function POST(request: NextRequest) {
                     ? row.watering_amount_recommendation
                     : null,
                 ai_inferred_at:
-                  typeof row.ai_inferred_at === "string" ? row.ai_inferred_at : row.ai_inferred_at ?? null,
+                  typeof row.ai_inferred_at === "string" ? row.ai_inferred_at : null,
               },
             ]),
           );
