@@ -2241,10 +2241,10 @@ export default function Home() {
                         : `${marker.y * 100}%`,
                       transitionDelay:
                         isRoomOpeningAnimationActive && !prefersReducedMotion
-                          ? `${Math.min(markerIndex * 55, 420)}ms`
+                          ? `${Math.min(markerIndex * 95, 760)}ms`
                           : "0ms",
                     }}
-                    className={`absolute -translate-x-1/2 -translate-y-1/2 transition-all duration-550 ease-out ${
+                    className={`absolute -translate-x-1/2 -translate-y-1/2 transition-all duration-850 ease-out ${
                       isRoomOpeningAnimationActive && !prefersReducedMotion
                         ? "translate-y-3 scale-70 opacity-0"
                         : "translate-y-0 scale-100 opacity-100"
