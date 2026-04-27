@@ -302,15 +302,15 @@ export default function Home() {
     setRoomVisualMode(readRoomVisualModeFromStorage());
   }, []);
 
-  /** Opening a room reuses the same document scroll as the overview; reset so the photo + markers are in view. */
+  /** Opening a room reuses the same document scroll as the overview; jump directly to the room photo area. */
   useLayoutEffect(() => {
     if (!selectedRoom) {
       return;
     }
-    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
-  }, [selectedRoom]);
+    window.requestAnimationFrame(() => {
+      roomImageContainerRef.current?.scrollIntoView({ behavior: "auto", block: "start" });
+    });
+  }, [selectedRoom?.id]);
 
   useEffect(() => {
     if (!selectedRoom) {
