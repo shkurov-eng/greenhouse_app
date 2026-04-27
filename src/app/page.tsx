@@ -2763,7 +2763,7 @@ export default function Home() {
                       <img
                         src={roomImageUrl ?? undefined}
                         alt={room.name}
-                        className="h-full w-full object-cover transition duration-300"
+                        className="block h-full w-full object-cover transition duration-300"
                         style={{
                           transform: `translate3d(calc(var(--parallax-tx) + ${
                             Math.sin(roomCardParallaxTick / 8 + roomIndex * 0.9) * 2.8
