@@ -1471,7 +1471,7 @@ export default function Home() {
       return;
     }
     const editingPlant = plants.find((plant) => plant.id === editingPlantId);
-    if (!editingPlant?.signed_photo_url) {
+    if (!editingPlant?.photo_path) {
       setMessage("Add a plant photo first, then run AI analysis.");
       return;
     }
