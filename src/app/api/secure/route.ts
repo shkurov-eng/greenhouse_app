@@ -1047,7 +1047,7 @@ export async function POST(request: NextRequest) {
       }
 
       case "updatePlant": {
-        const plantId = asString(payload.plantId, "plantId");
+        const plantId = asUuid(payload.plantId, "plantId");
         const name = asString(payload.name, "name");
         const species = asOptionalString(payload.species);
         const status = asPlantStatus(payload.status);
@@ -1062,17 +1062,22 @@ export async function POST(request: NextRequest) {
         if (overdueAfterHours < thirstyAfterHours) {
           throw new Error("Invalid watering thresholds");
         }
-        const result = await rpc("api_update_plant", {
-          p_telegram_id: telegramId,
-          p_plant_id: plantId,
-          p_name: name,
-          p_species: species,
-          p_status: status,
-          p_thirsty_after_hours: thirstyAfterHours,
-          p_overdue_after_hours: overdueAfterHours,
-        });
-        const data = unwrapSingleRow<Record<string, unknown>>(result);
-        return NextResponse.json({ data });
+        const { supabaseAdmin } = await getScopedPlantForActiveHousehold(telegramId, plantId);
+        const db = supabaseAdmin as unknown as LooseTableApi;
+        const { error: updateError } = await db
+          .from("plants")
+          .update({
+            name,
+            species,
+            status,
+            thirsty_after_hours: thirstyAfterHours,
+            overdue_after_hours: overdueAfterHours,
+          })
+          .eq("id", plantId);
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+        return NextResponse.json({ data: { id: plantId } });
       }
 
       case "upsertMarker": {
