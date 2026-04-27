@@ -10,6 +10,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   Sparkles,
   Settings,
   Sprout,
@@ -256,6 +257,8 @@ export default function Home() {
   const [roomPhotoPickerRoomId, setRoomPhotoPickerRoomId] = useState<string | null>(null);
   const [pendingDeleteTarget, setPendingDeleteTarget] = useState<PendingDeleteTarget | null>(null);
   const [isConfirmDeletePending, setIsConfirmDeletePending] = useState(false);
+  const [fullscreenPlantPhotoUrl, setFullscreenPlantPhotoUrl] = useState<string | null>(null);
+  const [highlightedMarkerPlantId, setHighlightedMarkerPlantId] = useState<string | null>(null);
   /** Bumps on an interval so marker colors refresh from `last_watered_at` without refetch. */
   const [, setWateringUiTick] = useState(0);
   const [, setPendingWateringTick] = useState(0);
@@ -288,6 +291,7 @@ export default function Home() {
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraCaptureCounterRef = useRef(0);
   const markerPlacementFeedbackTimerRef = useRef<number | null>(null);
+  const markerHighlightTimerRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     // After SSR/hydration, apply the user's last Photo/Cartoon choice from localStorage.
@@ -431,6 +435,31 @@ export default function Home() {
     setNewPlantPhotoPreviewUrl(null);
     setRoomDetectionPreview([]);
     setSelectedRoomDetectionIndexes([]);
+    setFullscreenPlantPhotoUrl(null);
+    setHighlightedMarkerPlantId(null);
+  }
+
+  function focusPlantOnRoomPhoto(plantId: string, closeEditModal = false) {
+    const hasMarker = markers.some((marker) => marker.plant_id === plantId);
+    if (!hasMarker) {
+      setMessage("This plant has no marker on the room photo yet.");
+      return;
+    }
+    if (closeEditModal) {
+      setIsEditPlantNameFieldOpen(false);
+      setIsEditPlantOpen(false);
+    }
+    setHighlightedMarkerPlantId(plantId);
+    if (markerHighlightTimerRef.current !== null) {
+      window.clearTimeout(markerHighlightTimerRef.current);
+    }
+    markerHighlightTimerRef.current = window.setTimeout(() => {
+      setHighlightedMarkerPlantId(null);
+      markerHighlightTimerRef.current = null;
+    }, 4500);
+    window.requestAnimationFrame(() => {
+      roomImageContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   function clearNewPlantPhotoSelection() {
@@ -1890,6 +1919,9 @@ export default function Home() {
       if (markerPlacementFeedbackTimerRef.current !== null) {
         window.clearTimeout(markerPlacementFeedbackTimerRef.current);
       }
+      if (markerHighlightTimerRef.current !== null) {
+        window.clearTimeout(markerHighlightTimerRef.current);
+      }
       const timers = Object.values(pendingWateringTimersRef.current);
       for (const timerId of timers) {
         window.clearTimeout(timerId);
@@ -2120,6 +2152,7 @@ export default function Home() {
                 const shimmerIntensity = isPendingWatering
                   ? "animate-pulse opacity-100"
                   : `${colors.shimmer} ${colors.shimmerOpacity}`;
+                const isHighlightedOnRoom = highlightedMarkerPlantId === marker.plant_id;
                 const popoverAlign =
                   marker.x >= 0.67 ? "right" : marker.x <= 0.33 ? "left" : "center";
                 return (
@@ -2133,12 +2166,14 @@ export default function Home() {
                         ? `${roomImageContentBox.top + marker.y * roomImageContentBox.height}px`
                         : `${marker.y * 100}%`,
                     }}
-                    className="absolute -translate-x-1/2 -translate-y-1/2"
+                    className={`absolute -translate-x-1/2 -translate-y-1/2 ${isHighlightedOnRoom ? "z-30" : ""}`}
                   >
                     <button
                       type="button"
                       className={`group relative flex h-12 w-12 items-center justify-center rounded-full border-2 transition-all active:scale-95 ${
                         isJustWatered ? "scale-110 ring-4 ring-[#10b981]/40" : ""
+                      } ${isHighlightedOnRoom ? "scale-125 ring-4 ring-[#0ea5e9]/55" : ""} ${
+                        isHighlightedOnRoom ? "animate-pulse" : ""
                       } ${colors.glow}`}
                       onPointerDown={(event) => {
                         event.stopPropagation();
@@ -2358,7 +2393,8 @@ export default function Home() {
                             <img
                               src={plant.signed_photo_url}
                               alt={plant.name}
-                              className="h-16 w-16 shrink-0 rounded-2xl border border-[#e8ddd6] object-cover"
+                              onClick={() => setFullscreenPlantPhotoUrl(plant.signed_photo_url)}
+                              className="h-16 w-16 shrink-0 cursor-zoom-in rounded-2xl border border-[#e8ddd6] object-cover"
                             />
                           ) : (
                             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-dashed border-[#d5ccc6] bg-[#fff8f5] text-[10px] font-semibold uppercase tracking-wide text-[#9b8a80]">
@@ -2425,6 +2461,15 @@ export default function Home() {
                             className="rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-[11px] font-bold text-[#3c4a42]"
                           >
                             Edit Plant
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => focusPlantOnRoomPhoto(plant.id)}
+                            className="inline-flex items-center justify-center rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-[#006c49]"
+                            aria-label={`Show ${plant.name} marker on room photo`}
+                            title="Show on room photo"
+                          >
+                            <Search className="h-4 w-4" />
                           </button>
                         </div>
                       </div>
@@ -3245,7 +3290,8 @@ export default function Home() {
                               <img
                                 src={editingPlant.signed_photo_url}
                                 alt={editingPlant.name}
-                                className="h-full w-full object-contain object-left-top"
+                                onClick={() => setFullscreenPlantPhotoUrl(editingPlant.signed_photo_url)}
+                                className="h-full w-full cursor-zoom-in object-contain object-left-top"
                               />
                             </div>
                           ) : (
@@ -3256,19 +3302,30 @@ export default function Home() {
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-2">
                               <p className="truncate text-sm font-semibold text-[#1f1b17]">{editPlantName}</p>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setIsEditPlantNameFieldOpen(true);
-                                  window.requestAnimationFrame(() => {
-                                    document.getElementById("edit-plant-name-input")?.focus();
-                                  });
-                                }}
-                                className="rounded-lg border border-[#bbcabf] p-1.5 text-[#6c7a71]"
-                                aria-label="Edit plant name"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => focusPlantOnRoomPhoto(editingPlant.id, true)}
+                                  className="rounded-lg border border-[#bbcabf] p-1.5 text-[#006c49]"
+                                  aria-label="Show plant marker on room photo"
+                                  title="Show on room photo"
+                                >
+                                  <Search className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsEditPlantNameFieldOpen(true);
+                                    window.requestAnimationFrame(() => {
+                                      document.getElementById("edit-plant-name-input")?.focus();
+                                    });
+                                  }}
+                                  className="rounded-lg border border-[#bbcabf] p-1.5 text-[#6c7a71]"
+                                  aria-label="Edit plant name"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             </div>
                             {editingPlant.ai_inferred_at ? (
                               <p className="mt-1 inline-flex rounded-full bg-[#e6f5ef] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#006c49]">
@@ -3476,6 +3533,22 @@ export default function Home() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {fullscreenPlantPhotoUrl ? (
+        <button
+          type="button"
+          onClick={() => setFullscreenPlantPhotoUrl(null)}
+          className="fixed inset-0 z-[95] flex items-center justify-center bg-black/85 p-4"
+          aria-label="Close fullscreen plant photo"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={fullscreenPlantPhotoUrl}
+            alt="Plant photo fullscreen preview"
+            className="max-h-full max-w-full rounded-lg object-contain"
+          />
+        </button>
       ) : null}
 
       {pendingDeleteTarget ? (
