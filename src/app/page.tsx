@@ -2699,8 +2699,8 @@ export default function Home() {
                   onClick={() => handleOpenRoomCard(room)}
                   onPointerDown={() => setPressedRoomCardId(room.id)}
                   onPointerLeave={(event) => {
-                    event.currentTarget.style.setProperty("--parallax-x", "0");
-                    event.currentTarget.style.setProperty("--parallax-y", "0");
+                    event.currentTarget.style.setProperty("--parallax-tx", "0px");
+                    event.currentTarget.style.setProperty("--parallax-ty", "0px");
                     if (pressedRoomCardId === room.id) {
                       setPressedRoomCardId(null);
                     }
@@ -2712,8 +2712,26 @@ export default function Home() {
                     }
                     const x = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
                     const y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
-                    event.currentTarget.style.setProperty("--parallax-x", x.toFixed(3));
-                    event.currentTarget.style.setProperty("--parallax-y", y.toFixed(3));
+                    event.currentTarget.style.setProperty("--parallax-tx", `${(x * 7).toFixed(2)}px`);
+                    event.currentTarget.style.setProperty("--parallax-ty", `${(y * 5).toFixed(2)}px`);
+                  }}
+                  onTouchMove={(event) => {
+                    const touch = event.touches[0];
+                    if (!touch) {
+                      return;
+                    }
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    if (!rect.width || !rect.height) {
+                      return;
+                    }
+                    const x = ((touch.clientX - rect.left) / rect.width - 0.5) * 2;
+                    const y = ((touch.clientY - rect.top) / rect.height - 0.5) * 2;
+                    event.currentTarget.style.setProperty("--parallax-tx", `${(x * 7).toFixed(2)}px`);
+                    event.currentTarget.style.setProperty("--parallax-ty", `${(y * 5).toFixed(2)}px`);
+                  }}
+                  onTouchEnd={(event) => {
+                    event.currentTarget.style.setProperty("--parallax-tx", "0px");
+                    event.currentTarget.style.setProperty("--parallax-ty", "0px");
                   }}
                   onKeyDown={(event) => handleRoomCardKeyDown(event, room)}
                   role="button"
@@ -2721,8 +2739,8 @@ export default function Home() {
                   aria-label={`Open ${room.name}`}
                   style={
                     {
-                      "--parallax-x": "0",
-                      "--parallax-y": "0",
+                      "--parallax-tx": "0px",
+                      "--parallax-ty": "0px",
                     } as React.CSSProperties
                   }
                 >
@@ -2734,8 +2752,7 @@ export default function Home() {
                         alt={room.name}
                         className="h-full w-full object-cover transition duration-300"
                         style={{
-                          transform:
-                            "translate3d(calc(var(--parallax-x) * 7px), calc(var(--parallax-y) * 5px), 0) scale(1.04)",
+                          transform: "translate3d(var(--parallax-tx), var(--parallax-ty), 0) scale(1.04)",
                         }}
                       />
                     ) : (
