@@ -2151,7 +2151,7 @@ export default function Home() {
               ) : null}
             </div>
             <div
-              className="relative overflow-hidden rounded-[28px] border border-white/80 bg-[#f6ece6] shadow-[0_16px_40px_rgba(81,55,37,0.10)]"
+              className="relative scroll-mt-24 overflow-hidden rounded-[28px] border border-white/80 bg-[#f6ece6] shadow-[0_16px_40px_rgba(81,55,37,0.10)] sm:scroll-mt-8"
               ref={roomImageContainerRef}
               onClick={(event) => {
                 void runSafely(() => handleImageClick(event));
