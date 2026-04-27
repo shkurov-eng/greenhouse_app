@@ -151,7 +151,8 @@ Maintenance guidelines:
 - **Manual save preserves AI recommendations:** `updatePlant` payload/secure action now supports persisting `watering_summary` + `watering_amount_recommendation` during save, avoiding recommendation loss after AI refresh.
 - **Room-details AI field consistency:** `listRoomDetails` response is normalized server-side to include `watering_summary`, `watering_amount_recommendation`, and `ai_inferred_at` from `plants` even when RPC payload omits them.
 - **Room-details plants consistency patch (targeted SQL):**
-  - Added `fix_room_details_plants_by_room.sql`: replaces `api_room_details` so plants are loaded by `room_id` after room-level ownership check, preventing empty plant lists when historical `plants.household_id` is inconsistent.
+  - Added `fix_room_details_plants_by_room.sql`: replaces `api_room_details` so plants are loaded by `room_id` after validating that the requester is a member of the room's household (`household_members`), instead of relying only on `profiles.active_household_id`.
+  - This avoids empty-room-details regressions when room list is scoped by explicit household but profile active household is stale.
   - Added `fix_plants_household_consistency.sql`: heals existing mismatches by aligning `plants.household_id` to `rooms.household_id`.
   - Added `guard_plants_household_consistency.sql`: installs trigger `trg_plants_household_consistency` to enforce alignment on future writes.
   - Added `fix_household_join_and_plants_consistency_all_in_one.sql`: one idempotent script that applies all three steps in production-safe order.
@@ -191,6 +192,8 @@ Maintenance guidelines:
 - Re-watering is allowed: tapping an already watered marker updates `last_watered_at` to the current time again (timer reset/restart).
 - **Marker long-press opens a compact quick menu** for that marker's plant; edit form is opened explicitly via the pencil in that menu (tap behavior still waters as before).
 - **Edit Plant** includes **Undo last watering** with persistent DB history: restores `last_watered_at` to the value captured before the latest watering action, including after app reloads, and closes the edit modal right after undo.
+- Watering history actor tracking: each new watering event now stores `watered_by_profile_id` in `plant_watering_events` (migration: `plant_watering_events_actor.sql`).
+- Room details now include `last_watered_by_username` (resolved from the latest non-undone watering event + `profiles.username`) so plant cards and edit modal show `Watered by: @username`.
 - **Client-side urgency** (`wateringDerivedStatus` in `page.tsx`), aligned with marker colors and calculated **per plant** from its own thresholds:
   - **Green (`healthy`):** last watered less than `thirsty_after_hours`.
   - **Yellow (`thirsty`):** from `thirsty_after_hours` up to `overdue_after_hours`.

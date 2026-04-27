@@ -70,6 +70,7 @@ export type Plant = {
   species: string | null;
   status: PlantStatus;
   last_watered_at: string | null;
+  last_watered_by_username: string | null;
   thirsty_after_hours: number;
   overdue_after_hours: number;
   watering_amount_recommendation: "light" | "moderate" | "abundant" | null;

@@ -259,13 +259,13 @@ async function getScopedPlantForActiveHousehold(telegramId: string | number, pla
   const supabaseAdmin = getSupabaseAdmin();
   const { data: profile, error: profileError } = await supabaseAdmin
     .from("profiles")
-    .select("active_household_id")
+    .select("id,active_household_id")
     .eq("telegram_id", telegramId)
     .single();
   if (profileError) {
     throw new Error(profileError.message);
   }
-  const profileRow = profile as { active_household_id?: string | null } | null;
+  const profileRow = profile as { id?: string | null; active_household_id?: string | null } | null;
   const activeHouseholdId = profileRow?.active_household_id ?? null;
   if (!activeHouseholdId) {
     throw new Error("No active household");
@@ -287,6 +287,7 @@ async function getScopedPlantForActiveHousehold(telegramId: string | number, pla
   }
   return {
     supabaseAdmin,
+    profileId: String(profileRow?.id ?? ""),
     lastWateredAt:
       plantRowData?.last_watered_at == null ? null : String(plantRowData.last_watered_at),
   };
@@ -956,6 +957,7 @@ export async function POST(request: NextRequest) {
             watering_summary: string | null;
             watering_amount_recommendation: "light" | "moderate" | "abundant" | null;
             ai_inferred_at: string | null;
+            last_watered_by_username: string | null;
           }
         >();
         if (plantIds.length > 0) {
@@ -980,8 +982,67 @@ export async function POST(request: NextRequest) {
                     : null,
                 ai_inferred_at:
                   typeof row.ai_inferred_at === "string" ? row.ai_inferred_at : null,
+                last_watered_by_username: null,
               },
             ]),
+          );
+
+          const { data: wateringEventsRows, error: wateringEventsError } = await getSupabaseAdmin()
+            .from("plant_watering_events")
+            .select("plant_id,watered_at,undone_at,watered_by_profile_id")
+            .in("plant_id", plantIds)
+            .is("undone_at", null)
+            .order("watered_at", { ascending: false });
+          if (wateringEventsError) {
+            throw new Error(wateringEventsError.message);
+          }
+          const latestWateringByPlantId = new Map<string, string | null>();
+          const wateredByProfileIds: string[] = [];
+          for (const row of (wateringEventsRows as Array<Record<string, unknown>> | null) ?? []) {
+            const plantId = typeof row.plant_id === "string" ? row.plant_id : "";
+            if (!plantId || latestWateringByPlantId.has(plantId)) {
+              continue;
+            }
+            const wateredByProfileId =
+              typeof row.watered_by_profile_id === "string" ? row.watered_by_profile_id : null;
+            latestWateringByPlantId.set(plantId, wateredByProfileId);
+            if (wateredByProfileId) {
+              wateredByProfileIds.push(wateredByProfileId);
+            }
+          }
+
+          let usernamesByProfileId = new Map<string, string | null>();
+          if (wateredByProfileIds.length > 0) {
+            const { data: profileRows, error: profileRowsError } = await getSupabaseAdmin()
+              .from("profiles")
+              .select("id,username")
+              .in("id", [...new Set(wateredByProfileIds)]);
+            if (profileRowsError) {
+              throw new Error(profileRowsError.message);
+            }
+            usernamesByProfileId = new Map(
+              ((profileRows as Array<Record<string, unknown>> | null) ?? []).map((row) => [
+                String(row.id ?? ""),
+                typeof row.username === "string" && row.username.trim().length > 0
+                  ? row.username.trim()
+                  : null,
+              ]),
+            );
+          }
+
+          aiFieldsByPlantId = new Map(
+            [...aiFieldsByPlantId].map(([plantId, aiFields]) => {
+              const wateredByProfileId = latestWateringByPlantId.get(plantId) ?? null;
+              return [
+                plantId,
+                {
+                  ...aiFields,
+                  last_watered_by_username: wateredByProfileId
+                    ? (usernamesByProfileId.get(wateredByProfileId) ?? null)
+                    : null,
+                },
+              ];
+            }),
           );
         }
         const mergedPlants = rpcPlants.map((plant) => {
@@ -995,6 +1056,7 @@ export async function POST(request: NextRequest) {
             watering_summary: aiFields.watering_summary,
             watering_amount_recommendation: aiFields.watering_amount_recommendation,
             ai_inferred_at: aiFields.ai_inferred_at,
+            last_watered_by_username: aiFields.last_watered_by_username,
           };
         });
         const plants = await enrichPlantsWithSignedUrls(mergedPlants);
@@ -1036,10 +1098,13 @@ export async function POST(request: NextRequest) {
 
       case "waterPlant": {
         const plantId = asUuid(payload.plantId, "plantId");
-        const { supabaseAdmin, lastWateredAt } = await getScopedPlantForActiveHousehold(
+        const { supabaseAdmin, profileId, lastWateredAt } = await getScopedPlantForActiveHousehold(
           telegramId,
           plantId,
         );
+        if (!profileId) {
+          throw new Error("Profile not found");
+        }
         const nextWateredAt = new Date().toISOString();
         const db = supabaseAdmin as unknown as LooseTableApi;
         const { error: waterUpdateError } = await db
@@ -1055,6 +1120,8 @@ export async function POST(request: NextRequest) {
         const { error: historyError } = await db.from("plant_watering_events").insert({
           plant_id: plantId,
           previous_last_watered_at: lastWateredAt,
+          watered_at: nextWateredAt,
+          watered_by_profile_id: profileId,
         });
         if (historyError) {
           throw new Error(

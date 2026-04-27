@@ -398,6 +398,13 @@ export default function Home() {
     return date.toLocaleString();
   }
 
+  function formatLastWateredBy(username: string | null) {
+    if (!username) {
+      return "Unknown";
+    }
+    return username.startsWith("@") ? username : `@${username}`;
+  }
+
   function getCurrentInitData() {
     return telegramInitDataRef.current;
   }
@@ -2536,7 +2543,7 @@ export default function Home() {
                       className="rounded-2xl border border-[#eee6dc] bg-[#fffaf5] px-3 py-3 text-sm text-[#1f1b17] shadow-sm"
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="flex min-w-0 items-start gap-3">
+                        <div className="flex min-w-0 flex-1 items-start gap-3">
                           {plant.signed_photo_url ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -2550,20 +2557,22 @@ export default function Home() {
                               no photo
                             </div>
                           )}
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                           <p className="font-semibold">
                             {plant.name}
+                          </p>
+                          <div className="mt-1 flex flex-wrap gap-1">
                             {plant.ai_inferred_at ? (
-                              <span className="ml-2 rounded-full bg-[#e6f5ef] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#006c49]">
+                              <span className="rounded-full bg-[#e6f5ef] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#006c49]">
                                 AI detected
                               </span>
                             ) : null}
                             {!hasMarker ? (
-                              <span className="ml-2 rounded-full bg-[#ffedd5] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#9a3412]">
+                              <span className="rounded-full bg-[#ffedd5] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#9a3412]">
                                 no marker
                               </span>
                             ) : null}
-                          </p>
+                          </div>
                           {plant.species ? (
                             <p className="text-xs text-[#6c7a71]">{plant.species}</p>
                           ) : null}
@@ -2576,6 +2585,9 @@ export default function Home() {
                           </p>
                           <p className="text-[10px] text-[#6c7a71]">
                             Last watered: {formatLastWatered(plant.last_watered_at)}
+                          </p>
+                          <p className="text-[10px] text-[#6c7a71]">
+                            Watered by: {formatLastWateredBy(plant.last_watered_by_username)}
                           </p>
                           <p className="text-[10px] text-[#6c7a71]">
                             Thresholds: thirsty after{" "}
@@ -2594,7 +2606,7 @@ export default function Home() {
                           ) : null}
                           </div>
                         </div>
-                        <div className="flex flex-col gap-2">
+                        <div className="flex w-[92px] shrink-0 flex-col gap-2">
                           <button
                             type="button"
                             onClick={() => {
@@ -3575,6 +3587,9 @@ export default function Home() {
                             ) : null}
                             <p className="mt-1 text-xs text-[#6c7a71]">
                               Last watered: {formatLastWatered(editingPlant.last_watered_at)}
+                            </p>
+                            <p className="mt-1 text-xs text-[#6c7a71]">
+                              Watered by: {formatLastWateredBy(editingPlant.last_watered_by_username)}
                             </p>
                           </div>
                         </div>
