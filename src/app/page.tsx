@@ -2682,7 +2682,7 @@ export default function Home() {
 
       {!selectedRoom && roomForPhotoPicker ? (
         <div className="fixed inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-black/35 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
-          <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
+          <div className="relative max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[24px] bg-white p-4 shadow-xl">
             <h3 className="text-base font-semibold text-[#1f1b17]">Room photo</h3>
             <p className="mt-1 text-sm text-[#6c7a71]">{roomForPhotoPicker.name}</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
@@ -3217,33 +3217,41 @@ export default function Home() {
             {editingPlantId ? (
               (() => {
                 const editingPlant = plants.find((plant) => plant.id === editingPlantId);
-                if (!editingPlant?.signed_photo_url) {
+                if (!editingPlant) {
                   return null;
                 }
                 return (
-                  <div className="mt-3">
+                  <div className="mt-3 rounded-xl border border-[#e7ddd6] bg-[#fffaf7] p-3">
                     {editingPlant.ai_inferred_at ? (
-                      <p className="mb-2 inline-flex rounded-full bg-[#e6f5ef] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-[#006c49]">
+                      <p className="mb-2 inline-flex rounded-full bg-[#e6f5ef] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#006c49]">
                         AI detected
                       </p>
                     ) : null}
-                    <p className="mb-2 text-xs text-[#6c7a71]">
+                    <p className="text-xs text-[#6c7a71]">
                       Last watered: {formatLastWatered(editingPlant.last_watered_at)}
                     </p>
-                    <p className="mb-2 text-xs text-[#6c7a71]">
+                    <p className="mt-1 text-xs text-[#6c7a71]">
                       Water amount: {formatWateringAmount(editingPlant.watering_amount_recommendation)}
                     </p>
-                    {editingPlant.watering_summary ? (
-                      <p className="mb-2 text-xs leading-relaxed text-[#6c7a71]">
-                        AI advice: {editingPlant.watering_summary}
-                      </p>
-                    ) : null}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={editingPlant.signed_photo_url}
-                      alt={editingPlant.name}
-                      className="h-32 w-full rounded-xl border border-[#e8ddd6] object-cover"
-                    />
+                    <p className="mt-1 text-xs leading-relaxed text-[#6c7a71]">
+                      {editingPlant.watering_summary ? (
+                        <>AI advice: {editingPlant.watering_summary}</>
+                      ) : (
+                        <>AI advice: not available yet. Tap "Analyze with AI" below to refresh guidance.</>
+                      )}
+                    </p>
+                    {editingPlant.signed_photo_url ? (
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={editingPlant.signed_photo_url}
+                          alt={editingPlant.name}
+                          className="mt-2 h-24 w-full rounded-xl border border-[#e8ddd6] object-cover"
+                        />
+                      </>
+                    ) : (
+                      <p className="mt-2 text-xs text-[#9b8a80]">No photo yet</p>
+                    )}
                   </div>
                 );
               })()
@@ -3252,24 +3260,9 @@ export default function Home() {
               value={editPlantName}
               onChange={(event) => setEditPlantName(event.target.value)}
               placeholder="Plant name"
-              className="mt-4 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+              className="mt-3 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
               autoFocus
             />
-            <input
-              value={editPlantSpecies}
-              onChange={(event) => setEditPlantSpecies(event.target.value)}
-              placeholder="Species (optional)"
-              className="mt-2 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
-            />
-            <select
-              value={editPlantStatus}
-              onChange={(event) => setEditPlantStatus(event.target.value as PlantStatus)}
-              className="mt-2 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
-            >
-              <option value="healthy">healthy</option>
-              <option value="thirsty">thirsty</option>
-              <option value="overdue">overdue</option>
-            </select>
             <div className="mt-2 grid grid-cols-2 gap-2">
               <label className="text-xs text-[#6c7a71]">
                 Thirsty after (hours)
@@ -3298,49 +3291,71 @@ export default function Home() {
                 />
               </label>
             </div>
-            <div className="mt-3 rounded-xl border border-[#e7ddd6] bg-[#fffaf7] p-3">
-              <p className="text-xs font-semibold text-[#3c4a42]">Plant photo</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    void runSafely(() => handleOpenCameraCapture("editPlant"));
-                  }}
-                  disabled={isReplacingPlantPhoto || isRemovingPlantPhoto || isAnalyzingEditPlantPhoto}
-                  className="inline-flex items-center gap-1 rounded-lg border border-[#bbcabf] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4a42]"
+            <details className="mt-3 rounded-xl border border-[#e7ddd6] bg-[#fffaf7] p-3">
+              <summary className="cursor-pointer text-xs font-semibold text-[#3c4a42]">
+                Advanced settings and photo
+              </summary>
+              <div className="mt-3">
+                <input
+                  value={editPlantSpecies}
+                  onChange={(event) => setEditPlantSpecies(event.target.value)}
+                  placeholder="Species (optional)"
+                  className="w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
+                />
+                <select
+                  value={editPlantStatus}
+                  onChange={(event) => setEditPlantStatus(event.target.value as PlantStatus)}
+                  className="mt-2 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
                 >
-                  <Camera className="h-4 w-4" />
-                  Take photo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => editPlantPhotoInputRef.current?.click()}
-                  disabled={isReplacingPlantPhoto || isRemovingPlantPhoto || isAnalyzingEditPlantPhoto}
-                  className="inline-flex items-center gap-1 rounded-lg border border-[#bbcabf] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4a42]"
-                >
-                  <ImagePlus className="h-4 w-4" />
-                  {isReplacingPlantPhoto ? "Uploading..." : "Replace photo"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void runSafely(handleAnalyzeEditPlantPhotoWithAi);
-                  }}
-                  disabled={isReplacingPlantPhoto || isRemovingPlantPhoto || isAnalyzingEditPlantPhoto}
-                  className="inline-flex items-center gap-1 rounded-lg border border-[#006c49] bg-[#e6f5ef] px-3 py-1.5 text-xs font-semibold text-[#006c49]"
-                >
-                  {isAnalyzingEditPlantPhoto ? "Analyzing..." : "Analyze with AI"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void runSafely(handleRemovePlantPhoto);
-                  }}
-                  disabled={isReplacingPlantPhoto || isRemovingPlantPhoto || isAnalyzingEditPlantPhoto}
-                  className="inline-flex items-center rounded-lg border border-[#ba1a1a]/30 px-3 py-1.5 text-xs font-semibold text-[#93000a]"
-                >
-                  {isRemovingPlantPhoto ? "Removing..." : "Remove photo"}
-                </button>
+                  <option value="healthy">healthy</option>
+                  <option value="thirsty">thirsty</option>
+                  <option value="overdue">overdue</option>
+                </select>
+                <div className="mt-3 rounded-xl border border-[#e7ddd6] bg-white p-3">
+                  <p className="text-xs font-semibold text-[#3c4a42]">Plant photo</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void runSafely(() => handleOpenCameraCapture("editPlant"));
+                      }}
+                      disabled={isReplacingPlantPhoto || isRemovingPlantPhoto || isAnalyzingEditPlantPhoto}
+                      className="inline-flex items-center gap-1 rounded-lg border border-[#bbcabf] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4a42]"
+                    >
+                      <Camera className="h-4 w-4" />
+                      Take photo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => editPlantPhotoInputRef.current?.click()}
+                      disabled={isReplacingPlantPhoto || isRemovingPlantPhoto || isAnalyzingEditPlantPhoto}
+                      className="inline-flex items-center gap-1 rounded-lg border border-[#bbcabf] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4a42]"
+                    >
+                      <ImagePlus className="h-4 w-4" />
+                      {isReplacingPlantPhoto ? "Uploading..." : "Replace photo"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void runSafely(handleAnalyzeEditPlantPhotoWithAi);
+                      }}
+                      disabled={isReplacingPlantPhoto || isRemovingPlantPhoto || isAnalyzingEditPlantPhoto}
+                      className="inline-flex items-center gap-1 rounded-lg border border-[#006c49] bg-[#e6f5ef] px-3 py-1.5 text-xs font-semibold text-[#006c49]"
+                    >
+                      {isAnalyzingEditPlantPhoto ? "Analyzing..." : "Analyze with AI"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void runSafely(handleRemovePlantPhoto);
+                      }}
+                      disabled={isReplacingPlantPhoto || isRemovingPlantPhoto || isAnalyzingEditPlantPhoto}
+                      className="inline-flex items-center rounded-lg border border-[#ba1a1a]/30 px-3 py-1.5 text-xs font-semibold text-[#93000a]"
+                    >
+                      {isRemovingPlantPhoto ? "Removing..." : "Remove photo"}
+                    </button>
+                  </div>
+                </div>
               </div>
               <input
                 ref={editPlantPhotoInputRef}
@@ -3351,7 +3366,7 @@ export default function Home() {
                 }}
                 className="hidden"
               />
-            </div>
+            </details>
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
@@ -3378,6 +3393,8 @@ export default function Home() {
               >
                 Edit marker
               </button>
+            </div>
+            <div className="sticky bottom-0 mt-3 -mx-4 flex justify-end gap-2 border-t border-[#e8ddd6] bg-white/95 px-4 pb-1 pt-3 backdrop-blur">
               <button
                 type="button"
                 onClick={() => setIsEditPlantOpen(false)}
