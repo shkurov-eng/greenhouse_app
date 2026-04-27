@@ -121,6 +121,57 @@ type SecureRequest = {
   username?: string | null;
 };
 
+const REQUEST_TIMEOUT_MS = 15000;
+const UPLOAD_REQUEST_TIMEOUT_MS = 45000;
+const ANALYZE_REQUEST_TIMEOUT_MS = 60000;
+const NETWORK_RETRY_DELAY_MS = 350;
+const MAX_NETWORK_RETRIES = 1;
+
+function isRetryableNetworkError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("fetch failed") ||
+    message.includes("terminated") ||
+    message.includes("aborted") ||
+    message.includes("networkerror")
+  );
+}
+
+async function wait(ms: number) {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function fetchWithTimeoutAndRetry(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+) {
+  let attempt = 0;
+  while (true) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(input, {
+        ...init,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (attempt >= MAX_NETWORK_RETRIES || !isRetryableNetworkError(error)) {
+        throw error;
+      }
+      attempt += 1;
+      await wait(NETWORK_RETRY_DELAY_MS * attempt);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 async function readApiPayload<TResponse>(response: Response) {
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
@@ -140,18 +191,21 @@ async function readApiPayload<TResponse>(response: Response) {
 }
 
 async function secureRequest<TResponse>({ action, payload, initData }: SecureRequest) {
-  const response = await fetch("/api/secure", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(initData ? { "x-telegram-init-data": initData } : {}),
+  const response = await fetchWithTimeoutAndRetry(
+    "/api/secure",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(initData ? { "x-telegram-init-data": initData } : {}),
+      },
+      body: JSON.stringify({
+        action,
+        payload,
+      }),
     },
-    body: JSON.stringify({
-      action,
-      payload,
-    }),
-  });
-
+    REQUEST_TIMEOUT_MS,
+  );
   return readApiPayload<TResponse>(response);
 }
 
@@ -425,13 +479,17 @@ export async function uploadRoomImage(
   formData.set("roomId", payload.roomId);
   formData.set("file", payload.file);
 
-  const response = await fetch("/api/rooms/upload", {
-    method: "POST",
-    headers: {
-      ...(initData ? { "x-telegram-init-data": initData } : {}),
+  const response = await fetchWithTimeoutAndRetry(
+    "/api/rooms/upload",
+    {
+      method: "POST",
+      headers: {
+        ...(initData ? { "x-telegram-init-data": initData } : {}),
+      },
+      body: formData,
     },
-    body: formData,
-  });
+    UPLOAD_REQUEST_TIMEOUT_MS,
+  );
 
   return readApiPayload<Room>(response);
 }
@@ -440,18 +498,22 @@ export async function stylizeRoomImage(
   initData: string | null,
   payload: { roomId: string; force?: boolean; preset?: RoomStylizationPreset },
 ) {
-  const response = await fetch("/api/rooms/stylize", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(initData ? { "x-telegram-init-data": initData } : {}),
+  const response = await fetchWithTimeoutAndRetry(
+    "/api/rooms/stylize",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(initData ? { "x-telegram-init-data": initData } : {}),
+      },
+      body: JSON.stringify({
+        roomId: payload.roomId,
+        force: payload.force === true,
+        preset: payload.preset ?? "strong",
+      }),
     },
-    body: JSON.stringify({
-      roomId: payload.roomId,
-      force: payload.force === true,
-      preset: payload.preset ?? "strong",
-    }),
-  });
+    ANALYZE_REQUEST_TIMEOUT_MS,
+  );
 
   return readApiPayload<Room>(response);
 }
@@ -485,17 +547,21 @@ type AnalyzeRoomPlantsResponse = {
 };
 
 export async function analyzeRoomPlantsPreview(initData: string | null, payload: { roomId: string }) {
-  const response = await fetch("/api/rooms/analyze", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(initData ? { "x-telegram-init-data": initData } : {}),
+  const response = await fetchWithTimeoutAndRetry(
+    "/api/rooms/analyze",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(initData ? { "x-telegram-init-data": initData } : {}),
+      },
+      body: JSON.stringify({
+        roomId: payload.roomId,
+        mode: "preview",
+      }),
     },
-    body: JSON.stringify({
-      roomId: payload.roomId,
-      mode: "preview",
-    }),
-  });
+    ANALYZE_REQUEST_TIMEOUT_MS,
+  );
 
   return readApiPayload<AnalyzeRoomPlantsResponse>(response);
 }
@@ -504,18 +570,22 @@ export async function createRoomPlantsFromDetections(
   initData: string | null,
   payload: { roomId: string; detections: RoomPlantDetectionDraft[] },
 ) {
-  const response = await fetch("/api/rooms/analyze", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(initData ? { "x-telegram-init-data": initData } : {}),
+  const response = await fetchWithTimeoutAndRetry(
+    "/api/rooms/analyze",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(initData ? { "x-telegram-init-data": initData } : {}),
+      },
+      body: JSON.stringify({
+        roomId: payload.roomId,
+        mode: "create",
+        detections: payload.detections,
+      }),
     },
-    body: JSON.stringify({
-      roomId: payload.roomId,
-      mode: "create",
-      detections: payload.detections,
-    }),
-  });
+    ANALYZE_REQUEST_TIMEOUT_MS,
+  );
 
   return readApiPayload<AnalyzeRoomPlantsResponse>(response);
 }
@@ -529,13 +599,17 @@ export async function uploadPlantImage(
   formData.set("file", payload.file);
   formData.set("aiMode", payload.aiMode ?? "auto");
 
-  const response = await fetch("/api/plants/upload", {
-    method: "POST",
-    headers: {
-      ...(initData ? { "x-telegram-init-data": initData } : {}),
+  const response = await fetchWithTimeoutAndRetry(
+    "/api/plants/upload",
+    {
+      method: "POST",
+      headers: {
+        ...(initData ? { "x-telegram-init-data": initData } : {}),
+      },
+      body: formData,
     },
-    body: formData,
-  });
+    UPLOAD_REQUEST_TIMEOUT_MS,
+  );
 
   return readApiPayload<{
     id: string;
@@ -564,13 +638,17 @@ export async function analyzePlantImage(initData: string | null, payload: { file
   const formData = new FormData();
   formData.set("file", payload.file);
 
-  const response = await fetch("/api/plants/analyze", {
-    method: "POST",
-    headers: {
-      ...(initData ? { "x-telegram-init-data": initData } : {}),
+  const response = await fetchWithTimeoutAndRetry(
+    "/api/plants/analyze",
+    {
+      method: "POST",
+      headers: {
+        ...(initData ? { "x-telegram-init-data": initData } : {}),
+      },
+      body: formData,
     },
-    body: formData,
-  });
+    ANALYZE_REQUEST_TIMEOUT_MS,
+  );
 
   return readApiPayload<{
     ai_status:
@@ -592,14 +670,18 @@ export async function analyzePlantImage(initData: string | null, payload: { file
 }
 
 export async function reanalyzePlantPhoto(initData: string | null, payload: { plantId: string }) {
-  const response = await fetch("/api/plants/reanalyze", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(initData ? { "x-telegram-init-data": initData } : {}),
+  const response = await fetchWithTimeoutAndRetry(
+    "/api/plants/reanalyze",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(initData ? { "x-telegram-init-data": initData } : {}),
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
+    ANALYZE_REQUEST_TIMEOUT_MS,
+  );
 
   return readApiPayload<{
     id: string;

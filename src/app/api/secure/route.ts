@@ -300,11 +300,30 @@ async function rpc(fn: string, params: Record<string, unknown>): Promise<unknown
     rpcName: string,
     rpcParams?: Record<string, unknown>,
   ) => Promise<RpcResponse>;
-  const { data, error } = await rpcAny(fn, params);
-  if (error) {
-    throw new Error(error.message);
+  const maxAttempts = 2;
+  let attempt = 0;
+  let lastMessage = "RPC failed";
+  while (attempt < maxAttempts) {
+    const { data, error } = await rpcAny(fn, params);
+    if (!error) {
+      return data as unknown;
+    }
+    lastMessage = error.message;
+    const normalized = lastMessage.toLowerCase();
+    const retryable =
+      normalized.includes("fetch failed") ||
+      normalized.includes("terminated") ||
+      normalized.includes("aborted") ||
+      normalized.includes("networkerror");
+    attempt += 1;
+    if (!retryable || attempt >= maxAttempts) {
+      throw new Error(lastMessage);
+    }
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 250 * attempt);
+    });
   }
-  return data as unknown;
+  throw new Error(lastMessage);
 }
 
 async function telegramApiCall(method: string, payload: Record<string, unknown>) {
