@@ -2748,8 +2748,8 @@ export default function Home() {
       ) : null}
 
       {!selectedRoom && isCreateHomeOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/30 p-4 pb-28 pt-16 sm:items-center sm:pb-4 sm:pt-4">
-          <div className="w-full max-w-md rounded-[24px] bg-white p-4 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/30 p-3 pb-24 pt-3 sm:items-center sm:p-4">
+          <div className="relative max-h-[calc(100dvh-7rem)] w-full max-w-md overflow-y-auto rounded-[24px] bg-white p-4 shadow-xl sm:max-h-[85vh]">
             <h3 className="text-base font-semibold text-[#1f1b17]">Create new home</h3>
             <p className="mt-1 text-sm text-[#6c7a71]">Starts an empty household. You can switch anytime.</p>
             <input
