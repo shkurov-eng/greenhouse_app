@@ -175,6 +175,7 @@ export default function Home() {
   const [isCreateHomeOpen, setIsCreateHomeOpen] = useState(false);
   const [newHomeName, setNewHomeName] = useState("");
   const [householdSummaries, setHouseholdSummaries] = useState<HouseholdSummary[]>([]);
+  const [isSwitchingHousehold, setIsSwitchingHousehold] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [isRenameHomeOpen, setIsRenameHomeOpen] = useState(false);
   const [renameHomeId, setRenameHomeId] = useState<string | null>(null);
@@ -447,11 +448,9 @@ export default function Home() {
     setHighlightedMarkerPlantId(null);
   }
 
-  function beginHouseholdTransition(nextHousehold?: Household | null) {
+  function beginHouseholdTransition() {
     // Invalidate in-flight room list requests from the previous household.
     roomsFetchRequestIdRef.current += 1;
-    setHouseholdId(nextHousehold?.id ?? null);
-    setCurrentHousehold(nextHousehold ?? null);
     setRooms([]);
     setSelectedRoom(null);
     clearRoomDetailState();
@@ -1059,6 +1058,9 @@ export default function Home() {
   }
 
   async function handleJoinHome() {
+    if (isSwitchingHousehold) {
+      return;
+    }
     const code = joinCode.trim().toUpperCase();
     const isLegacyInviteException = code === "ZFXQSB";
     setMessage("");
@@ -1091,48 +1093,52 @@ export default function Home() {
       return;
     }
 
-    beginHouseholdTransition({
-      id: targetHome.household_id,
-      name: targetHome.household_name,
-      invite_code: targetHome.invite_code,
-    });
+    setIsSwitchingHousehold(true);
+    beginHouseholdTransition();
     setIsJoinHomeOpen(false);
     setJoinCode("");
-    await loadHouseholds();
-    await fetchRoomsForHousehold();
-    setMessage(`Joined ${targetHome.household_name}`);
+    try {
+      await loadHouseholds();
+      await fetchRoomsForHousehold();
+      setMessage(`Joined ${targetHome.household_name}`);
+    } finally {
+      setIsSwitchingHousehold(false);
+    }
   }
 
   async function handleSwitchHousehold(targetId: string) {
-    const nextHome = householdSummaries.find((home) => home.household_id === targetId) ?? null;
-    beginHouseholdTransition(
-      nextHome
-        ? {
-        id: nextHome.household_id,
-        name: nextHome.household_name,
-        invite_code: nextHome.invite_code,
-          }
-        : null,
-    );
-    await setActiveHousehold(getCurrentInitData(), targetId);
-    await loadHouseholds();
-    await fetchRoomsForHousehold();
-    setMessage("Home switched");
+    if (isSwitchingHousehold) {
+      return;
+    }
+    setIsSwitchingHousehold(true);
+    beginHouseholdTransition();
+    try {
+      await setActiveHousehold(getCurrentInitData(), targetId);
+      await loadHouseholds();
+      await fetchRoomsForHousehold();
+      setMessage("Home switched");
+    } finally {
+      setIsSwitchingHousehold(false);
+    }
   }
 
   async function handleCreateHome() {
+    if (isSwitchingHousehold) {
+      return;
+    }
     const label = newHomeName.trim();
-    const createdHome = await createHousehold(getCurrentInitData(), label.length > 0 ? label : null);
-    setNewHomeName("");
-    setIsCreateHomeOpen(false);
-    beginHouseholdTransition({
-      id: createdHome.household_id,
-      name: createdHome.household_name,
-      invite_code: createdHome.invite_code,
-    });
-    await loadHouseholds();
-    await fetchRoomsForHousehold();
-    setMessage("New home created");
+    setIsSwitchingHousehold(true);
+    try {
+      await createHousehold(getCurrentInitData(), label.length > 0 ? label : null);
+      setNewHomeName("");
+      setIsCreateHomeOpen(false);
+      beginHouseholdTransition();
+      await loadHouseholds();
+      await fetchRoomsForHousehold();
+      setMessage("New home created");
+    } finally {
+      setIsSwitchingHousehold(false);
+    }
   }
 
   async function handleDeleteRoom(roomId: string) {
@@ -1146,17 +1152,25 @@ export default function Home() {
   }
 
   async function handleDeleteHousehold(targetHouseholdId: string) {
-    await deleteHousehold(getCurrentInitData(), targetHouseholdId);
-    beginHouseholdTransition(null);
-    await loadHouseholds();
-    try {
-      await fetchRoomsForHousehold();
-    } catch {
-      // Fallback for race/transition cases when last home is deleted and auto-bootstrap just recreated a default home.
-      await loadHouseholds();
-      await fetchRoomsForHousehold();
+    if (isSwitchingHousehold) {
+      return;
     }
-    setMessage("Home deleted");
+    setIsSwitchingHousehold(true);
+    await deleteHousehold(getCurrentInitData(), targetHouseholdId);
+    beginHouseholdTransition();
+    try {
+      await loadHouseholds();
+      try {
+        await fetchRoomsForHousehold();
+      } catch {
+        // Fallback for race/transition cases when last home is deleted and auto-bootstrap just recreated a default home.
+        await loadHouseholds();
+        await fetchRoomsForHousehold();
+      }
+      setMessage("Home deleted");
+    } finally {
+      setIsSwitchingHousehold(false);
+    }
   }
 
   async function handleSubmitRenameHome() {
@@ -2644,13 +2658,14 @@ export default function Home() {
               <div className="relative">
                 <select
                   value={householdId ?? homesForPicker[0]?.household_id ?? ""}
+                  disabled={isSwitchingHousehold}
                   onChange={(event) => {
                     const nextHouseholdId = event.target.value;
                     if (nextHouseholdId && nextHouseholdId !== householdId) {
                       void runSafely(() => handleSwitchHousehold(nextHouseholdId));
                     }
                   }}
-                  className="w-full appearance-none rounded-xl border border-[#c8d8cf] bg-[#f8fcfa] py-2.5 pl-3 pr-10 text-sm font-semibold text-[#1f1b17] outline-none transition focus:border-[#006c49] focus:ring-2 focus:ring-[#006c49]/20"
+                  className="w-full appearance-none rounded-xl border border-[#c8d8cf] bg-[#f8fcfa] py-2.5 pl-3 pr-10 text-sm font-semibold text-[#1f1b17] outline-none transition focus:border-[#006c49] focus:ring-2 focus:ring-[#006c49]/20 disabled:cursor-not-allowed disabled:opacity-60"
                   aria-label="Active home"
                 >
                   {homesForPicker.map((home) => (
@@ -2664,6 +2679,15 @@ export default function Home() {
                 </span>
               </div>
             )}
+            {isSwitchingHousehold ? (
+              <div className="mt-2 inline-flex items-center gap-2 text-xs font-medium text-[#6c7a71]">
+                <span
+                  className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#9ecab7] border-t-[#006c49]"
+                  aria-hidden="true"
+                />
+                <span>Switching home...</span>
+              </div>
+            ) : null}
           </section>
 
           <section className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/90 p-2 shadow-sm">
