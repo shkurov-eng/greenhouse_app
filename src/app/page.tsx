@@ -262,6 +262,7 @@ export default function Home() {
   const [isRoomOpeningAnimationActive, setIsRoomOpeningAnimationActive] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [pressedRoomCardId, setPressedRoomCardId] = useState<string | null>(null);
+  const [roomCardParallaxTick, setRoomCardParallaxTick] = useState(0);
   /** Bumps on an interval so marker colors refresh from `last_watered_at` without refetch. */
   const [, setWateringUiTick] = useState(0);
   const [, setPendingWateringTick] = useState(0);
@@ -1944,6 +1945,18 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (selectedRoom || prefersReducedMotion) {
+      return;
+    }
+    const id = window.setInterval(() => {
+      setRoomCardParallaxTick((n) => n + 1);
+    }, 120);
+    return () => {
+      window.clearInterval(id);
+    };
+  }, [selectedRoom, prefersReducedMotion]);
+
+  useEffect(() => {
     if (!selectedRoom || prefersReducedMotion) {
       setIsRoomOpeningAnimationActive(false);
       return;
@@ -2674,7 +2687,7 @@ export default function Home() {
                 </button>
               </div>
             ) : (
-              rooms.map((room) => {
+              rooms.map((room, roomIndex) => {
                 const roomImageUrl = getRoomImageUrl(room);
                 const hasCartoonPreview =
                   Boolean(room.stylized_background_path) || Boolean(room.signed_stylized_background_url);
@@ -2752,7 +2765,11 @@ export default function Home() {
                         alt={room.name}
                         className="h-full w-full object-cover transition duration-300"
                         style={{
-                          transform: "translate3d(var(--parallax-tx), var(--parallax-ty), 0) scale(1.04)",
+                          transform: `translate3d(calc(var(--parallax-tx) + ${
+                            Math.sin(roomCardParallaxTick / 8 + roomIndex * 0.9) * 2.8
+                          }px), calc(var(--parallax-ty) + ${
+                            Math.cos(roomCardParallaxTick / 9 + roomIndex * 0.7) * 1.9
+                          }px), 0) scale(1.04)`,
                         }}
                       />
                     ) : (
