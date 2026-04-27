@@ -234,6 +234,10 @@ export default function Home() {
   const [isEditPlantNameFieldOpen, setIsEditPlantNameFieldOpen] = useState(false);
   const [editPlantSpecies, setEditPlantSpecies] = useState("");
   const [editPlantStatus, setEditPlantStatus] = useState<PlantStatus>("healthy");
+  const [editPlantAiSummary, setEditPlantAiSummary] = useState<string | null>(null);
+  const [editPlantAiWaterAmount, setEditPlantAiWaterAmount] = useState<
+    Plant["watering_amount_recommendation"] | null
+  >(null);
   const [editPlantThirstyAfterHours, setEditPlantThirstyAfterHours] = useState(
     DEFAULT_THIRSTY_AFTER_HOURS,
   );
@@ -1347,6 +1351,8 @@ export default function Home() {
     setEditPlantStatus(plant.status);
     setEditPlantThirstyAfterHours(plant.thirsty_after_hours ?? DEFAULT_THIRSTY_AFTER_HOURS);
     setEditPlantOverdueAfterHours(plant.overdue_after_hours ?? DEFAULT_OVERDUE_AFTER_HOURS);
+    setEditPlantAiSummary(plant.watering_summary ?? null);
+    setEditPlantAiWaterAmount(plant.watering_amount_recommendation);
     setIsEditPlantNameFieldOpen(false);
     setIsEditPlantOpen(true);
   }
@@ -1387,6 +1393,8 @@ export default function Home() {
 
     setIsEditPlantOpen(false);
     setIsEditPlantNameFieldOpen(false);
+    setEditPlantAiSummary(null);
+    setEditPlantAiWaterAmount(null);
     setEditingPlantId(null);
     await fetchRoomDetails(selectedRoom.id);
     setMessage("Plant updated");
@@ -1400,6 +1408,8 @@ export default function Home() {
     await deletePlant(getCurrentInitData(), plantId);
     setIsEditPlantOpen(false);
     setIsEditPlantNameFieldOpen(false);
+    setEditPlantAiSummary(null);
+    setEditPlantAiWaterAmount(null);
     setEditingPlantId(null);
     await fetchRoomDetails(selectedRoom.id);
     setMessage("Plant deleted");
@@ -1482,6 +1492,8 @@ export default function Home() {
         setEditPlantName(result.ai_profile.plant_name);
         setEditPlantThirstyAfterHours(result.ai_profile.thirsty_after_hours);
         setEditPlantOverdueAfterHours(result.ai_profile.overdue_after_hours);
+        setEditPlantAiSummary(result.ai_profile.watering_summary);
+        setEditPlantAiWaterAmount(result.ai_profile.watering_amount_recommendation);
         setMessage("AI analysis complete. Edit fields updated.");
         return;
       }
@@ -3278,8 +3290,8 @@ export default function Home() {
                           Watering recommendations
                         </p>
                         <p className="mt-1 text-xs leading-relaxed text-[#3c4a42]">
-                          {editingPlant.watering_summary ? (
-                            editingPlant.watering_summary
+                          {editPlantAiSummary ? (
+                            editPlantAiSummary
                           ) : (
                             <>Not available yet. Tap "Analyze with AI" below to refresh guidance.</>
                           )}
@@ -3287,7 +3299,9 @@ export default function Home() {
                         <p className="mt-2 text-[11px] text-[#6c7a71]">
                           Suggested amount:{" "}
                           <span className="font-semibold text-[#3c4a42]">
-                            {formatWateringAmount(editingPlant.watering_amount_recommendation)}
+                            {formatWateringAmount(
+                              editPlantAiWaterAmount ?? editingPlant.watering_amount_recommendation,
+                            )}
                           </span>
                         </p>
                       </div>
