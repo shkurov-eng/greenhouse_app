@@ -24,10 +24,41 @@ type ProfileReminderSettings = {
   repeat_overdue_reminders?: boolean | null;
 };
 
+type PlantStatus = "healthy" | "thirsty" | "overdue";
+type WateringSlot = "morning" | "evening";
+type WateringSeverity = "gentle" | "strict";
+
+type PlantReminderCandidate = {
+  id: string;
+  household_id: string | null;
+  last_watered_at: string | null;
+  thirsty_after_hours: number | null;
+  overdue_after_hours: number | null;
+  name: string | null;
+};
+
+type HouseholdMemberRow = {
+  household_id: string | null;
+  user_id: string | null;
+};
+
+type PlantReminderProfileSettings = {
+  id: string;
+  telegram_id?: number | string | null;
+  watering_reminders_enabled?: boolean | null;
+  watering_reminder_schedule?: string | null;
+  watering_reminder_morning_minute_utc?: number | null;
+  watering_reminder_evening_minute_utc?: number | null;
+};
+
 const DUE_SOON_LEAD_MS = 15 * 60 * 1000;
 const DUE_SOON_GRACE_MS = 5 * 60 * 1000;
 const DUE_SOON_DEDUPE_MS = 15 * 60 * 1000;
 const OVERDUE_DEDUPE_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_PLANT_THIRSTY_AFTER_HOURS = 72;
+const DEFAULT_PLANT_OVERDUE_AFTER_HOURS = 96;
+const DEFAULT_WATERING_MORNING_MINUTE_UTC = 8 * 60;
+const DEFAULT_WATERING_EVENING_MINUTE_UTC = 19 * 60;
 
 function getAcceptedJobSecrets() {
   return [process.env.TASK_REMINDER_JOB_SECRET, process.env.CRON_SECRET]
@@ -53,6 +84,69 @@ function getProvidedJobSecret(request: NextRequest) {
 function classifyReminderKind(dueAt: string): ReminderKind {
   const due = new Date(dueAt).getTime();
   return due < Date.now() - DUE_SOON_GRACE_MS ? "overdue" : "due_soon";
+}
+
+function normalizeMinute(value: number | null | undefined, fallback: number) {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 1439) {
+    return value;
+  }
+  return fallback;
+}
+
+function getCurrentWateringSlotForProfile(date: Date, profile: PlantReminderProfileSettings): WateringSlot | null {
+  const minuteOfDayUtc = date.getUTCHours() * 60 + date.getUTCMinutes();
+  const morningMinuteUtc = normalizeMinute(
+    profile.watering_reminder_morning_minute_utc,
+    DEFAULT_WATERING_MORNING_MINUTE_UTC,
+  );
+  const eveningMinuteUtc = normalizeMinute(
+    profile.watering_reminder_evening_minute_utc,
+    DEFAULT_WATERING_EVENING_MINUTE_UTC,
+  );
+  if (minuteOfDayUtc === morningMinuteUtc) {
+    return "morning";
+  }
+  if (minuteOfDayUtc === eveningMinuteUtc) {
+    return "evening";
+  }
+  return null;
+}
+
+function derivePlantStatus(plant: PlantReminderCandidate): PlantStatus {
+  if (!plant.last_watered_at) {
+    return "overdue";
+  }
+  const lastWateredMs = Date.parse(plant.last_watered_at);
+  if (!Number.isFinite(lastWateredMs)) {
+    return "overdue";
+  }
+  const thirstyAfterHours =
+    typeof plant.thirsty_after_hours === "number" && plant.thirsty_after_hours > 0
+      ? plant.thirsty_after_hours
+      : DEFAULT_PLANT_THIRSTY_AFTER_HOURS;
+  const overdueAfterHours =
+    typeof plant.overdue_after_hours === "number" && plant.overdue_after_hours > 0
+      ? Math.max(plant.overdue_after_hours, thirstyAfterHours)
+      : Math.max(DEFAULT_PLANT_OVERDUE_AFTER_HOURS, thirstyAfterHours);
+
+  const elapsedMs = Date.now() - lastWateredMs;
+  const thirstyMs = thirstyAfterHours * 60 * 60 * 1000;
+  const overdueMs = overdueAfterHours * 60 * 60 * 1000;
+  if (elapsedMs < thirstyMs) {
+    return "healthy";
+  }
+  if (elapsedMs < overdueMs) {
+    return "thirsty";
+  }
+  return "overdue";
+}
+
+function shouldSendBySchedule(scheduleRaw: string | null | undefined, slot: WateringSlot) {
+  const schedule = scheduleRaw === "morning" || scheduleRaw === "evening" ? scheduleRaw : "both";
+  if (schedule === "both") {
+    return true;
+  }
+  return schedule === slot;
 }
 
 async function sendTelegramMessage(chatId: string, text: string) {
@@ -198,7 +292,178 @@ async function handleReminderJob(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ data: { ok: true, sent, skipped, failed, scanned: tasks.length } });
+    const now = new Date();
+    let plantSent = 0;
+    let plantSkipped = 0;
+    let plantFailed = 0;
+    let plantHouseholdsScanned = 0;
+
+    const { data: rawPlants, error: plantsError } = await supabaseAdmin
+      .from("plants")
+      .select("id,household_id,last_watered_at,thirsty_after_hours,overdue_after_hours,name")
+      .limit(2000);
+    if (plantsError) {
+      throw new Error(plantsError.message);
+    }
+
+    const plants = (rawPlants ?? []) as PlantReminderCandidate[];
+    const byHousehold = new Map<
+      string,
+      { hasOverdue: boolean; hasThirsty: boolean; redCount: number; orangeCount: number; names: string[] }
+    >();
+
+    for (const plant of plants) {
+      const householdId = plant.household_id;
+      if (!householdId) {
+        continue;
+      }
+      const current = byHousehold.get(householdId) ?? {
+        hasOverdue: false,
+        hasThirsty: false,
+        redCount: 0,
+        orangeCount: 0,
+        names: [],
+      };
+      const status = derivePlantStatus(plant);
+      if (status === "healthy") {
+        continue;
+      }
+      if (status === "overdue") {
+        current.hasOverdue = true;
+        current.redCount += 1;
+      } else if (status === "thirsty") {
+        current.hasThirsty = true;
+        current.orangeCount += 1;
+      }
+      if (plant.name && current.names.length < 5) {
+        current.names.push(plant.name);
+      }
+      byHousehold.set(householdId, current);
+    }
+
+    plantHouseholdsScanned = byHousehold.size;
+    const sentOn = now.toISOString().slice(0, 10);
+
+    for (const [householdId, summary] of byHousehold) {
+      const severity: WateringSeverity = summary.hasOverdue ? "strict" : "gentle";
+
+      const { data: membersData, error: membersError } = await supabaseAdmin
+        .from("household_members")
+        .select("household_id,user_id")
+        .eq("household_id", householdId);
+      if (membersError) {
+        throw new Error(membersError.message);
+      }
+
+      const members = (membersData ?? []) as HouseholdMemberRow[];
+      const profileIds = members
+        .map((member) => member.user_id)
+        .filter((value): value is string => typeof value === "string" && value.length > 0);
+      if (profileIds.length === 0) {
+        continue;
+      }
+
+      const { data: profileData, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select(
+          "id,telegram_id,watering_reminders_enabled,watering_reminder_schedule,watering_reminder_morning_minute_utc,watering_reminder_evening_minute_utc",
+        )
+        .in("id", profileIds);
+      if (profileError) {
+        throw new Error(profileError.message);
+      }
+
+      const profiles = (profileData ?? []) as PlantReminderProfileSettings[];
+      for (const profile of profiles) {
+        const wateringSlot = getCurrentWateringSlotForProfile(now, profile);
+        const telegramId = String(profile.telegram_id ?? "");
+        const enabled = profile.watering_reminders_enabled !== false;
+        if (
+          !wateringSlot ||
+          !enabled ||
+          !telegramId ||
+          !shouldSendBySchedule(profile.watering_reminder_schedule, wateringSlot)
+        ) {
+          plantSkipped += 1;
+          continue;
+        }
+
+        const { data: existingLog, error: existingLogError } = await supabaseAdmin
+          .from("plant_watering_reminders_log")
+          .select("id")
+          .eq("household_id", householdId)
+          .eq("profile_id", profile.id)
+          .eq("slot", wateringSlot)
+          .eq("sent_on", sentOn)
+          .limit(1);
+        if (existingLogError) {
+          throw new Error(existingLogError.message);
+        }
+        if ((existingLog ?? []).length > 0) {
+          plantSkipped += 1;
+          continue;
+        }
+
+        const namesLine = summary.names.length > 0 ? `\nРастения: ${summary.names.join(", ")}` : "";
+        const text =
+          severity === "strict"
+            ? `Срочное напоминание о поливе: в доме есть растения с красным статусом (${summary.redCount}). Пожалуйста, полейте сегодня.${namesLine}`
+            : `Легкое напоминание о поливе: в доме есть растения с оранжевым статусом (${summary.orangeCount}).`;
+
+        try {
+          await sendTelegramMessage(telegramId, text);
+        } catch (sendError) {
+          plantFailed += 1;
+          const message =
+            sendError instanceof Error ? sendError.message : "Unknown Telegram sendMessage error";
+          console.warn("[send-reminders] failed to send plant watering reminder", {
+            householdId,
+            profileId: profile.id,
+            slot: wateringSlot,
+            severity,
+            telegramId,
+            message,
+          });
+          continue;
+        }
+
+        plantSent += 1;
+        const db = supabaseAdmin as unknown as LooseInsertApi;
+        const { error: logError } = await db.from("plant_watering_reminders_log").insert({
+          household_id: householdId,
+          profile_id: profile.id,
+          slot: wateringSlot,
+          severity,
+          sent_to_telegram_id: Number.isFinite(Number(telegramId)) ? Number(telegramId) : null,
+          sent_on: sentOn,
+          payload: {
+            red_count: summary.redCount,
+            orange_count: summary.orangeCount,
+            sample_names: summary.names,
+          },
+        });
+        if (logError) {
+          throw new Error(logError.message);
+        }
+      }
+    }
+
+    return NextResponse.json({
+      data: {
+        ok: true,
+        sent,
+        skipped,
+        failed,
+        scanned: tasks.length,
+        watering: {
+          slot: null,
+          sent: plantSent,
+          skipped: plantSkipped,
+          failed: plantFailed,
+          householdsScanned: plantHouseholdsScanned,
+        },
+      },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Reminder job failed";
     return NextResponse.json({ error: message }, { status: 400 });

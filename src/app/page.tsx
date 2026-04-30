@@ -55,9 +55,11 @@ import {
   type Room,
 } from "@/lib/api";
 
-/** Per-plant defaults in hours: green under 0.1 h, yellow 0.1 h–1 h, red after 1 h. */
-const DEFAULT_THIRSTY_AFTER_HOURS = 0.1;
-const DEFAULT_OVERDUE_AFTER_HOURS = 1;
+/** Per-plant defaults in hours (3.0 and 4.0 days). */
+const DEFAULT_THIRSTY_AFTER_HOURS = 72;
+const DEFAULT_OVERDUE_AFTER_HOURS = 96;
+const MIN_THRESHOLD_DAYS = 1;
+const MIN_THRESHOLD_HOURS = MIN_THRESHOLD_DAYS * 24;
 const MARKER_WATER_DELAY_MS = 3_000;
 const MAX_ROOM_UPLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_PLANT_UPLOAD_BYTES = 4 * 1024 * 1024;
@@ -76,7 +78,7 @@ function wateringDerivedStatus(
     return "overdue";
   }
   const elapsed = Date.now() - t;
-  const thirstyAfterMs = Math.max(0.1, thirstyAfterHours) * 60 * 60 * 1000;
+  const thirstyAfterMs = Math.max(MIN_THRESHOLD_HOURS, thirstyAfterHours) * 60 * 60 * 1000;
   const overdueAfterMs = Math.max(thirstyAfterHours, overdueAfterHours) * 60 * 60 * 1000;
   if (elapsed < thirstyAfterMs) {
     return "healthy";
@@ -87,15 +89,33 @@ function wateringDerivedStatus(
   return "overdue";
 }
 
-function parseHoursInput(rawValue: string) {
+function parseDaysInput(rawValue: string) {
   const normalized = rawValue.trim().replace(",", ".");
   const next = Number(normalized);
-  return Number.isFinite(next) ? next : 0;
+  if (!Number.isFinite(next)) {
+    return 0;
+  }
+  return Math.round(next);
 }
 
-function formatHours(hours: number) {
-  const rounded = Number(hours.toFixed(2));
+function hoursToDays(hours: number) {
+  return hours / 24;
+}
+
+function daysToHours(days: number) {
+  return days * 24;
+}
+
+function formatDaysFromHours(hours: number) {
+  const rounded = Math.max(MIN_THRESHOLD_DAYS, Math.round(hoursToDays(hours)));
   return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+function normalizeThresholdHoursToWholeDays(hours: number) {
+  if (!Number.isFinite(hours) || hours <= 0) {
+    return MIN_THRESHOLD_HOURS;
+  }
+  return daysToHours(Math.max(MIN_THRESHOLD_DAYS, Math.round(hoursToDays(hours))));
 }
 
 function formatWateringAmount(value: Plant["watering_amount_recommendation"]) {
@@ -265,6 +285,7 @@ export default function Home() {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [pressedRoomCardId, setPressedRoomCardId] = useState<string | null>(null);
   const [roomCardParallaxTick, setRoomCardParallaxTick] = useState(0);
+  const selectedRoomId = selectedRoom?.id ?? null;
   /** Bumps on an interval so marker colors refresh from `last_watered_at` without refetch. */
   const [, setWateringUiTick] = useState(0);
   const [, setPendingWateringTick] = useState(0);
@@ -310,13 +331,13 @@ export default function Home() {
 
   /** Opening a room reuses the same document scroll as the overview; jump directly to the room photo area. */
   useLayoutEffect(() => {
-    if (!selectedRoom) {
+    if (!selectedRoomId) {
       return;
     }
     window.requestAnimationFrame(() => {
       roomImageContainerRef.current?.scrollIntoView({ behavior: "auto", block: "start" });
     });
-  }, [selectedRoom?.id]);
+  }, [selectedRoomId]);
 
   useEffect(() => {
     if (!selectedRoom) {
@@ -704,8 +725,8 @@ export default function Home() {
       const result = await analyzePlantImage(getCurrentInitData(), { file: compressedResult.file });
       if (result.ai_status === "ok" && result.ai_profile) {
         setPlantName(result.ai_profile.plant_name);
-        setPlantThirstyAfterHours(result.ai_profile.thirsty_after_hours);
-        setPlantOverdueAfterHours(result.ai_profile.overdue_after_hours);
+        setPlantThirstyAfterHours(normalizeThresholdHoursToWholeDays(result.ai_profile.thirsty_after_hours));
+        setPlantOverdueAfterHours(normalizeThresholdHoursToWholeDays(result.ai_profile.overdue_after_hours));
         setDidApplyAiAutofill(true);
         setLatestAiProfile(result.ai_profile);
         setLowConfidenceAiProfile(null);
@@ -756,8 +777,8 @@ export default function Home() {
       return;
     }
     setPlantName(lowConfidenceAiProfile.plant_name);
-    setPlantThirstyAfterHours(lowConfidenceAiProfile.thirsty_after_hours);
-    setPlantOverdueAfterHours(lowConfidenceAiProfile.overdue_after_hours);
+    setPlantThirstyAfterHours(normalizeThresholdHoursToWholeDays(lowConfidenceAiProfile.thirsty_after_hours));
+    setPlantOverdueAfterHours(normalizeThresholdHoursToWholeDays(lowConfidenceAiProfile.overdue_after_hours));
     setDidApplyAiAutofill(true);
     setLowConfidenceAiProfile(null);
     setNewPlantPhotoAiError(null);
@@ -1243,15 +1264,15 @@ export default function Home() {
       return;
     }
     setAddPlantNameError(null);
-    const nextThirstyAfterHours = Number(plantThirstyAfterHours.toFixed(2));
-    const nextOverdueAfterHours = Number(plantOverdueAfterHours.toFixed(2));
+    const nextThirstyAfterHours = normalizeThresholdHoursToWholeDays(plantThirstyAfterHours);
+    const nextOverdueAfterHours = normalizeThresholdHoursToWholeDays(plantOverdueAfterHours);
     if (
       !Number.isFinite(plantThirstyAfterHours) ||
       !Number.isFinite(plantOverdueAfterHours) ||
-      plantThirstyAfterHours <= 0 ||
-      plantOverdueAfterHours <= 0 ||
-      nextThirstyAfterHours <= 0 ||
-      nextOverdueAfterHours <= 0 ||
+      plantThirstyAfterHours < MIN_THRESHOLD_HOURS ||
+      plantOverdueAfterHours < MIN_THRESHOLD_HOURS ||
+      nextThirstyAfterHours < MIN_THRESHOLD_HOURS ||
+      nextOverdueAfterHours < MIN_THRESHOLD_HOURS ||
       nextOverdueAfterHours < nextThirstyAfterHours
     ) {
       setMessage("Cannot save plant: invalid watering thresholds");
@@ -1456,8 +1477,12 @@ export default function Home() {
     setEditPlantName(plant.name);
     setEditPlantSpecies(plant.species ?? "");
     setEditPlantStatus(plant.status);
-    setEditPlantThirstyAfterHours(plant.thirsty_after_hours ?? DEFAULT_THIRSTY_AFTER_HOURS);
-    setEditPlantOverdueAfterHours(plant.overdue_after_hours ?? DEFAULT_OVERDUE_AFTER_HOURS);
+    setEditPlantThirstyAfterHours(
+      normalizeThresholdHoursToWholeDays(plant.thirsty_after_hours ?? DEFAULT_THIRSTY_AFTER_HOURS),
+    );
+    setEditPlantOverdueAfterHours(
+      normalizeThresholdHoursToWholeDays(plant.overdue_after_hours ?? DEFAULT_OVERDUE_AFTER_HOURS),
+    );
     setEditPlantAiSummary(plant.watering_summary ?? null);
     setEditPlantAiWaterAmount(plant.watering_amount_recommendation);
     setIsEditPlantNameFieldOpen(false);
@@ -1474,15 +1499,15 @@ export default function Home() {
       setMessage("Cannot save plant: name is required");
       return;
     }
-    const nextEditThirstyAfterHours = Number(editPlantThirstyAfterHours.toFixed(2));
-    const nextEditOverdueAfterHours = Number(editPlantOverdueAfterHours.toFixed(2));
+    const nextEditThirstyAfterHours = normalizeThresholdHoursToWholeDays(editPlantThirstyAfterHours);
+    const nextEditOverdueAfterHours = normalizeThresholdHoursToWholeDays(editPlantOverdueAfterHours);
     if (
       !Number.isFinite(editPlantThirstyAfterHours) ||
       !Number.isFinite(editPlantOverdueAfterHours) ||
-      editPlantThirstyAfterHours <= 0 ||
-      editPlantOverdueAfterHours <= 0 ||
-      nextEditThirstyAfterHours <= 0 ||
-      nextEditOverdueAfterHours <= 0 ||
+      editPlantThirstyAfterHours < MIN_THRESHOLD_HOURS ||
+      editPlantOverdueAfterHours < MIN_THRESHOLD_HOURS ||
+      nextEditThirstyAfterHours < MIN_THRESHOLD_HOURS ||
+      nextEditOverdueAfterHours < MIN_THRESHOLD_HOURS ||
       nextEditOverdueAfterHours < nextEditThirstyAfterHours
     ) {
       setMessage("Cannot save plant: invalid watering thresholds");
@@ -1588,8 +1613,12 @@ export default function Home() {
       const result = await reanalyzePlantPhoto(getCurrentInitData(), { plantId: editingPlantId });
       if (result.ai_profile) {
         setEditPlantName(result.ai_profile.plant_name);
-        setEditPlantThirstyAfterHours(result.ai_profile.thirsty_after_hours);
-        setEditPlantOverdueAfterHours(result.ai_profile.overdue_after_hours);
+        setEditPlantThirstyAfterHours(
+          normalizeThresholdHoursToWholeDays(result.ai_profile.thirsty_after_hours),
+        );
+        setEditPlantOverdueAfterHours(
+          normalizeThresholdHoursToWholeDays(result.ai_profile.overdue_after_hours),
+        );
         setEditPlantAiSummary(result.ai_profile.watering_summary);
         setEditPlantAiWaterAmount(result.ai_profile.watering_amount_recommendation);
         await fetchRoomDetails(selectedRoom.id);
@@ -2004,7 +2033,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (selectedRoom || prefersReducedMotion) {
+    if (selectedRoomId || prefersReducedMotion) {
       return;
     }
     const id = window.setInterval(() => {
@@ -2013,14 +2042,15 @@ export default function Home() {
     return () => {
       window.clearInterval(id);
     };
-  }, [selectedRoom, prefersReducedMotion]);
+  }, [selectedRoomId, prefersReducedMotion]);
 
   useEffect(() => {
-    if (!selectedRoom || prefersReducedMotion) {
-      setIsRoomOpeningAnimationActive(false);
+    if (!selectedRoomId || prefersReducedMotion) {
       return;
     }
-    setIsRoomOpeningAnimationActive(true);
+    const activateRafId = window.requestAnimationFrame(() => {
+      setIsRoomOpeningAnimationActive(true);
+    });
     if (roomOpenAnimationTimerRef.current !== null) {
       window.clearTimeout(roomOpenAnimationTimerRef.current);
     }
@@ -2029,20 +2059,20 @@ export default function Home() {
       roomOpenAnimationTimerRef.current = null;
     }, 520);
     return () => {
+      window.cancelAnimationFrame(activateRafId);
       if (roomOpenAnimationTimerRef.current !== null) {
         window.clearTimeout(roomOpenAnimationTimerRef.current);
         roomOpenAnimationTimerRef.current = null;
       }
     };
-  }, [selectedRoom?.id, prefersReducedMotion]);
+  }, [selectedRoomId, prefersReducedMotion]);
 
   useEffect(() => {
-    if (!selectedRoom || prefersReducedMotion || markers.length === 0) {
-      setIsMarkerRevealAnimationActive(false);
+    if (!selectedRoomId || prefersReducedMotion || markers.length === 0) {
       return;
     }
-    setIsMarkerRevealAnimationActive(true);
     const firstRaf = window.requestAnimationFrame(() => {
+      setIsMarkerRevealAnimationActive(true);
       window.requestAnimationFrame(() => {
         setIsMarkerRevealAnimationActive(false);
       });
@@ -2050,7 +2080,7 @@ export default function Home() {
     return () => {
       window.cancelAnimationFrame(firstRaf);
     };
-  }, [selectedRoom?.id, markers.length, prefersReducedMotion]);
+  }, [selectedRoomId, markers.length, prefersReducedMotion]);
 
   useEffect(() => {
     return () => {
@@ -2591,10 +2621,10 @@ export default function Home() {
                           </p>
                           <p className="text-[10px] text-[#6c7a71]">
                             Thresholds: thirsty after{" "}
-                            {formatHours(plant.thirsty_after_hours ?? DEFAULT_THIRSTY_AFTER_HOURS)}
-                            h, overdue after{" "}
-                            {formatHours(plant.overdue_after_hours ?? DEFAULT_OVERDUE_AFTER_HOURS)}
-                            h
+                            {formatDaysFromHours(plant.thirsty_after_hours ?? DEFAULT_THIRSTY_AFTER_HOURS)}
+                            d, overdue after{" "}
+                            {formatDaysFromHours(plant.overdue_after_hours ?? DEFAULT_OVERDUE_AFTER_HOURS)}
+                            d
                           </p>
                           <p className="text-[10px] text-[#6c7a71]">
                             Water amount: {formatWateringAmount(plant.watering_amount_recommendation)}
@@ -3233,27 +3263,27 @@ export default function Home() {
             ) : null}
             <div className="mt-2 grid grid-cols-2 gap-2">
               <label className="text-xs text-[#6c7a71]">
-                Thirsty after (hours)
+                Thirsty after (days)
                 <input
                   type="number"
-                  min={0.1}
-                  step={0.1}
-                  value={plantThirstyAfterHours}
+                  min={MIN_THRESHOLD_DAYS}
+                  step={1}
+                  value={Math.max(MIN_THRESHOLD_DAYS, Math.round(hoursToDays(plantThirstyAfterHours)))}
                   onChange={(event) => {
-                    setPlantThirstyAfterHours(parseHoursInput(event.target.value));
+                    setPlantThirstyAfterHours(daysToHours(parseDaysInput(event.target.value)));
                   }}
                   className="mt-1 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
                 />
               </label>
               <label className="text-xs text-[#6c7a71]">
-                Overdue after (hours)
+                Overdue after (days)
                 <input
                   type="number"
-                  min={0.1}
-                  step={0.1}
-                  value={plantOverdueAfterHours}
+                  min={MIN_THRESHOLD_DAYS}
+                  step={1}
+                  value={Math.max(MIN_THRESHOLD_DAYS, Math.round(hoursToDays(plantOverdueAfterHours)))}
                   onChange={(event) => {
-                    setPlantOverdueAfterHours(parseHoursInput(event.target.value));
+                    setPlantOverdueAfterHours(daysToHours(parseDaysInput(event.target.value)));
                   }}
                   className="mt-1 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
                 />
@@ -3603,7 +3633,7 @@ export default function Home() {
                           {editPlantAiSummary ? (
                             editPlantAiSummary
                           ) : (
-                            <>Not available yet. Tap "Analyze with AI" below to refresh guidance.</>
+                            <>Not available yet. Tap &quot;Analyze with AI&quot; below to refresh guidance.</>
                           )}
                         </p>
                         <p className="mt-2 text-[11px] text-[#6c7a71]">
@@ -3637,27 +3667,27 @@ export default function Home() {
                 <div className="mt-3">
                   <div className="grid grid-cols-2 gap-2">
                     <label className="text-xs text-[#6c7a71]">
-                      Thirsty after (hours)
+                      Thirsty after (days)
                       <input
                         type="number"
-                        min={0.1}
-                        step={0.1}
-                        value={editPlantThirstyAfterHours}
+                        min={MIN_THRESHOLD_DAYS}
+                        step={1}
+                        value={Math.max(MIN_THRESHOLD_DAYS, Math.round(hoursToDays(editPlantThirstyAfterHours)))}
                         onChange={(event) => {
-                          setEditPlantThirstyAfterHours(parseHoursInput(event.target.value));
+                          setEditPlantThirstyAfterHours(daysToHours(parseDaysInput(event.target.value)));
                         }}
                         className="mt-1 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
                       />
                     </label>
                     <label className="text-xs text-[#6c7a71]">
-                      Overdue after (hours)
+                      Overdue after (days)
                       <input
                         type="number"
-                        min={0.1}
-                        step={0.1}
-                        value={editPlantOverdueAfterHours}
+                        min={MIN_THRESHOLD_DAYS}
+                        step={1}
+                        value={Math.max(MIN_THRESHOLD_DAYS, Math.round(hoursToDays(editPlantOverdueAfterHours)))}
                         onChange={(event) => {
-                          setEditPlantOverdueAfterHours(parseHoursInput(event.target.value));
+                          setEditPlantOverdueAfterHours(daysToHours(parseDaysInput(event.target.value)));
                         }}
                         className="mt-1 w-full rounded-xl border border-[#bbcabf] bg-white px-3 py-2 text-sm outline-none focus:border-[#006c49]"
                       />

@@ -96,6 +96,8 @@ Maintenance guidelines:
   - `src/app/api/secure/route.ts` now parses DB boolean-like values with a strict helper (`asBooleanLike`) instead of raw `Boolean(...)` casting for household-related responses (`is_active`, `is_owner`, `require_join_approval`), preventing string values like `"false"` from being treated as truthy.
   - `listRooms` supports explicit household scoping (`payload.householdId`) end-to-end (`src/lib/api.ts` -> `/api/secure`): server verifies membership in that household and returns rooms filtered directly by `rooms.household_id`. This prevents cross-household room bleed even if active-home state in DB is temporarily inconsistent.
   - `/api/secure` auto-bootstrap behavior: when a valid Telegram user has no `profiles` row yet, secure route now attempts `api_bootstrap_user` automatically before continuing action handling. This prevents first-contact `profile not found` failures for join/settings flows when bootstrap has not run yet.
+  - `/api/secure` RPC helper now retries retryable transient Supabase network failures once (`fetch failed`, `terminated`, `aborted`, `networkerror`) with short backoff before returning an error.
+  - Logging writes are fail-open: `logSecurityEvent` and `logApiRequestEvent` catch transport exceptions and only warn, so telemetry write failures cannot break user-facing secure API responses.
 
 ## Stage 3 - Rooms
 
@@ -157,13 +159,18 @@ Maintenance guidelines:
   - Added `guard_plants_household_consistency.sql`: installs trigger `trg_plants_household_consistency` to enforce alignment on future writes.
   - Added `fix_household_join_and_plants_consistency_all_in_one.sql`: one idempotent script that applies all three steps in production-safe order.
 - **Room-level AI plant detection:** room header includes `AI Detect Plants` (next to `Add Plant`) that calls `POST /api/rooms/analyze`, shows a preview list of detected plants (with per-item selection), then creates selected plant rows and auto-places markers.
+- **Client transport hardening (`src/lib/api.ts`):**
+  - Added shared timeout+retry wrapper for fetch-based API calls.
+  - Retryable network errors include `fetch failed`, `terminated`, `aborted`, and `networkerror`.
+  - `POST /api/secure` uses a longer timeout (`35s`) and up to `2` retries for unstable dev network/Supabase edges.
+  - Photo upload endpoints use extended upload timeout; AI analysis/stylization endpoints use extended analysis timeout.
 - **AI model updated:** moved from `gemini-2.0-flash` to `gemini-2.5-flash` for new-key compatibility.
 - AI watering amount recommendation: photo analysis stores suggested watering amount (`light` / `moderate` / `abundant`) and shows it in plant info; legacy values are mapped (`little`→`light`, `a_lot`→`abundant`).
 - AI watering summary: photo analysis stores `watering_summary` (2-3 short sentences with watering guidance + care tips like light/drainage/humidity/temperature) and shows it in plant card/edit info.
 - **Non-plant and uncertain photos:** AI prompt now requires `is_plant` + `confidence`; server returns explicit statuses for `not_plant` and `low_confidence`, and UI blocks blind autofill for obvious non-plant images.
 - AI detection badge: inferred results are marked in DB (`plants.ai_inferred_at`) and shown in plant list / edit modal as `AI detected`.
 - Manual override behavior: saving plant edits manually (`api_update_plant`) clears `ai_inferred_at`, so the `AI detected` badge is removed after user override.
-- Per-plant watering thresholds: each plant stores **thirsty-after hours** and **overdue-after hours** (defaults `0.1/1`). In UI values are shown/edited in **hours** (`step=0.1`), stored as hours, and inputs accept both dot and comma decimals.
+- Per-plant watering thresholds: each plant stores **thirsty-after hours** and **overdue-after hours** in DB/API, but UI now shows/edits thresholds in **days** with one-decimal precision (`step=0.1`). Current UI defaults are `3.0d` (thirsty) and `4.0d` (overdue), converted to hours on save.
 - **AI threshold safety rails:** server normalizes AI thresholds to realistic indoor ranges (`thirsty >= 6h`, `overdue >= 12h`, minimum 6h gap) to avoid absurd minute-level watering advice.
 - `plant_markers`: normalized `x`, `y` in `0..1`, unique per `plant_id`
 - Marker coordinates are calculated against the **visible image content area** (for `object-contain`), so marker placement stays aligned both on real phones and in desktop mobile emulation (no offset from letterboxing).
@@ -266,6 +273,12 @@ Maintenance guidelines:
   - Overdue reminder behavior is per-user configurable:
     - when `profiles.repeat_overdue_reminders = true` (default), overdue reminders can repeat based on overdue dedupe window;
     - when `false`, overdue reminder is sent only once per task (any prior overdue log suppresses repeats).
+  - Watering reminders are also processed in this job:
+    - household severity rule: red (`overdue`) plant present -> `strict`; else orange (`thirsty`) present -> `gentle`;
+    - recipient scope: all household members with valid telegram id and enabled watering reminders;
+    - per-user schedule and time settings are respected (`morning`/`evening`/`both` + per-user UTC minute fields);
+    - dedupe key is one notification per `household_id + profile_id + slot + day`.
+  - Recommended scheduler cadence for watering reminders is every minute (minute-precision matching); 5-minute cadence is acceptable only for task-only reminder behavior.
 
 ## Stage 8 - Admin and Security Operations
 
@@ -452,6 +465,12 @@ Scope and plan:
 - `tasks_scope_and_bot_choice.sql` — adds personal/shared task scope, bot drafts, and task visibility logic for multi-home users.
 - `task_message_mode_settings.sql` — adds per-profile bot task ingestion mode (`single`/`combine`).
 - `task_overdue_reminder_settings.sql` — adds per-profile preference to disable repeated overdue reminders (`profiles.repeat_overdue_reminders`).
+- `plant_watering_reminder_settings.sql` — adds per-profile watering reminder settings and log table:
+  - `profiles.watering_reminders_enabled`
+  - `profiles.watering_reminder_schedule`
+  - `profiles.watering_reminder_morning_minute_utc`
+  - `profiles.watering_reminder_evening_minute_utc`
+  - `plant_watering_reminders_log` with per-day per-slot deduplication index.
 - `household_join_approval.sql` — adds owner-approval flow for invite joins (enabled by default), pending join requests, bot approval callbacks, and owner-only members management RPCs (`api_list_household_members`, `api_remove_household_member`).
 - `supabase_sql_hardening_patch.sql` — consolidated SQL Editor patch for already-migrated Supabase projects. It applies the current RPC hardening without rerunning historical migrations: `pgcrypto` invite-code generation, no create-rate limiter on `api_list_rooms`, legacy owner repair for join approval, task membership helper reuse, and explicit `grant`/`revoke` hygiene for `SECURITY DEFINER` functions. Run this after the existing migration sequence when production needs the hardening changes as a single copy/paste script.
 - `admin_security.sql` — admin/security schema and monitoring layer (admins, blocks, audit/security events, request telemetry, overview views, helper functions/grants).

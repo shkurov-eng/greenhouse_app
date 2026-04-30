@@ -51,10 +51,48 @@ function hasTelegramUserAgentRuntime() {
   return /Telegram/i.test(navigator.userAgent);
 }
 
+function normalizeHour(hour: number) {
+  return ((hour % 24) + 24) % 24;
+}
+
+function normalizeMinuteOfDay(minute: number) {
+  return ((minute % 1440) + 1440) % 1440;
+}
+
+function convertUtcMinuteToLocalHour(utcMinute: number, offsetMinutes: number) {
+  const localMinute = normalizeMinuteOfDay(utcMinute - offsetMinutes);
+  return normalizeHour(Math.round(localMinute / 60) % 24);
+}
+
+function convertLocalHourToUtcMinute(localHour: number, offsetMinutes: number) {
+  const localMinute = normalizeMinuteOfDay(localHour * 60);
+  return normalizeMinuteOfDay(localMinute + offsetMinutes);
+}
+
+function getUtcOffsetLabel(offsetMinutes: number) {
+  const total = -offsetMinutes;
+  const sign = total >= 0 ? "+" : "-";
+  const abs = Math.abs(total);
+  const hours = Math.floor(abs / 60);
+  const minutes = abs % 60;
+  return `UTC${sign}${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function asLocalHourOptionLabel(hour: number) {
+  return `${String(hour).padStart(2, "0")}:00`;
+}
+
 export default function SettingsPage() {
   const initData = useMemo(() => resolveTelegramInitData(), []);
   const [mode, setMode] = useState<"single" | "combine">("single");
   const [repeatOverdueReminders, setRepeatOverdueReminders] = useState(true);
+  const [wateringRemindersEnabled, setWateringRemindersEnabled] = useState(true);
+  const [wateringReminderSchedule, setWateringReminderSchedule] = useState<
+    "morning" | "evening" | "both"
+  >("both");
+  const [wateringReminderMorningHourLocal, setWateringReminderMorningHourLocal] = useState(8);
+  const [wateringReminderEveningHourLocal, setWateringReminderEveningHourLocal] = useState(19);
+  const timezoneOffsetMinutes = useMemo(() => new Date().getTimezoneOffset(), []);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [joinSettings, setJoinSettings] = useState<HouseholdJoinSetting[]>([]);
@@ -105,6 +143,20 @@ export default function SettingsPage() {
         ]);
         setMode(taskSettings.taskMessageMode);
         setRepeatOverdueReminders(taskSettings.repeatOverdueReminders);
+        setWateringRemindersEnabled(taskSettings.wateringRemindersEnabled);
+        setWateringReminderSchedule(taskSettings.wateringReminderSchedule);
+        setWateringReminderMorningHourLocal(
+          convertUtcMinuteToLocalHour(
+            taskSettings.wateringReminderMorningMinuteUtc,
+            new Date().getTimezoneOffset(),
+          ),
+        );
+        setWateringReminderEveningHourLocal(
+          convertUtcMinuteToLocalHour(
+            taskSettings.wateringReminderEveningMinuteUtc,
+            new Date().getTimezoneOffset(),
+          ),
+        );
         setJoinSettings(settingsRows);
         await refreshHouseholds(true);
         const ownerHome = settingsRows.find((row) => row.is_owner);
@@ -156,9 +208,27 @@ export default function SettingsPage() {
       const saved = await setTaskSettings(initData, {
         taskMessageMode: nextMode,
         repeatOverdueReminders,
+        wateringRemindersEnabled,
+        wateringReminderSchedule,
+        wateringReminderMorningMinuteUtc: convertLocalHourToUtcMinute(
+          wateringReminderMorningHourLocal,
+          timezoneOffsetMinutes,
+        ),
+        wateringReminderEveningMinuteUtc: convertLocalHourToUtcMinute(
+          wateringReminderEveningHourLocal,
+          timezoneOffsetMinutes,
+        ),
       });
       setMode(saved.taskMessageMode);
       setRepeatOverdueReminders(saved.repeatOverdueReminders);
+      setWateringRemindersEnabled(saved.wateringRemindersEnabled);
+      setWateringReminderSchedule(saved.wateringReminderSchedule);
+      setWateringReminderMorningHourLocal(
+        convertUtcMinuteToLocalHour(saved.wateringReminderMorningMinuteUtc, timezoneOffsetMinutes),
+      );
+      setWateringReminderEveningHourLocal(
+        convertUtcMinuteToLocalHour(saved.wateringReminderEveningMinuteUtc, timezoneOffsetMinutes),
+      );
     } catch (error) {
       setMessage(readErrorText(error, "Failed to save settings"));
     } finally {
@@ -175,12 +245,147 @@ export default function SettingsPage() {
       const saved = await setTaskSettings(initData, {
         taskMessageMode: mode,
         repeatOverdueReminders: nextValue,
+        wateringRemindersEnabled,
+        wateringReminderSchedule,
+        wateringReminderMorningMinuteUtc: convertLocalHourToUtcMinute(
+          wateringReminderMorningHourLocal,
+          timezoneOffsetMinutes,
+        ),
+        wateringReminderEveningMinuteUtc: convertLocalHourToUtcMinute(
+          wateringReminderEveningHourLocal,
+          timezoneOffsetMinutes,
+        ),
       });
       setMode(saved.taskMessageMode);
       setRepeatOverdueReminders(saved.repeatOverdueReminders);
+      setWateringRemindersEnabled(saved.wateringRemindersEnabled);
+      setWateringReminderSchedule(saved.wateringReminderSchedule);
+      setWateringReminderMorningHourLocal(
+        convertUtcMinuteToLocalHour(saved.wateringReminderMorningMinuteUtc, timezoneOffsetMinutes),
+      );
+      setWateringReminderEveningHourLocal(
+        convertUtcMinuteToLocalHour(saved.wateringReminderEveningMinuteUtc, timezoneOffsetMinutes),
+      );
     } catch (error) {
       setRepeatOverdueReminders(!nextValue);
       setMessage(readErrorText(error, "Failed to save reminder settings"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onToggleWateringReminders = async () => {
+    const nextValue = !wateringRemindersEnabled;
+    setWateringRemindersEnabled(nextValue);
+    setSaving(true);
+    setMessage(null);
+    try {
+      const saved = await setTaskSettings(initData, {
+        taskMessageMode: mode,
+        repeatOverdueReminders,
+        wateringRemindersEnabled: nextValue,
+        wateringReminderSchedule,
+        wateringReminderMorningMinuteUtc: convertLocalHourToUtcMinute(
+          wateringReminderMorningHourLocal,
+          timezoneOffsetMinutes,
+        ),
+        wateringReminderEveningMinuteUtc: convertLocalHourToUtcMinute(
+          wateringReminderEveningHourLocal,
+          timezoneOffsetMinutes,
+        ),
+      });
+      setMode(saved.taskMessageMode);
+      setRepeatOverdueReminders(saved.repeatOverdueReminders);
+      setWateringRemindersEnabled(saved.wateringRemindersEnabled);
+      setWateringReminderSchedule(saved.wateringReminderSchedule);
+      setWateringReminderMorningHourLocal(
+        convertUtcMinuteToLocalHour(saved.wateringReminderMorningMinuteUtc, timezoneOffsetMinutes),
+      );
+      setWateringReminderEveningHourLocal(
+        convertUtcMinuteToLocalHour(saved.wateringReminderEveningMinuteUtc, timezoneOffsetMinutes),
+      );
+    } catch (error) {
+      setWateringRemindersEnabled(!nextValue);
+      setMessage(readErrorText(error, "Failed to save watering reminder settings"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onChangeWateringSchedule = async (nextSchedule: "morning" | "evening" | "both") => {
+    setWateringReminderSchedule(nextSchedule);
+    setSaving(true);
+    setMessage(null);
+    try {
+      const saved = await setTaskSettings(initData, {
+        taskMessageMode: mode,
+        repeatOverdueReminders,
+        wateringRemindersEnabled,
+        wateringReminderSchedule: nextSchedule,
+        wateringReminderMorningMinuteUtc: convertLocalHourToUtcMinute(
+          wateringReminderMorningHourLocal,
+          timezoneOffsetMinutes,
+        ),
+        wateringReminderEveningMinuteUtc: convertLocalHourToUtcMinute(
+          wateringReminderEveningHourLocal,
+          timezoneOffsetMinutes,
+        ),
+      });
+      setMode(saved.taskMessageMode);
+      setRepeatOverdueReminders(saved.repeatOverdueReminders);
+      setWateringRemindersEnabled(saved.wateringRemindersEnabled);
+      setWateringReminderSchedule(saved.wateringReminderSchedule);
+      setWateringReminderMorningHourLocal(
+        convertUtcMinuteToLocalHour(saved.wateringReminderMorningMinuteUtc, timezoneOffsetMinutes),
+      );
+      setWateringReminderEveningHourLocal(
+        convertUtcMinuteToLocalHour(saved.wateringReminderEveningMinuteUtc, timezoneOffsetMinutes),
+      );
+    } catch (error) {
+      setMessage(readErrorText(error, "Failed to save watering reminder schedule"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onChangeWateringHour = async (slot: "morning" | "evening", nextHour: number) => {
+    if (!Number.isInteger(nextHour) || nextHour < 0 || nextHour > 23) {
+      return;
+    }
+    const previousMorning = wateringReminderMorningHourLocal;
+    const previousEvening = wateringReminderEveningHourLocal;
+    const nextMorning = slot === "morning" ? nextHour : previousMorning;
+    const nextEvening = slot === "evening" ? nextHour : previousEvening;
+    if (slot === "morning") {
+      setWateringReminderMorningHourLocal(nextHour);
+    } else {
+      setWateringReminderEveningHourLocal(nextHour);
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      const saved = await setTaskSettings(initData, {
+        taskMessageMode: mode,
+        repeatOverdueReminders,
+        wateringRemindersEnabled,
+        wateringReminderSchedule,
+        wateringReminderMorningMinuteUtc: convertLocalHourToUtcMinute(nextMorning, timezoneOffsetMinutes),
+        wateringReminderEveningMinuteUtc: convertLocalHourToUtcMinute(nextEvening, timezoneOffsetMinutes),
+      });
+      setMode(saved.taskMessageMode);
+      setRepeatOverdueReminders(saved.repeatOverdueReminders);
+      setWateringRemindersEnabled(saved.wateringRemindersEnabled);
+      setWateringReminderSchedule(saved.wateringReminderSchedule);
+      setWateringReminderMorningHourLocal(
+        convertUtcMinuteToLocalHour(saved.wateringReminderMorningMinuteUtc, timezoneOffsetMinutes),
+      );
+      setWateringReminderEveningHourLocal(
+        convertUtcMinuteToLocalHour(saved.wateringReminderEveningMinuteUtc, timezoneOffsetMinutes),
+      );
+    } catch (error) {
+      setWateringReminderMorningHourLocal(previousMorning);
+      setWateringReminderEveningHourLocal(previousEvening);
+      setMessage(readErrorText(error, "Failed to save watering reminder time"));
     } finally {
       setSaving(false);
     }
@@ -610,6 +815,95 @@ export default function SettingsPage() {
                 >
                   {repeatOverdueReminders ? "Enabled" : "Disabled"}
                 </button>
+              </div>
+            </div>
+            <div className="mt-4 rounded-xl border border-[#e7ddd6] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-[#1f1b17]">Watering reminders</p>
+                  <p className="text-xs text-[#6c7a71]">
+                    Bot reminders about plants with orange or red status in your homes.
+                  </p>
+                  <p className="text-xs text-[#6c7a71]">Times are shown in your local zone ({getUtcOffsetLabel(timezoneOffsetMinutes)}).</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onToggleWateringReminders();
+                  }}
+                  disabled={loading || saving}
+                  className="rounded-lg border border-[#bbcabf] px-3 py-1.5 text-xs font-semibold text-[#1f1b17] disabled:opacity-60"
+                >
+                  {wateringRemindersEnabled ? "Enabled" : "Disabled"}
+                </button>
+              </div>
+              <div className="mt-3 space-y-2">
+                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#e7ddd6] p-2">
+                  <input
+                    type="radio"
+                    name="watering-reminder-schedule"
+                    checked={wateringReminderSchedule === "morning"}
+                    disabled={loading || saving || !wateringRemindersEnabled}
+                    onChange={() => void onChangeWateringSchedule("morning")}
+                  />
+                  <span className="text-xs text-[#1f1b17]">Morning only</span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#e7ddd6] p-2">
+                  <input
+                    type="radio"
+                    name="watering-reminder-schedule"
+                    checked={wateringReminderSchedule === "evening"}
+                    disabled={loading || saving || !wateringRemindersEnabled}
+                    onChange={() => void onChangeWateringSchedule("evening")}
+                  />
+                  <span className="text-xs text-[#1f1b17]">Evening only</span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#e7ddd6] p-2">
+                  <input
+                    type="radio"
+                    name="watering-reminder-schedule"
+                    checked={wateringReminderSchedule === "both"}
+                    disabled={loading || saving || !wateringRemindersEnabled}
+                    onChange={() => void onChangeWateringSchedule("both")}
+                  />
+                  <span className="text-xs text-[#1f1b17]">Morning and evening</span>
+                </label>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <label className="block text-xs text-[#3c4a42]">
+                  Morning time
+                  <select
+                    value={wateringReminderMorningHourLocal}
+                    disabled={loading || saving || !wateringRemindersEnabled}
+                    onChange={(event) => {
+                      void onChangeWateringHour("morning", Number(event.target.value));
+                    }}
+                    className="mt-1 w-full rounded-lg border border-[#bbcabf] bg-white px-2 py-1.5 text-sm outline-none focus:border-[#006c49] disabled:opacity-60"
+                  >
+                    {Array.from({ length: 24 }, (_, hour) => (
+                      <option key={`morning-hour-${hour}`} value={hour}>
+                        {asLocalHourOptionLabel(hour)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-xs text-[#3c4a42]">
+                  Evening time
+                  <select
+                    value={wateringReminderEveningHourLocal}
+                    disabled={loading || saving || !wateringRemindersEnabled}
+                    onChange={(event) => {
+                      void onChangeWateringHour("evening", Number(event.target.value));
+                    }}
+                    className="mt-1 w-full rounded-lg border border-[#bbcabf] bg-white px-2 py-1.5 text-sm outline-none focus:border-[#006c49] disabled:opacity-60"
+                  >
+                    {Array.from({ length: 24 }, (_, hour) => (
+                      <option key={`evening-hour-${hour}`} value={hour}>
+                        {asLocalHourOptionLabel(hour)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
             </div>
             {saving ? <p className="mt-3 text-xs text-[#6c7a71]">Saving...</p> : null}

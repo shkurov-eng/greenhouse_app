@@ -227,6 +227,27 @@ function asRepeatOverdueReminders(value: unknown) {
   throw new Error("Invalid repeat overdue reminders setting");
 }
 
+function asWateringRemindersEnabled(value: unknown) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  throw new Error("Invalid watering reminders enabled setting");
+}
+
+function asWateringReminderSchedule(value: unknown) {
+  if (value === "morning" || value === "evening" || value === "both") {
+    return value;
+  }
+  throw new Error("Invalid watering reminder schedule");
+}
+
+function asReminderMinuteUtc(value: unknown, fieldName: string) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 1439) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  return value;
+}
+
 function asOptionalIsoDate(value: unknown, fieldName: string) {
   if (value == null) {
     return null;
@@ -891,7 +912,7 @@ export async function POST(request: NextRequest) {
           throw new Error("Profile not found");
         }
 
-        let householdId = requestedHouseholdId;
+        const householdId = requestedHouseholdId;
         if (!householdId) {
           const resolved = await rpc("api_list_rooms", {
             p_telegram_id: telegramId,
@@ -1483,7 +1504,9 @@ export async function POST(request: NextRequest) {
         const supabaseAdmin = getSupabaseAdmin();
         const { data: profileRow, error: profileError } = await supabaseAdmin
           .from("profiles")
-          .select("task_message_mode,repeat_overdue_reminders")
+          .select(
+            "task_message_mode,repeat_overdue_reminders,watering_reminders_enabled,watering_reminder_schedule,watering_reminder_morning_hour_utc,watering_reminder_evening_hour_utc,watering_reminder_morning_minute_utc,watering_reminder_evening_minute_utc",
+          )
           .eq("telegram_id", telegramId)
           .single();
         if (profileError) {
@@ -1492,16 +1515,80 @@ export async function POST(request: NextRequest) {
         const profileData = (profileRow as {
           task_message_mode?: string | null;
           repeat_overdue_reminders?: boolean | null;
-        } | null) ?? { task_message_mode: null, repeat_overdue_reminders: null };
+          watering_reminders_enabled?: boolean | null;
+          watering_reminder_schedule?: string | null;
+          watering_reminder_morning_hour_utc?: number | null;
+          watering_reminder_evening_hour_utc?: number | null;
+          watering_reminder_morning_minute_utc?: number | null;
+          watering_reminder_evening_minute_utc?: number | null;
+        } | null) ?? {
+          task_message_mode: null,
+          repeat_overdue_reminders: null,
+          watering_reminders_enabled: null,
+          watering_reminder_schedule: null,
+          watering_reminder_morning_hour_utc: null,
+          watering_reminder_evening_hour_utc: null,
+          watering_reminder_morning_minute_utc: null,
+          watering_reminder_evening_minute_utc: null,
+        };
         const modeRaw = profileData.task_message_mode;
         const taskMessageMode = modeRaw === "combine" ? "combine" : "single";
         const repeatOverdueReminders = profileData.repeat_overdue_reminders !== false;
-        return NextResponse.json({ data: { taskMessageMode, repeatOverdueReminders } });
+        const wateringRemindersEnabled = profileData.watering_reminders_enabled !== false;
+        const wateringReminderScheduleRaw = profileData.watering_reminder_schedule;
+        const wateringReminderSchedule =
+          wateringReminderScheduleRaw === "morning" || wateringReminderScheduleRaw === "evening"
+            ? wateringReminderScheduleRaw
+            : "both";
+        const wateringReminderMorningMinuteUtc =
+          typeof profileData.watering_reminder_morning_minute_utc === "number" &&
+          Number.isInteger(profileData.watering_reminder_morning_minute_utc) &&
+          profileData.watering_reminder_morning_minute_utc >= 0 &&
+          profileData.watering_reminder_morning_minute_utc <= 1439
+            ? profileData.watering_reminder_morning_minute_utc
+            : typeof profileData.watering_reminder_morning_hour_utc === "number" &&
+                Number.isInteger(profileData.watering_reminder_morning_hour_utc) &&
+                profileData.watering_reminder_morning_hour_utc >= 0 &&
+                profileData.watering_reminder_morning_hour_utc <= 23
+              ? profileData.watering_reminder_morning_hour_utc * 60
+              : 8 * 60;
+        const wateringReminderEveningMinuteUtc =
+          typeof profileData.watering_reminder_evening_minute_utc === "number" &&
+          Number.isInteger(profileData.watering_reminder_evening_minute_utc) &&
+          profileData.watering_reminder_evening_minute_utc >= 0 &&
+          profileData.watering_reminder_evening_minute_utc <= 1439
+            ? profileData.watering_reminder_evening_minute_utc
+            : typeof profileData.watering_reminder_evening_hour_utc === "number" &&
+                Number.isInteger(profileData.watering_reminder_evening_hour_utc) &&
+                profileData.watering_reminder_evening_hour_utc >= 0 &&
+                profileData.watering_reminder_evening_hour_utc <= 23
+              ? profileData.watering_reminder_evening_hour_utc * 60
+              : 19 * 60;
+        return NextResponse.json({
+          data: {
+            taskMessageMode,
+            repeatOverdueReminders,
+            wateringRemindersEnabled,
+            wateringReminderSchedule,
+            wateringReminderMorningMinuteUtc,
+            wateringReminderEveningMinuteUtc,
+          },
+        });
       }
 
       case "setTaskSettings": {
         const taskMessageMode = asTaskMessageMode(payload.taskMessageMode);
         const repeatOverdueReminders = asRepeatOverdueReminders(payload.repeatOverdueReminders);
+        const wateringRemindersEnabled = asWateringRemindersEnabled(payload.wateringRemindersEnabled);
+        const wateringReminderSchedule = asWateringReminderSchedule(payload.wateringReminderSchedule);
+        const wateringReminderMorningMinuteUtc = asReminderMinuteUtc(
+          payload.wateringReminderMorningMinuteUtc,
+          "wateringReminderMorningMinuteUtc",
+        );
+        const wateringReminderEveningMinuteUtc = asReminderMinuteUtc(
+          payload.wateringReminderEveningMinuteUtc,
+          "wateringReminderEveningMinuteUtc",
+        );
         const supabaseAdmin = getSupabaseAdmin();
         const db = supabaseAdmin as unknown as LooseTableApi;
         const { error: updateError } = await db
@@ -1509,12 +1596,27 @@ export async function POST(request: NextRequest) {
           .update({
             task_message_mode: taskMessageMode,
             repeat_overdue_reminders: repeatOverdueReminders,
+            watering_reminders_enabled: wateringRemindersEnabled,
+            watering_reminder_schedule: wateringReminderSchedule,
+            watering_reminder_morning_hour_utc: Math.floor(wateringReminderMorningMinuteUtc / 60),
+            watering_reminder_evening_hour_utc: Math.floor(wateringReminderEveningMinuteUtc / 60),
+            watering_reminder_morning_minute_utc: wateringReminderMorningMinuteUtc,
+            watering_reminder_evening_minute_utc: wateringReminderEveningMinuteUtc,
           })
           .eq("telegram_id", Number(telegramId));
         if (updateError) {
           throw new Error(updateError.message);
         }
-        return NextResponse.json({ data: { taskMessageMode, repeatOverdueReminders } });
+        return NextResponse.json({
+          data: {
+            taskMessageMode,
+            repeatOverdueReminders,
+            wateringRemindersEnabled,
+            wateringReminderSchedule,
+            wateringReminderMorningMinuteUtc,
+            wateringReminderEveningMinuteUtc,
+          },
+        });
       }
 
       default:

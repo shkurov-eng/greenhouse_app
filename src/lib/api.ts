@@ -776,6 +776,10 @@ export async function getTaskSettings(initData: string | null) {
   return secureRequest<{
     taskMessageMode: "single" | "combine";
     repeatOverdueReminders: boolean;
+    wateringRemindersEnabled: boolean;
+    wateringReminderSchedule: "morning" | "evening" | "both";
+    wateringReminderMorningMinuteUtc: number;
+    wateringReminderEveningMinuteUtc: number;
   }>({
     action: "getTaskSettings",
     initData,
@@ -784,11 +788,22 @@ export async function getTaskSettings(initData: string | null) {
 
 export async function setTaskSettings(
   initData: string | null,
-  payload: { taskMessageMode: "single" | "combine"; repeatOverdueReminders: boolean },
+  payload: {
+    taskMessageMode: "single" | "combine";
+    repeatOverdueReminders: boolean;
+    wateringRemindersEnabled: boolean;
+    wateringReminderSchedule: "morning" | "evening" | "both";
+    wateringReminderMorningMinuteUtc: number;
+    wateringReminderEveningMinuteUtc: number;
+  },
 ) {
   return secureRequest<{
     taskMessageMode: "single" | "combine";
     repeatOverdueReminders: boolean;
+    wateringRemindersEnabled: boolean;
+    wateringReminderSchedule: "morning" | "evening" | "both";
+    wateringReminderMorningMinuteUtc: number;
+    wateringReminderEveningMinuteUtc: number;
   }>({
     action: "setTaskSettings",
     initData,
